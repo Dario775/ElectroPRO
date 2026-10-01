@@ -164,14 +164,19 @@ Ahora el recorrido tiene cuatro etapas y la aplicación dice siempre **qué falt
 
 | Etapa | Pasos |
 |---|---|
-| **1. Relevar el inmueble** | Cargas y consumos · Tableros y protecciones · Mediciones y diagnóstico · Historial de facturación |
+| **1. Relevar el inmueble** | Suministro y acometida · Tableros y protecciones · Mediciones en el lugar · Cargas y consumos · Facturas anteriores |
 | **2. Analizar** | Balance de fases · Calculadoras eléctricas (herramienta) |
 | **3. Presupuestar** | Presupuesto y materiales |
 | **4. Entregar** | Informe para el cliente (herramienta) |
 
+Los pasos del relevamiento siguen **el orden en que se recorre la instalación en obra**: primero se identifica el
+suministro (medidor, acometida, tensiones y térmica general), después se abren los tableros, después se mide con la
+pinza y el telurómetro, después se recorre el inmueble cargando los artefactos y al final se cargan las facturas.
+
 - El estado de cada paso (`pendiente` / `en curso` / `listo`) se **deriva de los datos del cliente**
   (`src/utils/workflow.ts`), no de un estado paralelo que se pueda desincronizar. El paso de balance se completa
-  cuando el desbalance real entre fases entra en tolerancia, calculado con el mismo motor que usa la vista.
+  cuando el desbalance real entre fases entra en tolerancia, calculado con el mismo motor que usa la vista; el de
+  suministro, cuando el técnico confirma en el sitio los datos de la acometida.
 - En escritorio la navegación es una barra lateral con el progreso y el botón de siguiente paso; en móvil son dos
   filas de botones (etapas arriba, pasos de la etapa activa abajo) más una barra inferior con la acción siguiente.
 - La franja de contexto de cada vista indica la etapa, si el paso está completo y qué falta concretamente.
@@ -204,6 +209,7 @@ campo, valores frecuentes como atajos y explicación de la jerga:
 
 | Formulario | Qué aporta ahora |
 |---|---|
+| **Suministro y acometida** (`SupplyView`) | Primer paso del relevamiento: tipo de acometida, tensiones y térmica general, con atajos de los suministros habituales y confirmación en el sitio |
 | **Carga de equipos** (`AuditView`) | Cuatro bloques numerados y **resultado en vivo**: corriente, consumo y costo mientras se escribe, con aviso si el disyuntor queda chico |
 | **Catálogo de equipos** | Cada tarjeta anticipa qué va a pasar: "se agrega a L2 a 220 V · demanda 8,4 A", calculado con la misma función que hace el alta |
 | **Mediciones en el lugar** (`DiagnosticView`) | Tensiones, corrientes y estado físico en tres bloques, con el criterio aplicado explicado (25 Ω de puesta a tierra, caída en el tomacorriente más lejano) |

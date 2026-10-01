@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AppShell } from './components/AppShell';
+import { SupplyView } from './components/SupplyView';
 import { AuditView } from './components/AuditView';
 import { PhaseBalanceView } from './components/PhaseBalanceView';
 import { PanelsView } from './components/PanelsView';
@@ -128,16 +129,14 @@ function AppContent() {
     if (!activeClient) return null;
 
     switch (activeView) {
-      case 'audit':
+      case 'supply':
         return (
-          <AuditView
+          <SupplyView
             client={activeClient}
             onUpdateClient={handleUpdateActiveClient}
-            onNavigateToBalance={() => setActiveView('balance')}
+            onNavigateToPanels={() => setActiveView('panels')}
           />
         );
-      case 'balance':
-        return <PhaseBalanceView client={activeClient} onUpdateClient={handleUpdateActiveClient} />;
       case 'panels':
         return (
           <PanelsView
@@ -154,6 +153,16 @@ function AppContent() {
             onNavigateToReport={() => setActiveView('report')}
           />
         );
+      case 'audit':
+        return (
+          <AuditView
+            client={activeClient}
+            onUpdateClient={handleUpdateActiveClient}
+            onNavigateToBalance={() => setActiveView('balance')}
+          />
+        );
+      case 'balance':
+        return <PhaseBalanceView client={activeClient} onUpdateClient={handleUpdateActiveClient} />;
       case 'history':
         return (
           <ConsumptionHistoryView

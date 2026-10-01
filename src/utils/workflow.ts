@@ -11,7 +11,16 @@ import { calculatePhaseBalance } from './electricalMath';
  * partir de los datos reales del cliente.
  */
 
-export type StepId = 'audit' | 'panels' | 'diagnostic' | 'history' | 'balance' | 'calculators' | 'budget' | 'report';
+export type StepId =
+  | 'supply'
+  | 'panels'
+  | 'diagnostic'
+  | 'audit'
+  | 'history'
+  | 'balance'
+  | 'calculators'
+  | 'budget'
+  | 'report';
 export type GroupId = 'relevar' | 'analizar' | 'presupuestar' | 'entregar';
 
 /**
@@ -115,24 +124,24 @@ export function buildWorkflow(client: ClientRecord | null): WorkflowGroup[] {
       id: 'relevar',
       index: 1,
       title: 'Relevar el inmueble',
-      description: 'Cargá lo que hay instalado y lo que mediste en el lugar.',
+      description: 'En el orden en que se recorre la instalación: suministro, tableros, mediciones, cargas y facturas.',
       steps: [
         {
-          id: 'audit',
-          label: 'Cargas y consumos',
-          title: 'Cargas y consumos',
+          id: 'supply',
+          label: 'Suministro y acometida',
+          title: 'Suministro y acometida',
           description:
-            'Cargá cada artefacto con su potencia y sus horas de uso. De acá sale el consumo mensual y la corriente de cada circuito.',
-          pendingHint: 'Empezá cargando los artefactos del inmueble: sin cargas no hay cálculos ni presupuesto.',
-          status: loads === 0 ? 'pendiente' : 'listo',
-          badge: loads > 0 ? pluralize(loads, 'carga', 'cargas') : undefined,
+            'Lo primero al llegar: qué suministro hay (monofásico, bifásico o trifásico), con qué tensiones y qué térmica general. Todo lo demás se calcula a partir de esto.',
+          pendingHint: 'Confirmá en el lugar el tipo de acometida, las tensiones y la térmica general del inmueble.',
+          status: client?.supplyVerified ? 'listo' : 'pendiente',
+          badge: client?.supplyVerified ? 'verificado' : undefined,
         },
         {
           id: 'panels',
           label: 'Tableros y protecciones',
           title: 'Tableros y protecciones',
           description:
-            'Describí los tableros, su breaker de cabecera, el diferencial y el descargador de sobretensiones.',
+            'Abrí cada tablero y describí su protección de cabecera, el diferencial, el descargador de sobretensiones y el estado general.',
           pendingHint: 'Cargá al menos el tablero principal con su breaker de cabecera.',
           status: panels === 0 ? 'pendiente' : 'listo',
           badge: panels > 0 ? pluralize(panels, 'tablero', 'tableros') : undefined,
@@ -142,10 +151,20 @@ export function buildWorkflow(client: ClientRecord | null): WorkflowGroup[] {
           label: 'Mediciones del lugar',
           title: 'Mediciones y diagnóstico',
           description:
-            'Cargá las tensiones, corrientes y la puesta a tierra que mediste. La app evalúa el estado y arma el plan de trabajo.',
-          pendingHint: 'Ingresá las mediciones del telurómetro y de tensión/corriente para obtener el índice de seguridad.',
+            'Medí tensiones y corrientes por fase con la pinza, y la resistencia de puesta a tierra con el telurómetro. La app evalúa el estado y arma el plan de trabajo.',
+          pendingHint: 'Ingresá las mediciones de tensión, corriente y puesta a tierra para obtener el índice de seguridad.',
           status: measurements ? 'listo' : 'pendiente',
           badge: measurements ? 'medido' : undefined,
+        },
+        {
+          id: 'audit',
+          label: 'Cargas y consumos',
+          title: 'Cargas y consumos',
+          description:
+            'Recorré el inmueble y cargá cada artefacto con su potencia, su fase y sus horas de uso. De acá salen el consumo mensual y la corriente de cada circuito.',
+          pendingHint: 'Cargá los artefactos del inmueble: sin cargas no hay cálculo de consumo ni presupuesto.',
+          status: loads === 0 ? 'pendiente' : 'listo',
+          badge: loads > 0 ? pluralize(loads, 'carga', 'cargas') : undefined,
         },
         {
           id: 'history',

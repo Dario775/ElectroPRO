@@ -176,6 +176,13 @@ export interface ClientRecord {
   nominalVoltage: number; // e.g. 120 or 220 or 230
   lineVoltage: number; // e.g. 240 or 380 or 440
   mainBreakerAmps: number;
+  /**
+   * Marca que el técnico verificó el suministro en el lugar (tipo de acometida,
+   * tensiones y térmica general). Los valores se cargan al crear el cliente y
+   * se confirman durante el relevamiento.
+   */
+  supplyVerified?: boolean;
+  supplyVerifiedAt?: string;
   kwhCost: number;
   fixedCharge: number;
   currency: SupportedCurrency;
