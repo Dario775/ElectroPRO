@@ -14,6 +14,10 @@ Thumbs.db
 .npm-cache/
 .npmrc
 
+# Banco de pruebas local (generación/rasterizado de PDF durante el desarrollo)
+.devtools/
+pdf-out/
+
 # Salidas de herramientas
 *.tsbuildinfo
 .vite/

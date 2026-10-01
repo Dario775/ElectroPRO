@@ -172,6 +172,42 @@ iluminación y tomas, mano de obra, certificación).
 
 ---
 
+## PDF de presupuesto: ajuste automático a una hoja
+
+`src/services/budgetPdfService.ts` **no estima** el tamaño de letra según la cantidad de rubros (esa suposición hacía
+que los presupuestos largos se desbordaran de la hoja y, al recortar las páginas sobrantes, **perdieran rubros en
+silencio**). En su lugar mide el contenido real:
+
+1. Se dibuja la tabla sobre un documento de prueba altísimo con `autoTable` y se lee su alto exacto
+   (`lastAutoTable.finalY`), que es el mismo motor y las mismas opciones con que luego se dibuja de verdad.
+2. Se recorre una escala tipográfica de 10 pt a 6,6 pt y se toma **el tamaño más grande que entra** en la banda
+   disponible, de modo que un presupuesto corto salga con letra grande y uno largo reduzca solo lo necesario.
+3. Si sobra espacio, se reparte aumentando el alto mínimo de fila (hasta 16 mm) y la separación hasta el bloque de
+   cierre (hasta 16 mm): la hoja queda llena sin filas desproporcionadas.
+4. Si el presupuesto no entra ni con la tipografía mínima legible, se **pagina sin perder rubros**: cabecera de
+   continuación, cierre y firmas al final, y pie «Página N de M».
+
+Bandas fijas de la hoja (A4 vertical, mm): cabecera `0–17,2` · ficha del cliente y suministro `18,5–34,5` · tabla
+desde `36,5` · contenido hasta `250` (debajo se reserva el hueco para firmar a mano) · firmas en `266` · pie en
+`286`.
+
+Comportamiento medido con el banco de pruebas (rubros → cuerpo de tabla → hojas):
+
+| Rubros | Cuerpo de tabla | Hojas | Fin del contenido |
+|---|---|---|---|
+| 4 | 10,0 pt | 1 | 184 mm |
+| 9 | 10,0 pt | 1 | 246 mm |
+| 15 | 8,8 pt | 1 | 247 mm |
+| 22–24 | 7,6 pt | 1 | 247 mm |
+| 45 | 6,6 pt (mínimo) | 2 (paginado) | — |
+
+El ancho de columnas está calculado para que ni las etiquetas de tipo (`MATERIAL`, `M. OBRA`…) ni los importes se
+partan en dos líneas, y el relleno de celda usa **poco margen horizontal y mucho vertical**: con un margen
+horizontal grande, las columnas cortas (`#`, `Tipo`, `Cant.`) se quedaban sin ancho útil y el texto se rompía letra
+a letra.
+
+---
+
 ## Persistencia de datos
 
 Todo se guarda en `localStorage` del navegador:
@@ -201,8 +237,11 @@ Todo se guarda en `localStorage` del navegador:
    `Suspense` y/o separar vendors (`jspdf`, `recharts`).
 3. **Componentes monolíticos**: `BudgetView.tsx` (93 KB), `CalculatorsView.tsx` (87 KB), `PanelsView.tsx` (65 KB)
    y `AuditView.tsx` (46 KB) son un solo archivo cada uno; conviene partir cada pestaña en subcomponentes y hooks.
-4. **PDF duplicado**: `pdfReportService.ts` y `budgetPdfService.ts` repiten el encabezado, el branding y los
-   helpers de maquetado; extraer un módulo común.
+4. **PDF duplicado**: `pdfReportService.ts` (informe técnico) y `budgetPdfService.ts` (presupuesto) repiten el
+   encabezado, el branding, los helpers de texto ajustado y el bloque de firmas; extraer un módulo común. El
+   presupuesto ya está rediseñado con medición real; el informe técnico sigue con posiciones fijas y arrastra los
+   mismos defectos que tenía el presupuesto (importes con código de moneda que se parten y paginación forzada a una
+   hoja recortando el sobrante).
 5. **Texto de UI hardcodeado en español**: si se prevé uso en otros países, introducir una capa de i18n.
 6. **Funciones de IA**: `@google/genai` está instalado y sin usar. Como la app es cliente puro, una clave de API
    incrustada en el frontend queda expuesta: cualquier función de IA necesita un backend o un proxy.
