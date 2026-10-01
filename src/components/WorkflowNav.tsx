@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { ArrowRight, Check, CheckCircle2, ChevronDown, Users } from 'lucide-react';
 import { cx } from '../utils/cx';
 import { GroupId, ViewId, WorkflowGroup, WorkflowProgress, WorkflowStep, findGroupOfStep } from '../utils/workflow';
@@ -42,21 +42,19 @@ export const WorkflowSidebar: React.FC<WorkflowNavProps> = ({
   progress,
 }) => {
   const activeGroup = findGroupOfStep(workflow, activeView as WorkflowStep['id']);
-  const [expanded, setExpanded] = useState<GroupId[]>(activeGroup ? [activeGroup.id] : []);
 
-  // Al cambiar de paso se abre la etapa correspondiente, sin cerrar las que el
-  // usuario haya abierto a mano.
-  useEffect(() => {
-    if (activeGroup && !expanded.includes(activeGroup.id)) {
-      setExpanded((previous) => [...previous, activeGroup.id]);
-    }
-  }, [activeGroup, expanded]);
+  /**
+   * Todas las etapas arrancan retraídas: el menú muestra solo los cuatro
+   * títulos. Al presionar una se despliega y se retrae la anterior, así nunca
+   * se llena la pantalla de pasos y números.
+   */
+  const [openGroup, setOpenGroup] = useState<GroupId | null>(null);
 
   const toggleGroup = (groupId: GroupId): void => {
-    setExpanded((previous) =>
-      previous.includes(groupId) ? previous.filter((id) => id !== groupId) : [...previous, groupId]
-    );
+    setOpenGroup((previous) => (previous === groupId ? null : groupId));
   };
+
+  const isExpanded = (groupId: GroupId): boolean => openGroup === groupId;
 
   return (
     <aside className="hidden w-[280px] flex-shrink-0 lg:block">
@@ -86,7 +84,7 @@ export const WorkflowSidebar: React.FC<WorkflowNavProps> = ({
         <nav aria-label="Etapas del trabajo" className="space-y-2">
           {workflow.map((group) => {
             const isActiveGroup = activeGroup?.id === group.id;
-            const isExpanded = expanded.includes(group.id);
+            const expanded = isExpanded(group.id);
             const doneInGroup = group.steps.filter((step) => step.status === 'listo').length;
 
             return (
@@ -97,11 +95,11 @@ export const WorkflowSidebar: React.FC<WorkflowNavProps> = ({
                   isActiveGroup ? 'border-accent-line bg-surface' : 'border-hairline bg-surface/60'
                 )}
               >
-                {/* Cabecera de la etapa: despliega y pliega sus pasos */}
+                {/* Cabecera de la etapa: retraída muestra solo el título y el avance */}
                 <button
                   type="button"
                   onClick={() => toggleGroup(group.id)}
-                  aria-expanded={isExpanded}
+                  aria-expanded={expanded}
                   className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-raised/60"
                 >
                   <span
@@ -116,17 +114,17 @@ export const WorkflowSidebar: React.FC<WorkflowNavProps> = ({
                     <span className={cx('block truncate text-sm', isActiveGroup ? 'font-bold text-strong' : 'font-semibold text-soft')}>
                       {group.title}
                     </span>
-                    <span className="block font-mono text-xs text-muted">
-                      {doneInGroup} de {group.steps.length}
-                    </span>
+                  </span>
+                  <span className="flex-shrink-0 font-mono text-xs text-muted">
+                    {doneInGroup}/{group.steps.length}
                   </span>
                   <ChevronDown
-                    className={cx('h-4 w-4 flex-shrink-0 text-muted transition-transform duration-200', isExpanded && 'rotate-180')}
+                    className={cx('h-4 w-4 flex-shrink-0 text-muted transition-transform duration-200', expanded && 'rotate-180')}
                   />
                 </button>
 
-                {/* Pasos de la etapa */}
-                {isExpanded && (
+                {/* Pasos de la etapa: solo aparecen al desplegarla */}
+                {expanded && (
                   <div className="space-y-0.5 border-t border-hairline px-2 py-2">
                     <p className="px-2 pb-1.5 pt-0.5 text-xs leading-snug text-muted">{group.description}</p>
                     {group.steps.map((step) => {
