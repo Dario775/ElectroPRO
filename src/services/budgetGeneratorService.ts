@@ -20,6 +20,11 @@ export interface CatalogMaterial {
   unit: 'ud' | 'm' | 'rollo' | 'kit' | 'gl' | 'hora' | 'dia' | 'servicio';
   /** Precio de referencia en dólares: actualizalo con la lista del proveedor. */
   unitPrice: number;
+  /**
+   * Producto cargado por el usuario (no viene del catálogo de fábrica). Se usa
+   * para conservarlos al restaurar el catálogo original.
+   */
+  custom?: boolean;
 }
 
 /** Marcas presentes en el catálogo, ordenadas, para el filtro por marca. */

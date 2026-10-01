@@ -46,16 +46,12 @@ import {
 } from '../types/electrical';
 import { formatCurrency } from '../utils/electricalMath';
 import { useCurrency } from '../context/CurrencyContext';
-import {
-  BudgetGeneratorService,
-  DEFAULT_MATERIALS_CATALOG,
-  CatalogMaterial,
-  getCatalogBrands,
-} from '../services/budgetGeneratorService';
+import { BudgetGeneratorService, CatalogMaterial } from '../services/budgetGeneratorService';
 import { generateBudgetPDF } from '../services/budgetPdfService';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
+import { MaterialCatalogModal } from './MaterialCatalogModal';
 
 interface BudgetViewProps {
   client: ClientRecord;
@@ -116,9 +112,6 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
 
   // Modals state
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
-  const [catalogSearch, setCatalogSearch] = useState('');
-  const [catalogCategory, setCatalogCategory] = useState<string>('all');
-  const [catalogBrand, setCatalogBrand] = useState<string>('all');
 
   const [isItemEditModalOpen, setIsItemEditModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BudgetItem | null>(null);
@@ -467,21 +460,6 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       items: [...currentBudget.items, newItem],
     });
   };
-
-  // Materiales del catálogo filtrados por búsqueda, categoría y marca
-  const filteredCatalog = useMemo(() => {
-    const term = catalogSearch.trim().toLowerCase();
-    return DEFAULT_MATERIALS_CATALOG.filter((mat) => {
-      const matchSearch =
-        term === '' ||
-        mat.description.toLowerCase().includes(term) ||
-        mat.detail.toLowerCase().includes(term) ||
-        (mat.brand || '').toLowerCase().includes(term);
-      const matchCategory = catalogCategory === 'all' || mat.category === catalogCategory;
-      const matchBrand = catalogBrand === 'all' || mat.brand === catalogBrand;
-      return matchSearch && matchCategory && matchBrand;
-    });
-  }, [catalogSearch, catalogCategory, catalogBrand]);
 
   // WhatsApp text copy
   const handleCopyForWhatsApp = () => {
@@ -1538,143 +1516,13 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       </div>
       </Collapsible>
 
-      {/* 6. MODAL: ADD FROM DEFAULT MATERIALS CATALOG */}
-      {isCatalogModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-surface border border-hairline rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-            {/* Header */}
-            <div className="p-4 border-b border-hairline flex items-center justify-between">
-              <div>
-                <h4 className="font-bold text-strong flex items-center gap-2">
-                  <Package className="w-4 h-4 text-accent-text" />
-                  <span>Catálogo de Materiales Eléctricos Homologados</span>
-                </h4>
-                <p className="text-xs text-muted mt-0.5">
-                  Haz clic en "Agregar" para incorporar el material o servicio técnico a la cotización activa.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCatalogModalOpen(false)}
-                className="p-1 rounded-lg text-muted hover:text-strong hover:bg-raised"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Catalog Search, Category & Brand Filters */}
-            <div className="space-y-3 border-b border-hairline bg-sunken p-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="search"
-                    aria-label="Buscar en el catálogo"
-                    placeholder="Buscar por producto o marca (térmica, jabalina, cable 4 mm, Schneider…)"
-                    value={catalogSearch}
-                    onChange={(e) => setCatalogSearch(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-field-line bg-surface pl-9 pr-3 text-sm text-strong placeholder:text-faint focus:border-accent focus:outline-none"
-                  />
-                </div>
-
-                <select
-                  aria-label="Filtrar por marca"
-                  value={catalogBrand}
-                  onChange={(e) => setCatalogBrand(e.target.value)}
-                  className="h-10 rounded-xl border border-field-line bg-surface px-3 text-sm font-semibold text-strong focus:border-accent focus:outline-none"
-                >
-                  <option value="all">Todas las marcas ({getCatalogBrands().length})</option>
-                  {getCatalogBrands().map((brand) => (
-                    <option key={brand} value={brand}>
-                      {brand}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  aria-label="Filtrar por categoría"
-                  value={catalogCategory}
-                  onChange={(e) => setCatalogCategory(e.target.value)}
-                  className="h-10 rounded-xl border border-field-line bg-surface px-3 text-sm font-semibold text-strong focus:border-accent focus:outline-none"
-                >
-                  <option value="all">Todas las categorías</option>
-                  <option value="protecciones">Protecciones</option>
-                  <option value="tableros">Tableros y gabinetes</option>
-                  <option value="cableado">Cableado y canalización</option>
-                  <option value="puesta_a_tierra">Puesta a tierra</option>
-                  <option value="iluminacion_tomas">Iluminación y tomas</option>
-                  <option value="mano_de_obra">Mano de obra</option>
-                  <option value="certificacion">Certificación y trámites</option>
-                </select>
-              </div>
-
-              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-                <span>
-                  <strong className="font-mono text-strong">{filteredCatalog.length}</strong> productos en la lista de{' '}
-                  {DEFAULT_MATERIALS_CATALOG.length}.
-                </span>
-                <span className="text-faint">
-                  Los precios son de referencia en dólares: actualizalos con la lista de tu proveedor.
-                </span>
-              </p>
-            </div>
-
-            {/* Catalog List */}
-            <div className="p-4 overflow-y-auto flex-1 space-y-2">
-              {filteredCatalog.length === 0 && (
-                <p className="py-6 text-center text-sm text-muted">
-                  No hay productos que coincidan con el filtro. Probá con otra palabra, otra marca u otra categoría.
-                </p>
-              )}
-              {filteredCatalog.map((mat) => (
-                <div
-                  key={mat.id}
-                  className="p-3 rounded-xl bg-sunken border border-hairline hover:border-edge flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors"
-                >
-                  <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <strong className="text-sm text-strong">{mat.description}</strong>
-                      {mat.brand && <Badge tone="accent">{mat.brand}</Badge>}
-                    </div>
-                    <p className="text-xs text-muted mt-0.5">{mat.detail}</p>
-                  </div>
-
-                  <div className="flex items-center gap-3 self-end sm:self-center">
-                    <div className="text-right font-mono">
-                      <span className="text-sm font-bold text-success-text block">
-                        {format(mat.unitPrice, 'USD')}
-                      </span>
-                      <span className="text-xs text-faint">por {mat.unit}</span>
-                    </div>
-
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      icon={<Plus className="h-3.5 w-3.5" />}
-                      onClick={() => {
-                        handleAddFromCatalog(mat);
-                      }}
-                    >
-                      Agregar
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Footer */}
-            <div className="p-3 border-t border-hairline bg-sunken text-right">
-              <button
-                type="button"
-                onClick={() => setIsCatalogModalOpen(false)}
-                className="px-4 py-1.5 rounded-xl bg-raised hover:bg-raised-strong text-strong font-semibold text-xs transition-colors"
-              >
-                Cerrar Catálogo
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 6. Catálogo de productos del presupuesto (con alta, edición y borrado) */}
+      <MaterialCatalogModal
+        isOpen={isCatalogModalOpen}
+        onClose={() => setIsCatalogModalOpen(false)}
+        onAddToBudget={handleAddFromCatalog}
+        formatUsd={(amount) => format(amount, 'USD')}
+      />
 
       {/* 7. MODAL: EDIT / CREATE DETAILED ITEM */}
       {isItemEditModalOpen && editingItem && (

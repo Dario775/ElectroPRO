@@ -251,8 +251,8 @@ cd .devtools
 node check-ui.mjs            # sin clases de color crudas, sin fuentes a mano, sin texto < 12 px
 node contrast.mjs            # contraste WCAG AA de los tokens en ambos temas
 npx tsx check-workflow.ts    # progreso y siguiente paso del recorrido
-npx tsx check-catalog.ts     # integridad del catálogo (ids, precios, una marca por producto)
-npx tsx render-views.tsx     # renderiza las 12 pantallas con datos reales y detecta errores
+npx tsx check-catalog.ts     # integridad del catálogo + alta, edición, borrado y restauración
+npx tsx render-views.tsx     # renderiza las 13 pantallas con datos reales y detecta errores
 npx tsx render-check.tsx     # renderiza la aplicación completa (marca, navegación, estado inicial)
 ```
 
@@ -298,9 +298,23 @@ se va a instalar — y se agrega al presupuesto con un clic.
 El modal del catálogo permite **filtrar por marca**, por categoría o buscar por producto o marca, y muestra cuántos
 productos quedan de la lista completa.
 
-> **Los precios son de referencia en dólares.** Sirven para armar el presupuesto rápido, pero hay que actualizarlos
-> con la lista del proveedor: cambian con el tiempo y según la zona y el volumen de compra. Están todos en un solo
-> lugar (`DEFAULT_MATERIALS_CATALOG`), así que se editan de una vez.
+#### El catálogo es editable y se guarda en el equipo
+
+`src/services/catalogService.ts` copia el catálogo de fábrica al almacenamiento local la primera vez y a partir de ahí
+el guardado es la fuente de verdad (`electropro_materials_catalog_v1`). Desde el mismo modal se puede:
+
+| Acción | Cómo |
+|---|---|
+| **Agregar un producto** | «Nuevo producto»: descripción, detalle, marca (con las marcas ya cargadas como sugerencia), precio, categoría, tipo y unidad |
+| **Editar** | El lápiz de cada fila: sirve tanto para corregir el precio de un producto de fábrica como para cambiar cualquier dato |
+| **Borrar** | El tacho de cada fila, con confirmación. Aclara que los presupuestos ya emitidos no cambian |
+| **Restaurar el catálogo de fábrica** | Vuelve a los productos y precios originales **conservando los productos propios** (quedan marcados como `custom`) |
+
+Los productos propios se distinguen con el distintivo «propio» y el contador «N cargados por vos».
+
+> **Los precios de fábrica son de referencia en dólares.** Sirven para armar el presupuesto rápido, pero conviene
+> corregirlos con la lista del proveedor: cambian con el tiempo y según la zona y el volumen de compra. Se editan
+> desde la app, producto por producto, sin tocar código.
 
 ---
 
