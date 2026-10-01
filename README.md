@@ -146,7 +146,7 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
 | **Tableros & Esquema** | Inventario de tableros con protecciones, jerarquía entre ellos y mediciones por tablero |
 | **Diagnóstico & Plan** | Mediciones in situ → índice de seguridad, nivel de riesgo y plan de acción priorizado (crítica/alta/media/preventiva) con materiales y horas estimadas |
 | **Historial de Consumo** | Facturación mensual real vs. consumo calculado por el inventario de cargas, con gráficas y "diagnóstico forense" (detecta fugas a tierra, medidor descalibrado o cargas no declaradas) |
-| **Presupuesto & Materiales** | Presupuesto generado automáticamente desde tableros, cargas y diagnóstico; catálogo de materiales, markup, impuestos, descuentos, estados y PDF |
+| **Presupuesto & Materiales** | Presupuesto generado automáticamente desde tableros, cargas y diagnóstico; **catálogo de 90 productos por marca** (filtrá por marca, categoría o búsqueda y agregá con un clic), markup, impuestos, descuentos, estados y PDF |
 | **Calculadoras Eléctricas** | 1) Dimensionado de conductores, 2) Caída de tensión, 3) Breaker + cable, 4) Banco de capacitores (corrección de cos φ), 5) Ley de Ohm |
 | **Reporte** | Vista previa e informe técnico PDF: datos del cliente y suministro, tabla de fases, observaciones, recomendaciones, anexo de diagnóstico y firmas |
 | **Clientes** | Cartera de clientes, alta/edición y **exportar/importar copia de seguridad en JSON** |
@@ -251,7 +251,8 @@ cd .devtools
 node check-ui.mjs            # sin clases de color crudas, sin fuentes a mano, sin texto < 12 px
 node contrast.mjs            # contraste WCAG AA de los tokens en ambos temas
 npx tsx check-workflow.ts    # progreso y siguiente paso del recorrido
-npx tsx render-views.tsx     # renderiza las 11 pantallas con datos reales y detecta errores
+npx tsx check-catalog.ts     # integridad del catálogo (ids, precios, una marca por producto)
+npx tsx render-views.tsx     # renderiza las 12 pantallas con datos reales y detecta errores
 npx tsx render-check.tsx     # renderiza la aplicación completa (marca, navegación, estado inicial)
 ```
 
@@ -278,6 +279,28 @@ aislamiento y antigüedad. El índice de seguridad se acota entre 5 y 100 y se t
 `src/services/budgetGeneratorService.ts` convierte tableros, cargas y hallazgos del diagnóstico en partidas
 presupuestarias, usando un catálogo de materiales por categoría (tableros, protecciones, cableado, puesta a tierra,
 iluminación y tomas, mano de obra, certificación).
+
+### Catálogo de productos por marca
+
+El catálogo (`DEFAULT_MATERIALS_CATALOG`) tiene **90 ítems y 25 marcas comercializadas en Argentina**. Cada producto
+lleva **una sola marca real** — antes decía cosas como «Schneider / ABB / Chint», que no permitía filtrar ni saber qué
+se va a instalar — y se agrega al presupuesto con un clic.
+
+| Rubro | Marcas incluidas |
+|---|---|
+| Protecciones (33 ítems) | Schneider Electric (Acti9), Siemens (5SL/5SV), ABB (S200/DS200), Legrand (DX3), Bticino, Sica, Genrod, Chint, Finder |
+| Tableros y gabinetes (11) | Schneider Electric (Pragma, Kaedra), Genrod, Sica, Cambre, Gralf, Roker, Indelma (tableros de medidor) |
+| Cableado y canalización (14) | Prysmian (Superastic, Sintenax), Cimet, Kalop, Tigre (caños y cablecanal), 3M |
+| Puesta a tierra (6) | Fulgur, Copperweld, Genrod, Prysmian y Cimet (conductores de protección) |
+| Iluminación y tomas (16) | Philips, Osram, Kalop, Jeluz, Roker, Daisa, Cambre, Bticino, Tenax |
+| Mano de obra y trámites (10) | Sin marca: son servicios del propio técnico |
+
+El modal del catálogo permite **filtrar por marca**, por categoría o buscar por producto o marca, y muestra cuántos
+productos quedan de la lista completa.
+
+> **Los precios son de referencia en dólares.** Sirven para armar el presupuesto rápido, pero hay que actualizarlos
+> con la lista del proveedor: cambian con el tiempo y según la zona y el volumen de compra. Están todos en un solo
+> lugar (`DEFAULT_MATERIALS_CATALOG`), así que se editan de una vez.
 
 ---
 

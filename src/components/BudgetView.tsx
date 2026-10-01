@@ -50,6 +50,7 @@ import {
   BudgetGeneratorService,
   DEFAULT_MATERIALS_CATALOG,
   CatalogMaterial,
+  getCatalogBrands,
 } from '../services/budgetGeneratorService';
 import { generateBudgetPDF } from '../services/budgetPdfService';
 import { Button } from './ui/Button';
@@ -117,6 +118,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogCategory, setCatalogCategory] = useState<string>('all');
+  const [catalogBrand, setCatalogBrand] = useState<string>('all');
 
   const [isItemEditModalOpen, setIsItemEditModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BudgetItem | null>(null);
@@ -466,17 +468,20 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
     });
   };
 
-  // Filtered catalog materials
+  // Materiales del catálogo filtrados por búsqueda, categoría y marca
   const filteredCatalog = useMemo(() => {
+    const term = catalogSearch.trim().toLowerCase();
     return DEFAULT_MATERIALS_CATALOG.filter((mat) => {
       const matchSearch =
-        mat.description.toLowerCase().includes(catalogSearch.toLowerCase()) ||
-        mat.detail.toLowerCase().includes(catalogSearch.toLowerCase()) ||
-        mat.brand.toLowerCase().includes(catalogSearch.toLowerCase());
+        term === '' ||
+        mat.description.toLowerCase().includes(term) ||
+        mat.detail.toLowerCase().includes(term) ||
+        (mat.brand || '').toLowerCase().includes(term);
       const matchCategory = catalogCategory === 'all' || mat.category === catalogCategory;
-      return matchSearch && matchCategory;
+      const matchBrand = catalogBrand === 'all' || mat.brand === catalogBrand;
+      return matchSearch && matchCategory && matchBrand;
     });
-  }, [catalogSearch, catalogCategory]);
+  }, [catalogSearch, catalogCategory, catalogBrand]);
 
   // WhatsApp text copy
   const handleCopyForWhatsApp = () => {
@@ -1557,68 +1562,101 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               </button>
             </div>
 
-            {/* Catalog Search & Category Filter */}
-            <div className="p-3 bg-sunken border-b border-hairline flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Buscar en catálogo (térmica, jabalina, cable 4mm, DPS...)"
-                  value={catalogSearch}
-                  onChange={(e) => setCatalogSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-surface border border-edge text-xs text-strong placeholder-faint focus:border-accent focus:outline-none"
-                />
+            {/* Catalog Search, Category & Brand Filters */}
+            <div className="space-y-3 border-b border-hairline bg-sunken p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="search"
+                    aria-label="Buscar en el catálogo"
+                    placeholder="Buscar por producto o marca (térmica, jabalina, cable 4 mm, Schneider…)"
+                    value={catalogSearch}
+                    onChange={(e) => setCatalogSearch(e.target.value)}
+                    className="h-10 w-full rounded-xl border border-field-line bg-surface pl-9 pr-3 text-sm text-strong placeholder:text-faint focus:border-accent focus:outline-none"
+                  />
+                </div>
+
+                <select
+                  aria-label="Filtrar por marca"
+                  value={catalogBrand}
+                  onChange={(e) => setCatalogBrand(e.target.value)}
+                  className="h-10 rounded-xl border border-field-line bg-surface px-3 text-sm font-semibold text-strong focus:border-accent focus:outline-none"
+                >
+                  <option value="all">Todas las marcas ({getCatalogBrands().length})</option>
+                  {getCatalogBrands().map((brand) => (
+                    <option key={brand} value={brand}>
+                      {brand}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  aria-label="Filtrar por categoría"
+                  value={catalogCategory}
+                  onChange={(e) => setCatalogCategory(e.target.value)}
+                  className="h-10 rounded-xl border border-field-line bg-surface px-3 text-sm font-semibold text-strong focus:border-accent focus:outline-none"
+                >
+                  <option value="all">Todas las categorías</option>
+                  <option value="protecciones">Protecciones</option>
+                  <option value="tableros">Tableros y gabinetes</option>
+                  <option value="cableado">Cableado y canalización</option>
+                  <option value="puesta_a_tierra">Puesta a tierra</option>
+                  <option value="iluminacion_tomas">Iluminación y tomas</option>
+                  <option value="mano_de_obra">Mano de obra</option>
+                  <option value="certificacion">Certificación y trámites</option>
+                </select>
               </div>
 
-              <select
-                value={catalogCategory}
-                onChange={(e) => setCatalogCategory(e.target.value)}
-                className="px-3 py-1.5 rounded-xl bg-surface border border-edge text-xs text-strong focus:border-accent focus:outline-none"
-              >
-                <option value="all">Todas las Categorías</option>
-                <option value="protecciones">Protecciones</option>
-                <option value="tableros">Tableros y Gabinetes</option>
-                <option value="puesta_a_tierra">Puesta a Tierra</option>
-                <option value="cableado">Cableado y Canalización</option>
-                <option value="iluminacion_tomas">Iluminación y Tomas</option>
-                <option value="mano_de_obra">Mano de Obra</option>
-                <option value="certificacion">Certificación</option>
-              </select>
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                <span>
+                  <strong className="font-mono text-strong">{filteredCatalog.length}</strong> productos en la lista de{' '}
+                  {DEFAULT_MATERIALS_CATALOG.length}.
+                </span>
+                <span className="text-faint">
+                  Los precios son de referencia en dólares: actualizalos con la lista de tu proveedor.
+                </span>
+              </p>
             </div>
 
             {/* Catalog List */}
             <div className="p-4 overflow-y-auto flex-1 space-y-2">
+              {filteredCatalog.length === 0 && (
+                <p className="py-6 text-center text-sm text-muted">
+                  No hay productos que coincidan con el filtro. Probá con otra palabra, otra marca u otra categoría.
+                </p>
+              )}
               {filteredCatalog.map((mat) => (
                 <div
                   key={mat.id}
                   className="p-3 rounded-xl bg-sunken border border-hairline hover:border-edge flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors"
                 >
                   <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <strong className="text-xs text-strong">{mat.description}</strong>
-                      <span className="text-xs text-accent-text font-mono">[{mat.brand}]</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong className="text-sm text-strong">{mat.description}</strong>
+                      {mat.brand && <Badge tone="accent">{mat.brand}</Badge>}
                     </div>
                     <p className="text-xs text-muted mt-0.5">{mat.detail}</p>
                   </div>
 
                   <div className="flex items-center gap-3 self-end sm:self-center">
                     <div className="text-right font-mono">
-                      <span className="text-xs font-bold text-success-text block">
+                      <span className="text-sm font-bold text-success-text block">
                         {format(mat.unitPrice, 'USD')}
                       </span>
                       <span className="text-xs text-faint">por {mat.unit}</span>
                     </div>
 
-                    <button
-                      type="button"
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={<Plus className="h-3.5 w-3.5" />}
                       onClick={() => {
                         handleAddFromCatalog(mat);
                       }}
-                      className="px-3 py-1 rounded-lg bg-accent hover:brightness-110 text-accent-fg font-bold text-xs flex items-center gap-1 transition-colors shadow-sm"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Agregar</span>
-                    </button>
+                      Agregar
+                    </Button>
                   </div>
                 </div>
               ))}
