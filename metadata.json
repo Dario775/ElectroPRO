@@ -1,0 +1,6 @@
+{
+  "name": "ElectroPro - Cálculos Eléctricos y Auditoría",
+  "description": "Herramienta profesional para electricistas: cálculo de consumo mensual, amperaje, factor de potencia, balanceo de fases y reportes PDF para clientes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

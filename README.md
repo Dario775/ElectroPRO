@@ -1,0 +1,210 @@
+# ElectroPro — Cálculos Eléctricos y Auditoría
+
+Herramienta profesional para **electricistas e instaladores certificados**: auditoría de cargas, cálculo de
+consumo y amperaje, factor de potencia, balanceo de fases, diagnóstico de instalaciones, presupuesto de
+materiales y emisión de reportes PDF para el cliente.
+
+Aplicación **SPA 100 % del lado del cliente**: no hay backend ni base de datos. Todos los datos del técnico y de
+sus clientes viven en el `localStorage` del navegador, por lo que funciona sin conexión.
+
+Origen: proyecto exportado de Google AI Studio (de ahí `metadata.json` y el `.env.example` heredado).
+
+---
+
+## Estado actual
+
+Verificado en este repositorio:
+
+| Comprobación | Comando | Resultado |
+|---|---|---|
+| Tipos (modo `strict`) | `npm run lint` | ✅ 0 errores (TypeScript 7.0.2) |
+| Build de producción | `npm run build` | ✅ 2455 módulos → `dist/` |
+| Pruebas automatizadas | — | ❌ No existen todavía |
+
+---
+
+## Requisitos
+
+- **Node.js 20.11+** (probado con Node 24). Se usa `import.meta.dirname` en `vite.config.ts`.
+- npm (hay `package-lock.json`; el proyecto se gestiona con npm).
+
+## Puesta en marcha
+
+```bash
+npm install          # instala dependencias
+npm run dev          # servidor de desarrollo en http://localhost:3000
+npm run build        # build de producción en dist/
+npm run preview      # sirve el build de dist/
+npm run lint         # comprobación de tipos (tsc --noEmit)
+npm run clean        # borra dist/
+```
+
+### No hace falta ninguna clave de API
+
+A pesar de que `metadata.json` declara la capacidad `MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API` y de que
+`.env.example` documenta `GEMINI_API_KEY`, **el código no realiza ninguna llamada a IA**: no importa
+`@google/genai` en ningún archivo. La app es completamente offline y funciona sin `.env`.
+
+El SDK `@google/genai` se conserva instalado como base para futuras funciones de IA (ver *Próximos pasos*).
+
+### Nota sobre el entorno de desarrollo
+
+- `.npmrc` (ignorado por git) apunta la caché de npm a `./.npm-cache` dentro del proyecto. Es una comodidad
+  para entornos donde la caché global del usuario está restringida; en una máquina normal puede borrarse.
+- `.env*` está en `.gitignore` salvo `.env.example`: nunca subas claves reales.
+
+---
+
+## Estructura del proyecto
+
+```
+.
+├── index.html                     Shell HTML, fuentes (Inter, Chakra Petch, JetBrains Mono), meta/OG
+├── vite.config.ts                 React + Tailwind 4 + alias '@' → raíz del proyecto
+├── tsconfig.json                  TypeScript en modo strict, noEmit, jsx react-jsx
+├── package.json                   Scripts y dependencias
+├── metadata.json                  Metadatos de AI Studio (nombre, descripción, capacidades)
+└── src/
+    ├── main.tsx                   Punto de entrada React
+    ├── index.css                  Entrada de Tailwind
+    ├── App.tsx                    Estado global: clientes, perfil del técnico, pestaña activa
+    ├── types/electrical.ts        Modelo de dominio completo (fuente de verdad de los tipos)
+    ├── context/CurrencyContext    Conversión y formato USD ⇄ ARS con cotización configurable
+    ├── data/defaultAppliances.ts  Catálogo semilla de ~50 artefactos por categoría
+    ├── utils/
+    │   ├── electricalMath.ts      Motor de cálculo eléctrico (funciones puras)
+    │   └── diagnosticEngine.ts    Evaluación de seguridad y plan de acción
+    ├── services/
+    │   ├── storageService.ts      Persistencia en localStorage + datos de ejemplo + migraciones
+    │   ├── budgetGeneratorService.ts  Generación automática de presupuestos y catálogo de materiales
+    │   ├── pdfReportService.ts    Reporte técnico de auditoría en PDF
+    │   └── budgetPdfService.ts    Presupuesto en PDF
+    └── components/
+        ├── Header.tsx             Cabecera: selector de cliente y navegación por pestañas
+        ├── AuditView.tsx          Inventario de cargas y consumos
+        ├── PhaseBalanceView.tsx   Balance y auto-balanceo de fases
+        ├── PanelsView.tsx         Tableros eléctricos, protecciones y jerarquía
+        ├── DiagnosticView.tsx     Mediciones de campo, índice de seguridad y plan de trabajo
+        ├── ConsumptionHistoryView.tsx  Facturación real vs. auditoría (con gráficas)
+        ├── BudgetView.tsx         Presupuestos, materiales y estados
+        ├── CalculatorsView.tsx    5 calculadoras eléctricas
+        ├── ReportPreview.tsx      Vista previa e impresión del informe
+        ├── ClientList.tsx         Cartera de clientes + copia de seguridad JSON
+        ├── ClientModal.tsx        Alta/edición de cliente y datos tarifarios
+        └── SettingsModal.tsx      Perfil del técnico, moneda y datos de ejemplo
+```
+
+### Convenciones
+
+- **Dominio en español** (nombres de tipos, campos y textos de UI); comandos y código de infraestructura en inglés.
+- Todo tipo de dominio se declara en `src/types/electrical.ts`; los componentes no definen tipos de negocio propios.
+- La lógica de cálculo vive en `src/utils/*` como **funciones puras** (sin React, sin estado): es el lugar natural
+  para empezar a escribir pruebas.
+- `src/services/*` concentra efectos secundarios: almacenamiento, generación de PDF y presupuestos.
+- Un componente por pestaña, con Tailwind en línea y `lucide-react` para iconografía.
+- Importaciones internas con el alias `@/`.
+
+---
+
+## Modelo de dominio
+
+`ClientRecord` es la raíz de datos: un cliente concentra su suministro y todo el trabajo de auditoría.
+
+- **Suministro**: `serviceType` (1F/2F/3F + N), `nominalVoltage` (L-N), `lineVoltage` (L-L), `mainBreakerAmps`,
+  `kwhCost`, `fixedCharge`, `currency` (`USD` | `ARS`).
+- **Cargas** (`ApplianceLoad[]`): artefacto, categoría, cantidad, potencia con su unidad (`W`/`kW`/`HP`/`VA`) y su
+  equivalente normalizado en vatios, factor de potencia, tensión, sistema y fase asignada
+  (`L1`, `L2`, `L3`, `L1-L2`, `L2-L3`, `L3-L1`, `3F`), circuito, breaker, tablero, horas/día y días/mes.
+- **Tableros** (`ElectricalPanel[]`): jerárquicos mediante `parentPanelId`; breaker de cabecera (polos, curva,
+  poder de corte), diferencial (amperaje, sensibilidad, polos), DPS, barras de tierra y neutro, módulos DIN,
+  alimentador (calibre, material, longitud), estado físico, puntos calientes y rotulado, más mediciones propias.
+- **Mediciones de campo** (`FieldMeasurements`): tensiones L-N y L-L, corrientes por fase y neutro, resistencia de
+  puesta a tierra, presencia de diferencial, jabalina y DPS, signos térmicos, estado del aislamiento, antigüedad y
+  calibre del alimentador.
+- **Diagnóstico** (`DiagnosticResult`): índice de seguridad 0-100, nivel de riesgo, desbalances de tensión y
+  corriente, estado del neutro, sobrecarga del alimentador y plan de acción priorizado.
+- **Consumo** (`MonthlyConsumptionRecord[]`): kWh facturados por mes, costo, proyección y notas.
+- **Presupuestos** (`ProjectBudget[]` + `activeBudgetId`): varios por cliente, con ítems tipados
+  (material / mano de obra / equipo / trámite), cantidades, precios unitarios, markup, impuestos, descuentos,
+  condiciones de pago, plazo y garantía.
+- **Perfil del técnico** (`TechnicianProfile`): nombre, matrícula, empresa, contacto, moneda, cotización USD→ARS,
+  tarifa kWh y tensión por defecto.
+
+---
+
+## Funcionalidades
+
+| Pestaña | Qué resuelve |
+|---|---|
+| **Auditoría de Cargas** | Alta de artefactos desde catálogo o manual, normalización a vatios, corriente y consumo mensual, costo proyectado y verificación contra el breaker principal |
+| **Balance de Fases** | Reparto de cargas por fase, desbalance NEMA, corriente de neutro y **auto-balanceo** automático de cargas entre L1/L2/L3 |
+| **Tableros & Esquema** | Inventario de tableros con protecciones, jerarquía entre ellos y mediciones por tablero |
+| **Diagnóstico & Plan** | Mediciones in situ → índice de seguridad, nivel de riesgo y plan de acción priorizado (crítica/alta/media/preventiva) con materiales y horas estimadas |
+| **Historial de Consumo** | Facturación mensual real vs. consumo calculado por el inventario de cargas, con gráficas y "diagnóstico forense" (detecta fugas a tierra, medidor descalibrado o cargas no declaradas) |
+| **Presupuesto & Materiales** | Presupuesto generado automáticamente desde tableros, cargas y diagnóstico; catálogo de materiales, markup, impuestos, descuentos, estados y PDF |
+| **Calculadoras Eléctricas** | 1) Dimensionado de conductores, 2) Caída de tensión, 3) Breaker + cable, 4) Banco de capacitores (corrección de cos φ), 5) Ley de Ohm |
+| **Reporte** | Vista previa e informe técnico PDF: datos del cliente y suministro, tabla de fases, observaciones, recomendaciones, anexo de diagnóstico y firmas |
+| **Clientes** | Cartera de clientes, alta/edición y **exportar/importar copia de seguridad en JSON** |
+
+---
+
+## Motor de cálculo
+
+`src/utils/electricalMath.ts` (funciones puras, sin dependencias de React):
+
+- Conversión de unidades de potencia, incluido HP → W.
+- Corriente por fase según sistema (1F/2F/3F) y potencia aparente/reactiva a partir del factor de potencia.
+- Consumo diario y mensual en kWh y su costo.
+- Balance de fases con desbalance según criterio **NEMA** y corriente de neutro.
+- **Auto-balanceo** de cargas entre fases.
+- Tablas de calibres AWG/mm² con ampacidad y lista de breakers comerciales.
+- Caída de tensión, dimensionado conjunto de breaker + conductor, banco de capacitores y recomendación de conductor.
+
+`src/utils/diagnosticEngine.ts` evalúa la instalación contra criterios tipo **NEC / IEEE / IEC**: desbalance de
+tensión (límite 2 %), desviación de tensión respecto de la nominal, desbalance de corriente, caída de tensión en el
+punto más alejado, resistencia de puesta a tierra, presencia de diferencial y DPS, signos térmicos, estado del
+aislamiento y antigüedad. El índice de seguridad se acota entre 5 y 100 y se traduce en un nivel de riesgo
+(`Bajo`, `Moderado`, `Alto`, `Peligro Crítico`), del que se deriva el plan de acción con horas estimadas.
+
+`src/services/budgetGeneratorService.ts` convierte tableros, cargas y hallazgos del diagnóstico en partidas
+presupuestarias, usando un catálogo de materiales por categoría (tableros, protecciones, cableado, puesta a tierra,
+iluminación y tomas, mano de obra, certificación).
+
+---
+
+## Persistencia de datos
+
+Todo se guarda en `localStorage` del navegador:
+
+| Clave | Contenido |
+|---|---|
+| `electropro_clients_v1` | Lista de clientes con todo su trabajo de auditoría |
+| `electropro_active_client_id_v1` | Cliente activo |
+| `electropro_technician_profile_v1` | Perfil del técnico |
+| `electropro_active_currency_v1` | Moneda activa (USD/ARS) |
+| `electropro_usd_ars_rate_v1` | Cotización USD → ARS |
+
+- `StorageService.getClients()` **siembra un cliente de ejemplo** la primera vez y completa datos faltantes de
+  registros antiguos (tableros por defecto, presupuesto inicial), actuando como migración.
+- El botón de restablecer datos de ejemplo ejecuta `localStorage.clear()` y **borra todo**: antes de usarlo,
+  exporta una copia desde la pestaña **Clientes** (genera `ElectroPro_CopiaSeguridad_<fecha>.json`).
+- Los datos son locales al navegador: no se sincronizan entre dispositivos ni sobreviven al borrado del
+  almacenamiento del sitio.
+
+---
+
+## Próximos pasos (deuda técnica conocida)
+
+1. **Pruebas**: no hay ninguna. Empezar por `electricalMath` y `diagnosticEngine`, que son funciones puras y
+   concentran el riesgo real de errores de cálculo (Vitest encaja de forma natural con Vite).
+2. **Bundle único de 1,42 MB** (399 kB gzip) en un solo chunk. Cargar las vistas pesadas con `React.lazy` +
+   `Suspense` y/o separar vendors (`jspdf`, `recharts`).
+3. **Componentes monolíticos**: `BudgetView.tsx` (93 KB), `CalculatorsView.tsx` (87 KB), `PanelsView.tsx` (65 KB)
+   y `AuditView.tsx` (46 KB) son un solo archivo cada uno; conviene partir cada pestaña en subcomponentes y hooks.
+4. **PDF duplicado**: `pdfReportService.ts` y `budgetPdfService.ts` repiten el encabezado, el branding y los
+   helpers de maquetado; extraer un módulo común.
+5. **Texto de UI hardcodeado en español**: si se prevé uso en otros países, introducir una capa de i18n.
+6. **Funciones de IA**: `@google/genai` está instalado y sin usar. Como la app es cliente puro, una clave de API
+   incrustada en el frontend queda expuesta: cualquier función de IA necesita un backend o un proxy.
+7. **Sin backend**: no hay sincronización entre dispositivos ni trabajo en equipo; evaluar exportación/importación
+   como vía de traspaso mientras tanto.

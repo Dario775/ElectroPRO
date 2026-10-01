@@ -1,0 +1,16 @@
+# Normaliza finales de línea para evitar diffs ruidosos entre sistemas.
+* text=auto eol=lf
+
+# Binarios (nunca normalizar)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+# Lockfile: se genera automáticamente, no aporta en revisiones ni en el conteo de idioma
+package-lock.json linguist-generated=true -diff
