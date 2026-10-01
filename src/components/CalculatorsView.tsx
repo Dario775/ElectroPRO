@@ -25,6 +25,7 @@ import {
   calculateCurrent,
 } from '../utils/electricalMath';
 import { ClientRecord } from '../types/electrical';
+import { SectionHeader } from './ui/Card';
 
 interface CalculatorsViewProps {
   client?: ClientRecord | null;
@@ -189,7 +190,15 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
 
   return (
     <div className="space-y-6">
-      {/* Selector Tabs */}
+      {/* Cabecera del paso: son herramientas sueltas, no un paso del recorrido */}
+      <SectionHeader
+        eyebrow="Etapa 2 · Analizar · Herramienta"
+        title="Calculadoras eléctricas"
+        description="Cinco herramientas de cálculo rápido para resolver dudas en el momento: qué cable va, cuánta tensión se pierde, qué térmica proteger, cómo corregir el factor de potencia y las equivalencias más usadas."
+        icon={<Calculator className="h-4 w-4" />}
+      />
+
+      {/* Selector de calculadora */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
         <button
           onClick={() => setActiveTab('wiresizing')}

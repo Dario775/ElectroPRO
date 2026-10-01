@@ -847,6 +847,9 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       {/* 1. TOP HEADER & CONTROLS BANNER (FOR ACTIVE BUDGET) */}
       <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex-1">
+          <span className="mb-1.5 inline-block rounded-md border border-accent-line bg-accent-soft px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-accent-text">
+            Etapa 3 · Presupuestar
+          </span>
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-accent-soft text-accent-text border border-accent-line">
               {currentBudget.budgetNumber}

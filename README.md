@@ -197,6 +197,27 @@ Ahora el recorrido tiene cuatro etapas y la aplicación dice siempre **qué falt
 - Los campos técnicos explican qué son: etiqueta siempre visible, unidad dentro del campo, valores frecuentes como
   atajos (110/220/380 V) y ayuda desplegable para la jerga (cos φ, NEMA, DIN, curva C).
 
+### Formularios y campos técnicos
+
+Todos los formularios técnicos pasaron a las primitivas del sistema, con etiqueta siempre visible, unidad dentro del
+campo, valores frecuentes como atajos y explicación de la jerga:
+
+| Formulario | Qué aporta ahora |
+|---|---|
+| **Carga de equipos** (`AuditView`) | Cuatro bloques numerados y **resultado en vivo**: corriente, consumo y costo mientras se escribe, con aviso si el disyuntor queda chico |
+| **Catálogo de equipos** | Cada tarjeta anticipa qué va a pasar: "se agrega a L2 a 220 V · demanda 8,4 A", calculado con la misma función que hace el alta |
+| **Mediciones en el lugar** (`DiagnosticView`) | Tensiones, corrientes y estado físico en tres bloques, con el criterio aplicado explicado (25 Ω de puesta a tierra, caída en el tomacorriente más lejano) |
+| **Tableros** (`PanelsView`) | Cinco bloques (identificación, cabecera, diferencial, alimentador, estado) con aviso en vivo comparando la carga conectada con la térmica de cabecera |
+| **Ficha de cliente** (`ClientModal`) | Cuatro secciones con las tensiones, la térmica general y las tarifas con unidad y ayuda |
+| **Ajustes del técnico** (`SettingsModal`) | Identificación profesional, valores por defecto y cotización, con la advertencia de qué reemplaza el botón de datos de ejemplo |
+
+### Cabeceras de las vistas
+
+Cada pantalla arranca con la misma cabecera: etapa del recorrido, título en lenguaje llano, explicación de qué se hace
+ahí y las acciones principales. Los nombres se reescribieron sin jerga de sistema: "Repartir automáticamente" en lugar
+de "Autobalancear Cargas", "Cargar facturas" en lugar de "Registrar / Editar Recibos", "Descargar el informe" en lugar
+de "Descargar Reporte PDF".
+
 ### Comprobaciones automáticas de la interfaz
 
 ```bash
@@ -305,12 +326,12 @@ Todo se guarda en `localStorage` del navegador:
    mismos defectos que tenía el presupuesto (importes con código de moneda que se parten y paginación forzada a una
    hoja recortando el sobrante).
 5. **Texto de UI hardcodeado en español**: si se prevé uso en otros países, introducir una capa de i18n.
-6. **Rediseño de formularios pendiente**: la fundación ya está (tema, primitivas, tipografía), pero los formularios
-   técnicos de las vistas (alta de cargas, tableros, mediciones) todavía usan los `input` con estilos sueltos; hay
-   que pasarlos a `Field`/`NumberField`/`SelectField` con ayudas y unidades, y agrupar los campos en pasos.
-7. **Vistas pendientes de pulir**: `PanelsView`, `DiagnosticView`, `ConsumptionHistoryView`, `CalculatorsView` y
-   `ClientList` ya usan los tokens y cumplen el mínimo de tipografía, pero conservan su densidad y sus tablas
-   propias; conviene llevar sus bloques a `Card`/`SectionHeader`/`Stat` y simplificar la carga de datos.
+6. **Modales del presupuesto**: las cuatro ventanas de `BudgetView` (catálogo de materiales, alta de rubro, nuevo
+   presupuesto y renombrar) todavía usan su propio envoltorio en vez del componente `Modal`, así que no cierran con
+   Escape ni bloquean el desplazamiento del fondo como el resto.
+7. **Vistas pendientes de pulir**: `CalculatorsView`, `ConsumptionHistoryView` y `BudgetView` ya usan los tokens, la
+   tipografía y la cabecera del sistema, pero conservan sus tablas y bloques densos propios; conviene llevarlos a
+   `Card`/`SectionHeader`/`Stat`.
 8. **Panel de inicio por cliente**: falta una pantalla de resumen que responda "¿en qué estado está este trabajo?"
    con las cifras clave y el próximo paso, en lugar de entrar directo al inventario de cargas.
 9. **Funciones de IA**: `@google/genai` está instalado y sin usar. Como la app es cliente puro, una clave de API
