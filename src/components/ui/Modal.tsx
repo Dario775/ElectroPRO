@@ -55,7 +55,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!isOpen) return null;
 
-  return createPortal(
+  const content = (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-3 sm:p-6">
       <div className="fixed inset-0 bg-black/65 backdrop-blur-sm" onClick={onClose} />
       <div
@@ -92,7 +92,11 @@ export const Modal: React.FC<ModalProps> = ({
           </footer>
         )}
       </div>
-    </div>,
-    document.body
+    </div>
   );
+
+  // Sin `document` (render de servidor o pruebas) se dibuja en el lugar en vez
+  // de usar un portal, así el componente es portable.
+  if (typeof document === 'undefined') return content;
+  return createPortal(content, document.body);
 };

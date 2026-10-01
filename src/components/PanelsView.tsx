@@ -14,19 +14,18 @@ import {
   Cpu,
   Thermometer,
   Gauge,
-  Maximize2,
   Info,
-  ChevronDown,
-  Building,
   Check,
-  X,
-  Sparkles,
   MapPin,
   Flame,
   GitBranch,
 } from 'lucide-react';
-import { ClientRecord, ElectricalPanel, ApplianceLoad, PanelType } from '../types/electrical';
+import { ClientRecord, ElectricalPanel, ApplianceLoad, PanelMeasurements, PanelType } from '../types/electrical';
 import { WIRE_GAUGES } from '../utils/electricalMath';
+import { Button } from './ui/Button';
+import { Callout } from './ui/Card';
+import { NumberField, SelectField, SwitchField, TextField } from './ui/Form';
+import { Modal } from './ui/Modal';
 
 interface PanelsViewProps {
   client: ClientRecord;
@@ -296,6 +295,22 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
     setSelectedPanelId(savedPanel.id);
     setIsPanelModalOpen(false);
   };
+
+  /** Actualiza un campo del tablero que se está editando. */
+  const updatePanelField = (patch: Partial<ElectricalPanel>): void => {
+    setEditingPanel((previous) => (previous ? { ...previous, ...patch } : previous));
+  };
+
+  /** Actualiza una medición puntual de ese tablero. */
+  const updatePanelMeasurement = (patch: Partial<PanelMeasurements>): void => {
+    setEditingPanel((previous) =>
+      previous ? { ...previous, measurements: { ...previous.measurements, ...patch } } : previous
+    );
+  };
+
+  /** Análisis del tablero que se está editando, para avisar en vivo. */
+  const editingAnalytics = editingPanel ? panelAnalytics.find((pa) => pa.panel.id === editingPanel.id) : undefined;
+  const editingIsExisting = editingPanel ? panels.some((p) => p.id === editingPanel.id) : false;
 
   // Delete Panel
   const handleDeletePanel = (panelIdToDelete: string) => {
@@ -940,483 +955,409 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       </div>
 
       {/* 4. MODAL: CREATE / EDIT ELECTRICAL PANEL */}
-      {isPanelModalOpen && editingPanel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-surface border border-hairline rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-4 border-b border-hairline flex items-center justify-between">
-              <div>
-                <h4 className="font-bold text-strong flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-accent-text" />
-                  <span>
-                    {panels.some((p) => p.id === editingPanel.id)
-                      ? 'Editar Tablero Eléctrico'
-                      : 'Registrar Nuevo Tablero'}
-                  </span>
-                </h4>
-                <p className="text-xs text-muted mt-0.5">
-                  Define el tipo, interruptores de protección, alimentador y mediciones in situ.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsPanelModalOpen(false)}
-                className="p-1 rounded-lg text-muted hover:text-strong hover:bg-raised"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {/* 4. MODAL: ALTA Y EDICIÓN DE TABLERO */}
+      <Modal
+        isOpen={isPanelModalOpen && editingPanel !== null}
+        onClose={() => setIsPanelModalOpen(false)}
+        title={editingIsExisting ? 'Editar tablero' : 'Cargar un tablero'}
+        description="Describí el tablero, su protección de cabecera y lo que mediste en él. Solo el nombre es obligatorio: el resto se puede completar después."
+        icon={<Layers className="h-4 w-4" />}
+        size="lg"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setIsPanelModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              icon={<Check className="h-4 w-4" />}
+              onClick={() => editingPanel && handleSavePanel(editingPanel)}
+            >
+              Guardar tablero
+            </Button>
+          </>
+        }
+      >
+        {editingPanel && (
+          <div className="space-y-6">
+            {/* 1. Identificación */}
+            <section className="space-y-4">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-accent-text">1. Identificación</h3>
 
-            {/* Modal Form Body */}
-            <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
-              {/* Identificación Básica */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-soft block mb-1">Nombre / Identificador</label>
-                  <input
-                    type="text"
-                    value={editingPanel.name}
-                    onChange={(e) => setEditingPanel({ ...editingPanel, name: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
-                    placeholder="ej. Tablero General (TG-01)"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-soft block mb-1">Tipo de Tablero</label>
-                  <select
-                    value={editingPanel.type}
-                    onChange={(e) => setEditingPanel({ ...editingPanel, type: e.target.value as PanelType })}
-                    className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
-                  >
-                    <option value="principal">Tablero Principal / General (TP)</option>
-                    <option value="seccional">Tablero Seccional (TS)</option>
-                    <option value="subpanel">Subpanel Derivado</option>
-                    <option value="especial">Tablero Especial (Bombas, Clima, etc.)</option>
-                  </select>
-                </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  label="Nombre del tablero"
+                  value={editingPanel.name}
+                  onChange={(value) => updatePanelField({ name: value })}
+                  placeholder="Tablero General (TG-01)"
+                  hint="Poné el nombre con el que lo vas a reconocer en el inmueble."
+                />
+                <SelectField
+                  label="Tipo de tablero"
+                  value={editingPanel.type}
+                  onChange={(value) => updatePanelField({ type: value as PanelType })}
+                  options={[
+                    { value: 'principal', label: 'Principal / General (TP)' },
+                    { value: 'seccional', label: 'Seccional (TS)' },
+                    { value: 'subpanel', label: 'Subpanel derivado' },
+                    { value: 'especial', label: 'Especial (bombas, clima, taller)' },
+                  ]}
+                  help="El tablero principal es el que recibe la acometida; de él cuelgan los seccionales."
+                />
               </div>
 
-              {/* Ubicación y Tablero Padre */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-soft block mb-1">Ubicación Física</label>
-                  <input
-                    type="text"
-                    value={editingPanel.location}
-                    onChange={(e) => setEditingPanel({ ...editingPanel, location: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
-                    placeholder="ej. Pasillo planta baja, Pilar acometida, Sala de máquinas"
-                  />
-                </div>
-
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  label="Ubicación física"
+                  value={editingPanel.location}
+                  onChange={(value) => updatePanelField({ location: value })}
+                  placeholder="Pasillo planta baja, pilar de acometida…"
+                  hint="Sirve para que cualquiera encuentre el tablero."
+                />
                 {editingPanel.type !== 'principal' && (
-                  <div>
-                    <label className="font-bold text-soft block mb-1">Tablero Aguas Arriba (Alimentador)</label>
-                    <select
-                      value={editingPanel.parentPanelId || ''}
-                      onChange={(e) => setEditingPanel({ ...editingPanel, parentPanelId: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
-                    >
-                      <option value="">Seleccionar tablero padre...</option>
-                      {panels
-                        .filter((p) => p.id !== editingPanel.id)
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} ({p.location})
-                          </option>
-                        ))}
-                    </select>
-                  </div>
+                  <SelectField
+                    label="Tablero aguas arriba"
+                    value={editingPanel.parentPanelId || ''}
+                    onChange={(value) => updatePanelField({ parentPanelId: value })}
+                    options={[
+                      { value: '', label: 'Sin definir' },
+                      ...panels
+                        .filter((panel) => panel.id !== editingPanel.id)
+                        .map((panel) => ({ value: panel.id, label: `${panel.name} — ${panel.location}` })),
+                    ]}
+                    help="Indica de qué tablero le llega la alimentación: así se arma el esquema jerárquico."
+                  />
                 )}
               </div>
 
-              {/* Térmica Principal de Cabecera */}
-              <div className="p-3.5 rounded-xl bg-sunken border border-hairline space-y-3">
-                <span className="font-bold text-accent-text block text-xs uppercase tracking-wider">
-                  Interruptor Termomagnético Principal del Tablero
-                </span>
+              <NumberField
+                label="Módulos DIN totales"
+                value={editingPanel.totalDinModules}
+                onChange={(value) => updatePanelField({ totalDinModules: value === '' ? 12 : value })}
+                unit="módulos"
+                min={2}
+                max={144}
+                step={6}
+                presets={[8, 12, 18, 24, 36, 48]}
+                presetsLabel="Gabinetes comunes:"
+                help="Los módulos DIN son los espacios de 17,5 mm de la barra donde se montan las protecciones. Sirven para saber si queda lugar para ampliar."
+              />
+            </section>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div>
-                    <label className="text-muted block mb-1">Calibre (Amperios)</label>
-                    <select
-                      value={editingPanel.mainBreakerAmps}
-                      onChange={(e) => setEditingPanel({ ...editingPanel, mainBreakerAmps: parseInt(e.target.value) || 25 })}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge font-mono text-strong"
-                    >
-                      {[15, 20, 25, 32, 40, 50, 60, 63, 70, 80, 100, 125].map((a) => (
-                        <option key={a} value={a}>
-                          {a} A
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+            {/* 2. Térmica principal */}
+            <section className="space-y-4 rounded-2xl border border-hairline bg-sunken p-4">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-accent-text">
+                2. Interruptor de cabecera
+              </h3>
 
-                  <div>
-                    <label className="text-muted block mb-1">Polos</label>
-                    <select
-                      value={editingPanel.mainBreakerPoles}
-                      onChange={(e) => setEditingPanel({ ...editingPanel, mainBreakerPoles: e.target.value as any })}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge text-strong"
-                    >
-                      <option value="1P+N">1P+N (Monofásico)</option>
-                      <option value="2P">2P (Bifásico/Monofásico)</option>
-                      <option value="3P">3P (Trifásico)</option>
-                      <option value="3P+N">3P+N (Trifásico con Neutro)</option>
-                      <option value="4P">4P (Tetrapolar)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-muted block mb-1">Curva</label>
-                    <select
-                      value={editingPanel.mainBreakerCurve || 'C'}
-                      onChange={(e) => setEditingPanel({ ...editingPanel, mainBreakerCurve: e.target.value as any })}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge text-strong"
-                    >
-                      <option value="B">Curva B (Generadores/Electrónica)</option>
-                      <option value="C">Curva C (Estándar residencial/comercial)</option>
-                      <option value="D">Curva D (Motores de alto arranque)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-muted block mb-1">Capacidad Ruptura</label>
-                    <select
-                      value={editingPanel.mainBreakerKACapacity || 4.5}
-                      onChange={(e) => setEditingPanel({ ...editingPanel, mainBreakerKACapacity: parseFloat(e.target.value) || 4.5 })}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge font-mono text-strong"
-                    >
-                      <option value={3}>3 kA</option>
-                      <option value={4.5}>4.5 kA (Estándar)</option>
-                      <option value={6}>6 kA (Reforzado)</option>
-                      <option value={10}>10 kA (Industrial/Acometida)</option>
-                    </select>
-                  </div>
-                </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <NumberField
+                  label="Calibre"
+                  value={editingPanel.mainBreakerAmps}
+                  onChange={(value) => updatePanelField({ mainBreakerAmps: value === '' ? 25 : value })}
+                  unit="A"
+                  min={6}
+                  max={400}
+                  step={1}
+                  presets={[16, 20, 25, 32, 40, 50, 63]}
+                  presetsLabel="Comerciales:"
+                />
+                <SelectField
+                  label="Polos"
+                  value={editingPanel.mainBreakerPoles}
+                  onChange={(value) => updatePanelField({ mainBreakerPoles: value as ElectricalPanel['mainBreakerPoles'] })}
+                  options={[
+                    { value: '1P+N', label: '1P+N (monofásico)' },
+                    { value: '2P', label: '2P (bifásico)' },
+                    { value: '3P', label: '3P (trifásico)' },
+                    { value: '3P+N', label: '3P+N (trifásico con neutro)' },
+                    { value: '4P', label: '4P (tetrapolar)' },
+                  ]}
+                />
+                <SelectField
+                  label="Curva de disparo"
+                  value={editingPanel.mainBreakerCurve || 'C'}
+                  onChange={(value) => updatePanelField({ mainBreakerCurve: value as ElectricalPanel['mainBreakerCurve'] })}
+                  options={[
+                    { value: 'B', label: 'B · electrónica' },
+                    { value: 'C', label: 'C · uso general' },
+                    { value: 'D', label: 'D · motores' },
+                  ]}
+                  help="La curva define con cuánta corriente de arranque dispara: B para cargas electrónicas, C para uso residencial, D para motores que arrancan con mucha corriente."
+                />
+                <SelectField
+                  label="Poder de corte"
+                  value={String(editingPanel.mainBreakerKACapacity || 4.5)}
+                  onChange={(value) => updatePanelField({ mainBreakerKACapacity: parseFloat(value) })}
+                  options={[
+                    { value: '3', label: '3 kA' },
+                    { value: '4.5', label: '4,5 kA · estándar' },
+                    { value: '6', label: '6 kA · reforzado' },
+                    { value: '10', label: '10 kA · industrial' },
+                  ]}
+                  help="Es la corriente de cortocircuito que la térmica puede interrumpir sin destruirse. Cuanto más cerca del transformador, mayor debe ser."
+                />
               </div>
 
-              {/* Disyuntor Diferencial */}
-              <div className="p-3.5 rounded-xl bg-sunken border border-hairline space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-strong text-xs">
-                    Disyuntor Diferencial / Interruptor de Fuga
-                  </span>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editingPanel.hasDifferential}
-                      onChange={(e) => setEditingPanel({ ...editingPanel, hasDifferential: e.target.checked })}
-                      className="accent-amber-500 w-4 h-4 rounded"
-                    />
-                    <span className="text-soft font-semibold">¿Está instalado?</span>
-                  </label>
+              {/* Aviso en vivo con la carga que ya está conectada a este tablero */}
+              {editingAnalytics && editingAnalytics.maxPhaseAmps > 0 && (
+                <Callout
+                  tone={
+                    editingAnalytics.maxPhaseAmps > editingPanel.mainBreakerAmps
+                      ? 'danger'
+                      : editingAnalytics.maxPhaseAmps > editingPanel.mainBreakerAmps * 0.8
+                      ? 'warning'
+                      : 'success'
+                  }
+                  title={
+                    editingAnalytics.maxPhaseAmps > editingPanel.mainBreakerAmps
+                      ? 'La térmica queda chica para la carga conectada'
+                      : editingAnalytics.maxPhaseAmps > editingPanel.mainBreakerAmps * 0.8
+                      ? 'La térmica está muy justa'
+                      : 'La térmica acompaña a la carga conectada'
+                  }
+                >
+                  Las cargas asignadas a este tablero demandan {editingAnalytics.maxPhaseAmps.toFixed(1)} A en la fase más
+                  cargada y la cabecera es de {editingPanel.mainBreakerAmps} A (
+                  {Math.round((editingAnalytics.maxPhaseAmps / editingPanel.mainBreakerAmps) * 100)} % de uso).
+                </Callout>
+              )}
+            </section>
+
+            {/* 3. Protección diferencial */}
+            <section className="space-y-4 rounded-2xl border border-hairline bg-sunken p-4">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-accent-text">
+                3. Protección diferencial
+              </h3>
+
+              <SwitchField
+                label="Tiene disyuntor diferencial"
+                description="Interruptor de fuga que corta ante una derivación a tierra."
+                checked={editingPanel.hasDifferential}
+                onChange={(checked) => updatePanelField({ hasDifferential: checked })}
+                help="Es la protección que evita una descarga eléctrica grave: detecta la corriente que se escapa a tierra y corta en milisegundos."
+              />
+
+              {editingPanel.hasDifferential && (
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <SelectField
+                    label="Sensibilidad"
+                    value={String(editingPanel.differentialSensitivityMa || 30)}
+                    onChange={(value) => updatePanelField({ differentialSensitivityMa: parseInt(value) })}
+                    options={[
+                      { value: '30', label: '30 mA · protege personas' },
+                      { value: '300', label: '300 mA · protección de incendio' },
+                    ]}
+                    help="30 mA es la sensibilidad que protege a las personas. 300 mA se usa como protección general contra incendio, aguas arriba de los de 30 mA."
+                  />
+                  <NumberField
+                    label="Amperaje del diferencial"
+                    value={editingPanel.differentialAmps || 40}
+                    onChange={(value) => updatePanelField({ differentialAmps: value === '' ? 40 : value })}
+                    unit="A"
+                    min={16}
+                    max={125}
+                    presets={[25, 40, 63]}
+                    hint="Debe ser igual o algo mayor que la térmica de cabecera."
+                  />
+                  <SelectField
+                    label="Polos"
+                    value={editingPanel.differentialPoles || '2P'}
+                    onChange={(value) =>
+                      updatePanelField({ differentialPoles: value as ElectricalPanel['differentialPoles'] })
+                    }
+                    options={[
+                      { value: '2P', label: 'Bipolar (2P)' },
+                      { value: '4P', label: 'Tetrapolar (4P)' },
+                    ]}
+                  />
                 </div>
+              )}
+            </section>
 
-                {editingPanel.hasDifferential && (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                    <div>
-                      <label className="text-muted block mb-1">Sensibilidad</label>
-                      <select
-                        value={editingPanel.differentialSensitivityMa || 30}
-                        onChange={(e) => setEditingPanel({ ...editingPanel, differentialSensitivityMa: parseInt(e.target.value) || 30 })}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge text-strong"
-                      >
-                        <option value={30}>30 mA (Protección Vidas Humanas)</option>
-                        <option value={300}>300 mA (Protección Incendio / Selectivo)</option>
-                      </select>
-                    </div>
+            {/* 4. Alimentador y gabinete */}
+            <section className="space-y-4 rounded-2xl border border-hairline bg-sunken p-4">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-accent-text">
+                4. Alimentador y gabinete
+              </h3>
 
-                    <div>
-                      <label className="text-muted block mb-1">Amperaje Diferencial</label>
-                      <select
-                        value={editingPanel.differentialAmps || 40}
-                        onChange={(e) => setEditingPanel({ ...editingPanel, differentialAmps: parseInt(e.target.value) || 40 })}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge font-mono text-strong"
-                      >
-                        <option value={25}>25 A</option>
-                        <option value={40}>40 A</option>
-                        <option value={63}>63 A</option>
-                      </select>
-                    </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <SelectField
+                  label="Calibre del alimentador"
+                  value={editingPanel.feederGauge || '8 AWG'}
+                  onChange={(value) => updatePanelField({ feederGauge: value })}
+                  options={WIRE_GAUGES.map((gauge) => ({
+                    value: gauge.awg,
+                    label: `${gauge.awg} · ${gauge.mm2} mm² · hasta ${gauge.ampacity75C} A`,
+                  }))}
+                  help="Es el cable que llega al tablero. Tiene que aguantar más corriente que la térmica de cabecera."
+                />
+                <NumberField
+                  label="Longitud del alimentador"
+                  value={editingPanel.feederLengthMeters || 10}
+                  onChange={(value) => updatePanelField({ feederLengthMeters: value === '' ? 1 : value })}
+                  unit="m"
+                  min={1}
+                  max={300}
+                  step={1}
+                  hint="Se usa para calcular la caída de tensión del tramo."
+                />
+                <SelectField
+                  label="Material del conductor"
+                  value={editingPanel.feederMaterial || 'copper'}
+                  onChange={(value) => updatePanelField({ feederMaterial: value as ElectricalPanel['feederMaterial'] })}
+                  options={[
+                    { value: 'copper', label: 'Cobre' },
+                    { value: 'aluminum', label: 'Aluminio' },
+                  ]}
+                  help="El aluminio conduce menos que el cobre: para la misma corriente necesita una sección mayor."
+                />
+              </div>
+            </section>
 
-                    <div>
-                      <label className="text-muted block mb-1">Polos</label>
-                      <select
-                        value={editingPanel.differentialPoles || '2P'}
-                        onChange={(e) => setEditingPanel({ ...editingPanel, differentialPoles: e.target.value as any })}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge text-strong"
-                      >
-                        <option value="2P">Bipolar (2P)</option>
-                        <option value="4P">Tetrapolar (4P)</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
+            {/* 5. Estado y mediciones */}
+            <section className="space-y-4 rounded-2xl border border-hairline bg-sunken p-4">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-accent-text">
+                5. Estado del tablero y mediciones
+              </h3>
+
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <SwitchField
+                  label="Tiene descargador de sobretensiones (DPS)"
+                  description="Protege contra picos de tensión y rayos."
+                  checked={editingPanel.hasSurgeProtector}
+                  onChange={(checked) => updatePanelField({ hasSurgeProtector: checked })}
+                  help="El DPS deriva a tierra los picos de tensión (por ejemplo los de una tormenta) antes de que lleguen a los equipos."
+                />
+                <SwitchField
+                  label="Tiene barra de tierra"
+                  description="Barra donde se conectan los conductores de protección."
+                  checked={editingPanel.hasGroundBar}
+                  onChange={(checked) => updatePanelField({ hasGroundBar: checked })}
+                />
+                <SwitchField
+                  label="Está rotulado"
+                  description="Circuitos identificados y con advertencia de tensión."
+                  checked={editingPanel.isLabeled}
+                  onChange={(checked) => updatePanelField({ isLabeled: checked })}
+                  help="La rotulación es obligatoria: permite cortar el circuito correcto sin adivinar."
+                />
+                <SwitchField
+                  label="Hay puntos calientes"
+                  description="Bornes recalentados o marcas de calor."
+                  checked={editingPanel.hasHotSpots}
+                  onChange={(checked) => updatePanelField({ hasHotSpots: checked })}
+                  help="Un borne recalentado es un falso contacto: se marca como prioridad alta en el plan de trabajo."
+                />
               </div>
 
-              {/* Alimentador, Gabinete y Seguridad */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="font-bold text-soft block mb-1">Calibre Alimentador</label>
-                  <select
-                    value={editingPanel.feederGauge || '8 AWG'}
-                    onChange={(e) => setEditingPanel({ ...editingPanel, feederGauge: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-sunken border border-edge text-strong font-mono"
-                  >
-                    {WIRE_GAUGES.map((w) => (
-                      <option key={w.awg} value={w.awg}>
-                        {w.awg} ({w.mm2} mm²)
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <SelectField
+                label="Estado físico general del tablero"
+                value={editingPanel.physicalCondition}
+                onChange={(value) =>
+                  updatePanelField({ physicalCondition: value as ElectricalPanel['physicalCondition'] })
+                }
+                options={[
+                  { value: 'bueno', label: 'Bueno' },
+                  { value: 'regular', label: 'Regular' },
+                  { value: 'critico', label: 'Crítico' },
+                ]}
+              />
 
-                <div>
-                  <label className="font-bold text-soft block mb-1">Distancia del Cable (m)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={editingPanel.feederLengthMeters || 10}
-                    onChange={(e) => setEditingPanel({ ...editingPanel, feederLengthMeters: Math.max(1, parseInt(e.target.value) || 1) })}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-sunken border border-edge text-strong font-mono"
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-soft">
+                  Mediciones tomadas en este tablero{' '}
+                  <span className="font-normal text-muted">(opcional)</span>
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <NumberField
+                    label="Tensión L1"
+                    value={editingPanel.measurements?.vL1N || ''}
+                    onChange={(value) => updatePanelMeasurement({ vL1N: value === '' ? undefined : value })}
+                    unit="V"
+                    min={0}
+                    max={600}
+                    step={1}
                   />
-                </div>
-
-                <div>
-                  <label className="font-bold text-soft block mb-1">Módulos DIN Totales</label>
-                  <select
-                    value={editingPanel.totalDinModules || 12}
-                    onChange={(e) => setEditingPanel({ ...editingPanel, totalDinModules: parseInt(e.target.value) || 12 })}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-sunken border border-edge text-strong font-mono"
-                  >
-                    {[4, 6, 8, 12, 18, 24, 36, 48, 54, 72].map((m) => (
-                      <option key={m} value={m}>
-                        {m} Módulos DIN
-                      </option>
-                    ))}
-                  </select>
+                  <NumberField
+                    label="Tensión L2"
+                    value={editingPanel.measurements?.vL2N || ''}
+                    onChange={(value) => updatePanelMeasurement({ vL2N: value === '' ? undefined : value })}
+                    unit="V"
+                    min={0}
+                    max={600}
+                    step={1}
+                  />
+                  <NumberField
+                    label="Corriente L1"
+                    value={editingPanel.measurements?.iL1 || ''}
+                    onChange={(value) => updatePanelMeasurement({ iL1: value === '' ? undefined : value })}
+                    unit="A"
+                    min={0}
+                    max={600}
+                    step={0.1}
+                  />
+                  <NumberField
+                    label="Temperatura del tablero"
+                    value={editingPanel.measurements?.panelTempC || ''}
+                    onChange={(value) => updatePanelMeasurement({ panelTempC: value === '' ? undefined : value })}
+                    unit="°C"
+                    min={0}
+                    max={120}
+                    step={1}
+                    help="Se mide con termómetro infrarrojo sobre los bornes y las protecciones. Más de 60 °C indica un problema."
+                  />
                 </div>
               </div>
-
-              {/* Checkboxes de Estado Físico y Barras */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-sunken border border-hairline cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingPanel.hasSurgeProtector}
-                    onChange={(e) => setEditingPanel({ ...editingPanel, hasSurgeProtector: e.target.checked })}
-                    className="accent-amber-500 w-4 h-4 rounded"
-                  />
-                  <span className="text-soft">Tiene DPS</span>
-                </label>
-
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-sunken border border-hairline cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingPanel.hasGroundBar}
-                    onChange={(e) => setEditingPanel({ ...editingPanel, hasGroundBar: e.target.checked })}
-                    className="accent-amber-500 w-4 h-4 rounded"
-                  />
-                  <span className="text-soft">Barra de Tierra</span>
-                </label>
-
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-sunken border border-hairline cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingPanel.isLabeled}
-                    onChange={(e) => setEditingPanel({ ...editingPanel, isLabeled: e.target.checked })}
-                    className="accent-amber-500 w-4 h-4 rounded"
-                  />
-                  <span className="text-soft">Rotulado</span>
-                </label>
-
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-sunken border border-hairline cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingPanel.hasHotSpots}
-                    onChange={(e) => setEditingPanel({ ...editingPanel, hasHotSpots: e.target.checked })}
-                    className="accent-rose-500 w-4 h-4 rounded"
-                  />
-                  <span className="text-danger-text font-bold">Puntos Calientes</span>
-                </label>
-              </div>
-
-              {/* Mediciones de campo in-situ */}
-              <div className="p-3.5 rounded-xl bg-sunken border border-hairline space-y-2">
-                <span className="font-bold text-strong block text-xs">
-                  Mediciones Tomadas en este Tablero (Opcional)
-                </span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div>
-                    <label className="text-faint text-xs block">Tensión L1 (V)</label>
-                    <input
-                      type="number"
-                      value={editingPanel.measurements?.vL1N || ''}
-                      onChange={(e) =>
-                        setEditingPanel({
-                          ...editingPanel,
-                          measurements: {
-                            ...editingPanel.measurements,
-                            vL1N: parseFloat(e.target.value) || 0,
-                          },
-                        })
-                      }
-                      className="w-full px-2 py-1 rounded bg-surface border border-edge text-strong font-mono text-xs"
-                      placeholder="120"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-faint text-xs block">Tensión L2 (V)</label>
-                    <input
-                      type="number"
-                      value={editingPanel.measurements?.vL2N || ''}
-                      onChange={(e) =>
-                        setEditingPanel({
-                          ...editingPanel,
-                          measurements: {
-                            ...editingPanel.measurements,
-                            vL2N: parseFloat(e.target.value) || 0,
-                          },
-                        })
-                      }
-                      className="w-full px-2 py-1 rounded bg-surface border border-edge text-strong font-mono text-xs"
-                      placeholder="120"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-faint text-xs block">Corriente L1 (A)</label>
-                    <input
-                      type="number"
-                      value={editingPanel.measurements?.iL1 || ''}
-                      onChange={(e) =>
-                        setEditingPanel({
-                          ...editingPanel,
-                          measurements: {
-                            ...editingPanel.measurements,
-                            iL1: parseFloat(e.target.value) || 0,
-                          },
-                        })
-                      }
-                      className="w-full px-2 py-1 rounded bg-surface border border-edge text-accent-text font-mono text-xs"
-                      placeholder="25"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-faint text-xs block">Temp. Tablero (°C)</label>
-                    <input
-                      type="number"
-                      value={editingPanel.measurements?.panelTempC || ''}
-                      onChange={(e) =>
-                        setEditingPanel({
-                          ...editingPanel,
-                          measurements: {
-                            ...editingPanel.measurements,
-                            panelTempC: parseFloat(e.target.value) || 0,
-                          },
-                        })
-                      }
-                      className="w-full px-2 py-1 rounded bg-surface border border-edge text-strong font-mono text-xs"
-                      placeholder="35"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-hairline bg-sunken flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsPanelModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-edge text-soft hover:bg-raised text-xs font-semibold"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSavePanel(editingPanel)}
-                className="px-5 py-2 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs font-bold transition-colors shadow-md"
-              >
-                Guardar Tablero
-              </button>
-            </div>
+            </section>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
-      {/* 5. MODAL: REASSIGN LOAD TO ANOTHER PANEL */}
-      {reassignLoadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-surface border border-hairline rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-hairline pb-2">
-              <h4 className="font-bold text-strong text-sm flex items-center gap-1.5">
-                <ArrowRight className="w-4 h-4 text-accent-text" />
-                <span>Reasignar Circuito a Otro Tablero</span>
-              </h4>
-              <button
-                type="button"
-                onClick={() => setReassignLoadModal(null)}
-                className="text-muted hover:text-strong"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="text-xs space-y-2">
-              <p className="text-soft">
-                Selecciona a qué tablero deseas transferir el siguiente circuito para aliviar la carga térmica:
+      {/* 5. MODAL: REASIGNAR UN CIRCUITO A OTRO TABLERO */}
+      <Modal
+        isOpen={reassignLoadModal !== null}
+        onClose={() => setReassignLoadModal(null)}
+        title="Mover un circuito a otro tablero"
+        description="Sirve para aliviar un tablero sobrecargado pasando el circuito a otro con lugar."
+        icon={<ArrowRight className="h-4 w-4" />}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setReassignLoadModal(null)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" icon={<Check className="h-4 w-4" />} onClick={handleExecuteReassign}>
+              Mover el circuito
+            </Button>
+          </>
+        }
+      >
+        {reassignLoadModal && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-hairline bg-sunken p-3.5">
+              <p className="text-sm font-bold text-strong">
+                {reassignLoadModal.circuitName} · {reassignLoadModal.name}
               </p>
-              <div className="p-3 rounded-xl bg-sunken border border-hairline">
-                <strong className="text-accent-text block font-bold text-sm">
-                  {reassignLoadModal.circuitName} - {reassignLoadModal.name}
-                </strong>
-                <span className="text-xs text-muted">
-                  Potencia: {reassignLoadModal.powerWatts} W • Fase: {reassignLoadModal.assignedPhase} • Térmica: {reassignLoadModal.breakerRatingAmps}A
-                </span>
-              </div>
+              <p className="mt-1 text-xs text-muted">
+                {reassignLoadModal.powerWatts} W · fase {reassignLoadModal.assignedPhase} · térmica de{' '}
+                {reassignLoadModal.breakerRatingAmps} A
+              </p>
             </div>
 
-            <div>
-              <label className="font-bold text-soft text-xs block mb-1">
-                Tablero de Destino
-              </label>
-              <select
-                value={targetPanelForReassign}
-                onChange={(e) => setTargetPanelForReassign(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong text-xs focus:border-accent focus:outline-none"
-              >
-                {panels.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.location}) - Térmica {p.mainBreakerAmps}A
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-hairline">
-              <button
-                type="button"
-                onClick={() => setReassignLoadModal(null)}
-                className="px-3.5 py-1.5 rounded-xl border border-edge text-soft hover:bg-raised text-xs"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleExecuteReassign}
-                className="px-4 py-1.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs font-bold transition-colors"
-              >
-                Confirmar Transferencia
-              </button>
-            </div>
+            <SelectField
+              label="Tablero de destino"
+              value={targetPanelForReassign}
+              onChange={setTargetPanelForReassign}
+              options={panels.map((panel) => ({
+                value: panel.id,
+                label: `${panel.name} — ${panel.location} (cabecera de ${panel.mainBreakerAmps} A)`,
+              }))}
+              hint="Elegí un tablero con cabecera suficiente para la corriente de este circuito."
+            />
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 };

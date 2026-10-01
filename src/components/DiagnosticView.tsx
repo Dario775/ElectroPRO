@@ -18,6 +18,10 @@ import {
 import { ClientRecord, FieldMeasurements, DiagnosticActionItem } from '../types/electrical';
 import { analyzeInstallation, DEFAULT_MEASUREMENTS } from '../utils/diagnosticEngine';
 import { WIRE_GAUGES } from '../utils/electricalMath';
+import { Card, SectionHeader, Stat } from './ui/Card';
+import { Callout } from './ui/Card';
+import { NumberField, SelectField, SwitchField } from './ui/Form';
+import { cx } from '../utils/cx';
 
 interface DiagnosticViewProps {
   client: ClientRecord;
@@ -243,207 +247,198 @@ export const DiagnosticView: React.FC<DiagnosticViewProps> = ({
         </div>
       </div>
 
-      {/* 3. FIELD DATA INPUT ACCORDION / FORM */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 space-y-5 shadow-sm">
-        <div className="flex items-center justify-between border-b border-hairline pb-3">
-          <div className="flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-accent-text" />
-            <h3 className="font-bold text-sm sm:text-base text-strong">
-              Datos Medidos de la Instalación Existente (Inspección en Obra)
+      {/* 3. Toma de datos en obra */}
+      <Card padding="lg" className="space-y-5">
+        <SectionHeader
+          eyebrow="Paso 3 · Relevamiento"
+          title="Mediciones en el lugar"
+          description="Cargá lo que mediste con el multímetro, la pinza y el telurómetro. Cada dato alimenta el índice de seguridad y el plan de trabajo de abajo, que se actualiza mientras escribís."
+          icon={<Sliders className="h-4 w-4" />}
+        />
+
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          {/* A. Tensiones */}
+          <section className="space-y-4 rounded-2xl border border-hairline bg-sunken p-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-accent-text">
+              1. Tensiones (multímetro)
             </h3>
-          </div>
-          <span className="text-xs text-muted font-medium">Actualización en tiempo real</span>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 text-xs">
-          {/* Section A: Measured Voltages */}
-          <div className="p-4 rounded-xl bg-sunken border border-hairline space-y-3">
-            <span className="font-bold text-accent-text uppercase text-xs tracking-wider block">
-              1. Tensiones Medidas (Multímetro)
-            </span>
-
-            <div>
-              <label className="text-soft font-semibold block mb-1">Voltaje Fase L1 - Neutro (V)</label>
-              <input
-                type="number"
-                value={measurements.vL1N}
-                onChange={(e) => handleUpdateField('vL1N', parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-1.5 rounded-lg bg-surface border border-edge font-mono text-sm font-bold text-strong focus:border-accent focus:outline-none"
-              />
-            </div>
+            <NumberField
+              label="Tensión L1 - neutro"
+              value={measurements.vL1N}
+              onChange={(value) => handleUpdateField('vL1N', value === '' ? 0 : value)}
+              unit="V"
+              min={0}
+              max={600}
+              step={1}
+              presets={[110, 120, 220, 230, 240]}
+              presetsLabel="Frecuentes:"
+              help="Se mide entre la fase y el neutro, en la acometida o en el tablero principal."
+              hint="Compará con la tensión nominal del suministro: una diferencia mayor al 7 % ya es un problema."
+            />
 
             {!isSinglePhase && (
-              <div>
-                <label className="text-soft font-semibold block mb-1">Voltaje Fase L2 - Neutro (V)</label>
-                <input
-                  type="number"
-                  value={measurements.vL2N || 0}
-                  onChange={(e) => handleUpdateField('vL2N', parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-1.5 rounded-lg bg-surface border border-edge font-mono text-sm font-bold text-strong focus:border-accent focus:outline-none"
-                />
-              </div>
+              <NumberField
+                label="Tensión L2 - neutro"
+                value={measurements.vL2N ?? ''}
+                onChange={(value) => handleUpdateField('vL2N', value === '' ? 0 : value)}
+                unit="V"
+                min={0}
+                max={600}
+                step={1}
+                help="Con las tres tensiones el programa calcula el desbalance de tensión entre fases."
+              />
             )}
 
             {isThreePhase && (
-              <div>
-                <label className="text-soft font-semibold block mb-1">Voltaje Fase L3 - Neutro (V)</label>
-                <input
-                  type="number"
-                  value={measurements.vL3N || 0}
-                  onChange={(e) => handleUpdateField('vL3N', parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-1.5 rounded-lg bg-surface border border-edge font-mono text-sm font-bold text-strong focus:border-accent focus:outline-none"
-                />
-              </div>
+              <NumberField
+                label="Tensión L3 - neutro"
+                value={measurements.vL3N ?? ''}
+                onChange={(value) => handleUpdateField('vL3N', value === '' ? 0 : value)}
+                unit="V"
+                min={0}
+                max={600}
+                step={1}
+              />
             )}
 
-            <div>
-              <label className="text-soft font-semibold block mb-1">
-                Tensión en Tomacorriente más Lejano (V)
-              </label>
-              <input
-                type="number"
-                value={measurements.farthestOutletVoltage || 0}
-                onChange={(e) => handleUpdateField('farthestOutletVoltage', parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-1.5 rounded-lg bg-surface border border-edge font-mono text-sm text-strong focus:border-accent focus:outline-none"
-              />
-            </div>
-          </div>
+            <NumberField
+              label="Tensión en el tomacorriente más lejano"
+              value={measurements.farthestOutletVoltage ?? ''}
+              onChange={(value) => handleUpdateField('farthestOutletVoltage', value === '' ? 0 : value)}
+              unit="V"
+              min={0}
+              max={600}
+              step={1}
+              help="Es la prueba de la caída de tensión real: si en el punto más alejado la tensión cae mucho, hay conductores finos o tramos demasiado largos."
+              hint="Medila con el mayor consumo posible conectado."
+            />
+          </section>
 
-          {/* Section B: Measured Currents */}
-          <div className="p-4 rounded-xl bg-sunken border border-hairline space-y-3">
-            <span className="font-bold text-data-text uppercase text-xs tracking-wider block">
-              2. Corrientes Medidas en Pico (Pinza Amperimétrica)
-            </span>
+          {/* B. Corrientes */}
+          <section className="space-y-4 rounded-2xl border border-hairline bg-sunken p-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-data-text">
+              2. Corrientes (pinza amperimétrica)
+            </h3>
 
-            <div>
-              <label className="text-soft font-semibold block mb-1">Corriente Fase L1 (Amperios)</label>
-              <input
-                type="number"
-                value={measurements.iL1}
-                onChange={(e) => handleUpdateField('iL1', parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-1.5 rounded-lg bg-surface border border-edge font-mono text-sm font-bold text-danger-text focus:border-accent focus:outline-none"
-              />
-            </div>
+            <NumberField
+              label="Corriente de fase L1"
+              value={measurements.iL1}
+              onChange={(value) => handleUpdateField('iL1', value === '' ? 0 : value)}
+              unit="A"
+              min={0}
+              max={600}
+              step={0.1}
+              help="Se mide con la instalación funcionando en su momento de mayor consumo, no en reposo."
+              hint="Tomá la lectura en el pico de uso para que sirva."
+            />
 
             {!isSinglePhase && (
-              <div>
-                <label className="text-soft font-semibold block mb-1">Corriente Fase L2 (Amperios)</label>
-                <input
-                  type="number"
-                  value={measurements.iL2 ?? 0}
-                  onChange={(e) => handleUpdateField('iL2', parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-1.5 rounded-lg bg-surface border border-edge font-mono text-sm font-bold text-accent-text focus:border-accent focus:outline-none"
-                />
-              </div>
+              <NumberField
+                label="Corriente de fase L2"
+                value={measurements.iL2 ?? ''}
+                onChange={(value) => handleUpdateField('iL2', value === '' ? 0 : value)}
+                unit="A"
+                min={0}
+                max={600}
+                step={0.1}
+              />
             )}
 
             {isThreePhase && (
-              <div>
-                <label className="text-soft font-semibold block mb-1">Corriente Fase L3 (Amperios)</label>
-                <input
-                  type="number"
-                  value={measurements.iL3 ?? 0}
-                  onChange={(e) => handleUpdateField('iL3', parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-1.5 rounded-lg bg-surface border border-edge font-mono text-sm font-bold text-info-text focus:border-accent focus:outline-none"
-                />
-              </div>
+              <NumberField
+                label="Corriente de fase L3"
+                value={measurements.iL3 ?? ''}
+                onChange={(value) => handleUpdateField('iL3', value === '' ? 0 : value)}
+                unit="A"
+                min={0}
+                max={600}
+                step={0.1}
+              />
             )}
 
-            <div>
-              <label className="text-soft font-semibold block mb-1">
-                Corriente Conductor Neutro IN (Amperios)
-              </label>
-              <input
-                type="number"
-                value={measurements.iNeutro}
-                onChange={(e) => handleUpdateField('iNeutro', parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-1.5 rounded-lg bg-surface border border-edge font-mono text-sm font-bold text-soft focus:border-accent focus:outline-none"
+            <NumberField
+              label="Corriente del neutro"
+              value={measurements.iNeutro}
+              onChange={(value) => handleUpdateField('iNeutro', value === '' ? 0 : value)}
+              unit="A"
+              min={0}
+              max={600}
+              step={0.1}
+              help="Si el neutro lleva mucha corriente, las fases están desbalanceadas o hay cargas con armónicos."
+              hint="En una instalación bien repartida el neutro lleva muy poca corriente."
+            />
+          </section>
+
+          {/* C. Protecciones y estado */}
+          <section className="space-y-4 rounded-2xl border border-hairline bg-sunken p-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-success-text">
+              3. Protecciones y estado físico
+            </h3>
+
+            <NumberField
+              label="Resistencia de puesta a tierra"
+              value={measurements.groundResistanceOhms}
+              onChange={(value) => handleUpdateField('groundResistanceOhms', value === '' ? 0 : value)}
+              unit="Ω"
+              min={0}
+              max={500}
+              step={1}
+              presets={[5, 10, 15, 20, 25]}
+              presetsLabel="Referencia:"
+              help="Se mide con telurómetro entre la jabalina y tierra de referencia. El criterio que aplica el programa es no pasar de 25 Ω."
+              hint="Cuanto más baja, mejor: por encima de 25 Ω el plan de trabajo incluye mejorarla."
+            />
+
+            <SelectField
+              label="Calibre del alimentador principal"
+              value={measurements.mainFeederCaliber}
+              onChange={(value) => handleUpdateField('mainFeederCaliber', value)}
+              options={WIRE_GAUGES.map((gauge) => ({
+                value: gauge.awg,
+                label: `${gauge.awg} · ${gauge.mm2} mm² · hasta ${gauge.ampacity75C} A`,
+              }))}
+              hint="Sirve para saber si el cable acompaña a la protección."
+            />
+
+            <SelectField
+              label="Estado del aislamiento de los cables"
+              value={measurements.conductorCondition}
+              onChange={(value) => handleUpdateField('conductorCondition', value as FieldMeasurements['conductorCondition'])}
+              options={[
+                { value: 'bueno', label: 'Bueno: aislación íntegra' },
+                { value: 'regular', label: 'Regular: desgaste moderado' },
+                { value: 'critico_deteriorado', label: 'Crítico: cuarteado o reseco' },
+              ]}
+              help="Un aislamiento cuarteado es riesgo de cortocircuito y de fuga a tierra."
+            />
+
+            <div className="space-y-2.5 pt-1">
+              <SwitchField
+                label="Tiene disyuntor diferencial"
+                description="Protección de 30 mA contra contacto indirecto."
+                checked={measurements.hasDifferentialBreaker}
+                onChange={(checked) => handleUpdateField('hasDifferentialBreaker', checked)}
+                help="Es la protección que evita una descarga eléctrica grave. Si falta, el plan de trabajo la reclama como prioridad alta."
+              />
+              <SwitchField
+                label="Tiene jabalina de puesta a tierra"
+                description="Pica de tierra física conectada al tablero."
+                checked={measurements.hasGroundRod}
+                onChange={(checked) => handleUpdateField('hasGroundRod', checked)}
+              />
+              <SwitchField
+                label="Hay bornes quemados o marcas de calor"
+                description="Signos de recalentamiento en el tablero."
+                checked={measurements.panelThermalSigns}
+                onChange={(checked) => handleUpdateField('panelThermalSigns', checked)}
+                help="Un borne recalentado es un falso contacto: aumenta la resistencia, calienta más y puede terminar en incendio. Se marca como prioridad crítica."
               />
             </div>
-          </div>
-
-          {/* Section C: Safety & Physical Status Checklist */}
-          <div className="p-4 rounded-xl bg-sunken border border-hairline space-y-3">
-            <span className="font-bold text-success-text uppercase text-xs tracking-wider block">
-              3. Protecciones y Estado Físico
-            </span>
-
-            <div>
-              <label className="text-soft font-semibold block mb-1">Resistencia de Puesta a Tierra (Ω)</label>
-              <input
-                type="number"
-                value={measurements.groundResistanceOhms}
-                onChange={(e) => handleUpdateField('groundResistanceOhms', parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-1.5 rounded-lg bg-surface border border-edge font-mono text-sm font-bold text-strong focus:border-accent focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="text-soft font-semibold block mb-1">Calibre Alimentador Principal</label>
-              <select
-                value={measurements.mainFeederCaliber}
-                onChange={(e) => handleUpdateField('mainFeederCaliber', e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg bg-surface border border-edge font-mono text-xs text-strong focus:border-accent focus:outline-none"
-              >
-                {WIRE_GAUGES.map((w) => (
-                  <option key={w.awg} value={w.awg}>
-                    {w.awg} ({w.mm2} mm² - máx {w.ampacity75C}A)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-soft font-semibold block mb-1">Estado de Aislamiento de Cables</label>
-              <select
-                value={measurements.conductorCondition}
-                onChange={(e) => handleUpdateField('conductorCondition', e.target.value as any)}
-                className="w-full px-3 py-1.5 rounded-lg bg-surface border border-edge text-xs text-strong focus:border-accent focus:outline-none"
-              >
-                <option value="bueno">Buen estado (Aislamiento íntegro)</option>
-                <option value="regular">Regular (Desgaste moderado)</option>
-                <option value="critico_deteriorado">Crítico / Cuarteado / Reseco</option>
-              </select>
-            </div>
-
-            {/* Checkbox Toggles */}
-            <div className="space-y-2 pt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={measurements.hasDifferentialBreaker}
-                  onChange={(e) => handleUpdateField('hasDifferentialBreaker', e.target.checked)}
-                  className="rounded bg-surface border-edge text-accent-text focus:ring-0 w-4 h-4"
-                />
-                <span className="text-soft text-xs">¿Tiene Disyuntor Diferencial (GFCI/ID 30mA)?</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={measurements.hasGroundRod}
-                  onChange={(e) => handleUpdateField('hasGroundRod', e.target.checked)}
-                  className="rounded bg-surface border-edge text-accent-text focus:ring-0 w-4 h-4"
-                />
-                <span className="text-soft text-xs">¿Cuenta con Jabalina / Pica de Tierra Física?</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={measurements.panelThermalSigns}
-                  onChange={(e) => handleUpdateField('panelThermalSigns', e.target.checked)}
-                  className="rounded bg-surface border-edge text-danger-text focus:ring-0 w-4 h-4"
-                />
-                <span className="text-danger-text font-bold text-xs flex items-center gap-1">
-                  <Flame className="w-3.5 h-3.5" />
-                  ¿Bornes quemados o marcas de calor?
-                </span>
-              </label>
-            </div>
-          </div>
+          </section>
         </div>
-      </div>
+      </Card>
+
 
       {/* 4. SYSTEMATIC ACTION PLAN & WORK ORDER */}
       <div className="bg-surface border border-hairline rounded-2xl p-5 space-y-4 shadow-sm">
