@@ -1,0 +1,255 @@
+import { ClientRecord, FieldMeasurements } from '../types/electrical';
+import { calculatePhaseBalance } from './electricalMath';
+
+/**
+ * Modelo del flujo de trabajo.
+ *
+ * La aplicación tenía nueve pestañas planas que mezclaban pasos del trabajo
+ * (relevar datos, analizar, presupuestar, entregar) con herramientas sueltas,
+ * sin indicar en qué orden usarlas. Aquí el trabajo se describe como un
+ * recorrido: cuatro etapas, cada una con sus pasos, y un estado calculado a
+ * partir de los datos reales del cliente.
+ */
+
+export type StepId = 'audit' | 'panels' | 'diagnostic' | 'history' | 'balance' | 'calculators' | 'budget' | 'report';
+export type GroupId = 'relevar' | 'analizar' | 'presupuestar' | 'entregar';
+
+/**
+ * Vistas de la aplicación: los pasos del recorrido más la gestión de clientes,
+ * que no es un paso sino el lugar donde se administran las fichas y las copias
+ * de seguridad.
+ */
+export type ViewId = StepId | 'clients';
+
+/**
+ * - `pendiente`: falta información para poder avanzar.
+ * - `en-curso`: hay datos cargados pero todavía se puede completar.
+ * - `listo`: el paso está terminado.
+ * - `herramienta`: no es un paso del recorrido (una calculadora, por ejemplo):
+ *   no se completa nunca y no cuenta para el progreso.
+ */
+export type StepStatus = 'pendiente' | 'en-curso' | 'listo' | 'herramienta';
+
+export interface WorkflowStep {
+  id: StepId;
+  /** Nombre corto, para la navegación. */
+  label: string;
+  /** Título completo, para la cabecera de la vista. */
+  title: string;
+  /** Qué se hace en este paso, en una línea. */
+  description: string;
+  /** Qué falta cuando está pendiente: se muestra como ayuda concreta. */
+  pendingHint: string;
+  status: StepStatus;
+  /** Dato corto de avance ("12 cargas", "2 tableros"). */
+  badge?: string;
+}
+
+export interface WorkflowGroup {
+  id: GroupId;
+  index: number;
+  title: string;
+  description: string;
+  steps: WorkflowStep[];
+}
+
+export interface WorkflowProgress {
+  done: number;
+  total: number;
+  percent: number;
+}
+
+/** ¿Hay alguna medición de campo cargada? */
+function hasFieldMeasurements(client: ClientRecord): boolean {
+  const measurements: FieldMeasurements | undefined = client.diagnosticMeasurements;
+  if (!measurements) return false;
+  const numeric: Array<number | undefined> = [
+    measurements.vL1N,
+    measurements.iL1,
+    measurements.iNeutro,
+    measurements.groundResistanceOhms,
+  ];
+  return numeric.some((value) => typeof value === 'number' && value > 0) || measurements.hasGroundRod === true;
+}
+
+function pluralize(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/**
+ * Estado del paso de balance de fases, calculado con el desbalance real entre
+ * fases: el paso se marca terminado cuando el reparto está dentro de tolerancia,
+ * no cuando el usuario simplemente lo miró.
+ */
+function balanceStatus(client: ClientRecord, loads: number): { status: StepStatus; badge?: string; pendingHint: string } {
+  if (!client || loads < 2) {
+    return {
+      status: 'pendiente',
+      pendingHint: 'Necesitás al menos dos cargas cargadas para poder repartirlas entre fases.',
+    };
+  }
+
+  const summary = calculatePhaseBalance(client.loads, client.serviceType, client.nominalVoltage, client.lineVoltage);
+  const unbalance = summary.unbalancePercent;
+  const balanced = summary.unbalanceStatus === 'excelente' || summary.unbalanceStatus === 'aceptable';
+
+  return {
+    status: balanced ? 'listo' : 'en-curso',
+    badge: `${unbalance.toFixed(1)}%`,
+    pendingHint: `El desbalance entre fases es del ${unbalance.toFixed(1)}% (conviene que no pase del 5%). Movete a la vista de balance para repartir mejor las cargas.`,
+  };
+}
+
+/** Construye las etapas y el estado de cada paso a partir del cliente activo. */
+export function buildWorkflow(client: ClientRecord | null): WorkflowGroup[] {
+  const loads = client?.loads?.length ?? 0;
+  const panels = client?.panels?.length ?? 0;
+  const monthlyRecords = client?.consumptionHistory?.length ?? 0;
+  const budgets = (client?.budgets ?? []).filter((budget) => budget.items.length > 0);
+  const hasBudgetItems = budgets.length > 0;
+  const measurements = client ? hasFieldMeasurements(client) : false;
+  const balance = client ? balanceStatus(client, loads) : { status: 'pendiente' as StepStatus, pendingHint: 'Cargá primero las cargas del inmueble.' };
+
+  return [
+    {
+      id: 'relevar',
+      index: 1,
+      title: 'Relevar el inmueble',
+      description: 'Cargá lo que hay instalado y lo que mediste en el lugar.',
+      steps: [
+        {
+          id: 'audit',
+          label: 'Cargas y consumos',
+          title: 'Cargas y consumos',
+          description:
+            'Cargá cada artefacto con su potencia y sus horas de uso. De acá sale el consumo mensual y la corriente de cada circuito.',
+          pendingHint: 'Empezá cargando los artefactos del inmueble: sin cargas no hay cálculos ni presupuesto.',
+          status: loads === 0 ? 'pendiente' : 'listo',
+          badge: loads > 0 ? pluralize(loads, 'carga', 'cargas') : undefined,
+        },
+        {
+          id: 'panels',
+          label: 'Tableros y protecciones',
+          title: 'Tableros y protecciones',
+          description:
+            'Describí los tableros, su breaker de cabecera, el diferencial y el descargador de sobretensiones.',
+          pendingHint: 'Cargá al menos el tablero principal con su breaker de cabecera.',
+          status: panels === 0 ? 'pendiente' : 'listo',
+          badge: panels > 0 ? pluralize(panels, 'tablero', 'tableros') : undefined,
+        },
+        {
+          id: 'diagnostic',
+          label: 'Mediciones del lugar',
+          title: 'Mediciones y diagnóstico',
+          description:
+            'Cargá las tensiones, corrientes y la puesta a tierra que mediste. La app evalúa el estado y arma el plan de trabajo.',
+          pendingHint: 'Ingresá las mediciones del telurómetro y de tensión/corriente para obtener el índice de seguridad.',
+          status: measurements ? 'listo' : 'pendiente',
+          badge: measurements ? 'medido' : undefined,
+        },
+        {
+          id: 'history',
+          label: 'Facturas anteriores',
+          title: 'Historial de facturación',
+          description:
+            'Cargá los kWh de las últimas facturas para comparar lo que cobra la distribuidora con lo que consume realmente el inmueble.',
+          pendingHint: 'Opcional pero muy útil: con dos o tres facturas se detectan fugas o medidores descalibrados.',
+          status: monthlyRecords === 0 ? 'pendiente' : 'listo',
+          badge: monthlyRecords > 0 ? pluralize(monthlyRecords, 'mes', 'meses') : undefined,
+        },
+      ],
+    },
+    {
+      id: 'analizar',
+      index: 2,
+      title: 'Analizar',
+      description: 'Revisá el reparto entre fases y resolvé cálculos puntuales.',
+      steps: [
+        {
+          id: 'balance',
+          label: 'Balance de fases',
+          title: 'Balance de fases',
+          description:
+            'Mirá cómo quedó repartida la carga entre L1, L2 y L3, y equilibrála antes de presupuestar.',
+          pendingHint: balance.pendingHint,
+          status: balance.status,
+          badge: balance.badge,
+        },
+        {
+          id: 'calculators',
+          label: 'Calculadoras',
+          title: 'Calculadoras eléctricas',
+          description:
+            'Caída de tensión, dimensionado de conductores, breaker con cable y corrección del factor de potencia.',
+          pendingHint: '',
+          status: 'herramienta',
+        },
+      ],
+    },
+    {
+      id: 'presupuestar',
+      index: 3,
+      title: 'Presupuestar',
+      description: 'Armá el presupuesto con materiales y mano de obra.',
+      steps: [
+        {
+          id: 'budget',
+          label: 'Presupuesto y materiales',
+          title: 'Presupuesto y materiales',
+          description:
+            'Generá el presupuesto a partir de los tableros, las cargas y el diagnóstico, ajustá precios y condiciones.',
+          pendingHint: loads === 0 ? 'Primero cargá las cargas: el presupuesto se arma con ellas.' : 'Generá el presupuesto desde los datos relevados.',
+          status: hasBudgetItems ? 'listo' : loads === 0 ? 'pendiente' : 'en-curso',
+          badge: hasBudgetItems ? pluralize(budgets.length, 'presupuesto', 'presupuestos') : undefined,
+        },
+      ],
+    },
+    {
+      id: 'entregar',
+      index: 4,
+      title: 'Entregar',
+      description: 'Revisá y bajá el informe para el cliente.',
+      steps: [
+        {
+          id: 'report',
+          label: 'Informe del cliente',
+          title: 'Informe para el cliente',
+          description:
+            'Revisá el informe técnico completo y descargalo en PDF con los cálculos, el diagnóstico y las recomendaciones.',
+          pendingHint: '',
+          // No tiene estado propio: está disponible en cuanto hay datos, así que
+          // no se cuenta como paso a completar.
+          status: 'herramienta',
+        },
+      ],
+    },
+  ];
+}
+
+/** Pasos que cuentan para el progreso (excluye herramientas). */
+function countableSteps(groups: WorkflowGroup[]): WorkflowStep[] {
+  return groups.flatMap((group) => group.steps).filter((step) => step.status !== 'herramienta');
+}
+
+export function getProgress(groups: WorkflowGroup[]): WorkflowProgress {
+  const steps = countableSteps(groups);
+  const done = steps.filter((step) => step.status === 'listo').length;
+  return {
+    done,
+    total: steps.length,
+    percent: steps.length === 0 ? 0 : Math.round((done / steps.length) * 100),
+  };
+}
+
+/** Primer paso sin terminar, en el orden del recorrido. */
+export function findNextStep(groups: WorkflowGroup[]): WorkflowStep | null {
+  return countableSteps(groups).find((step) => step.status !== 'listo') ?? null;
+}
+
+export function findGroupOfStep(groups: WorkflowGroup[], stepId: StepId): WorkflowGroup | undefined {
+  return groups.find((group) => group.steps.some((step) => step.id === stepId));
+}
+
+export function findStep(groups: WorkflowGroup[], stepId: StepId): WorkflowStep | undefined {
+  return groups.flatMap((group) => group.steps).find((step) => step.id === stepId);
+}

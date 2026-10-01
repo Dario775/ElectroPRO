@@ -47,21 +47,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl p-5 sm:p-6 space-y-4 my-8">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-sunken/80 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-surface border border-edge rounded-2xl w-full max-w-lg shadow-2xl p-5 sm:p-6 space-y-4 my-8">
+        <div className="flex items-center justify-between border-b border-hairline pb-3">
           <div className="flex items-center gap-2">
-            <Settings className="w-5 h-5 text-amber-400" />
-            <h3 className="font-bold text-base text-slate-100">Configuración del Técnico y Tarifas</h3>
+            <Settings className="w-5 h-5 text-accent-text" />
+            <h3 className="font-bold text-base text-strong">Configuración del Técnico y Tarifas</h3>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200 p-1">
+          <button onClick={onClose} className="text-muted hover:text-strong p-1">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {savedMessage && (
-          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-2">
-            <Check className="w-4 h-4 text-emerald-400" />
+          <div className="p-3 rounded-xl bg-success-soft border border-success-line text-success-text text-xs font-bold flex items-center gap-2">
+            <Check className="w-4 h-4 text-success-text" />
             <span>Perfil actualizado exitosamente.</span>
           </div>
         )}
@@ -69,82 +69,82 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           {/* Technician Info */}
           <div className="space-y-3">
-            <div className="flex items-center gap-1.5 text-amber-400 font-bold uppercase text-[10px] tracking-wider">
+            <div className="flex items-center gap-1.5 text-accent-text font-bold uppercase text-xs tracking-wider">
               <User className="w-3.5 h-3.5" />
               <span>Identificación Profesional (Para Reportes PDF)</span>
             </div>
 
             <div>
-              <label className="font-bold text-slate-300 block mb-1">Nombre del Técnico / Ingeniero</label>
+              <label className="font-bold text-soft block mb-1">Nombre del Técnico / Ingeniero</label>
               <input
                 type="text"
                 required
                 value={profile.name}
                 onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-100 focus:border-amber-500 focus:outline-none"
+                className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Matrícula / Registro Oficial</label>
+                <label className="font-bold text-soft block mb-1">Matrícula / Registro Oficial</label>
                 <input
                   type="text"
                   placeholder="MP-12345"
                   value={profile.licenseNumber}
                   onChange={(e) => setProfile({ ...profile, licenseNumber: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-100 focus:border-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Nombre Empresa / Marca</label>
+                <label className="font-bold text-soft block mb-1">Nombre Empresa / Marca</label>
                 <input
                   type="text"
                   value={profile.companyName}
                   onChange={(e) => setProfile({ ...profile, companyName: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-100 focus:border-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Teléfono Profesional</label>
+                <label className="font-bold text-soft block mb-1">Teléfono Profesional</label>
                 <input
                   type="tel"
                   value={profile.phone}
                   onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-100 focus:border-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Correo Electrónico</label>
+                <label className="font-bold text-soft block mb-1">Correo Electrónico</label>
                 <input
                   type="email"
                   value={profile.email}
                   onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-100 focus:border-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                 />
               </div>
             </div>
           </div>
 
           {/* Tariffs Defaults */}
-          <div className="space-y-3 pt-3 border-t border-slate-800">
-            <div className="flex items-center gap-1.5 text-amber-400 font-bold uppercase text-[10px] tracking-wider">
+          <div className="space-y-3 pt-3 border-t border-hairline">
+            <div className="flex items-center gap-1.5 text-accent-text font-bold uppercase text-xs tracking-wider">
               <DollarSign className="w-3.5 h-3.5" />
               <span>Valores y Tarifas por Defecto para Nuevos Clientes</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Moneda por Defecto</label>
+                <label className="font-bold text-soft block mb-1">Moneda por Defecto</label>
                 <select
                   value={profile.currency}
                   onChange={(e) => setProfile({ ...profile, currency: e.target.value as SupportedCurrency })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-100 focus:border-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                 >
                   <option value="USD">💵 USD ($ - Dólares)</option>
                   <option value="ARS">🇦🇷 ARS ($ - Pesos Argentinos)</option>
@@ -152,47 +152,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Costo / kWh</label>
+                <label className="font-bold text-soft block mb-1">Costo / kWh</label>
                 <input
                   type="number"
                   step="0.001"
                   min={0}
                   value={profile.defaultKwhCost}
                   onChange={(e) => setProfile({ ...profile, defaultKwhCost: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 font-mono text-sm text-slate-100 focus:border-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge font-mono text-sm text-strong focus:border-accent focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Cargo Fijo</label>
+                <label className="font-bold text-soft block mb-1">Cargo Fijo</label>
                 <input
                   type="number"
                   step="0.5"
                   min={0}
                   value={profile.defaultFixedCharge}
                   onChange={(e) => setProfile({ ...profile, defaultFixedCharge: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 font-mono text-sm text-slate-100 focus:border-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge font-mono text-sm text-strong focus:border-accent focus:outline-none"
                 />
               </div>
             </div>
 
             {/* USD / ARS Exchange Rate Control */}
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-amber-500/20 space-y-2 mt-2">
+            <div className="p-3.5 rounded-xl bg-sunken border border-accent-line space-y-2 mt-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
-                  <ArrowRightLeft className="w-3.5 h-3.5 text-amber-400" />
+                <div className="flex items-center gap-1.5 text-xs font-bold text-accent-text">
+                  <ArrowRightLeft className="w-3.5 h-3.5 text-accent-text" />
                   <span>Cotización de Conversión (USD ↔ ARS)</span>
                 </div>
-                <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                <span className="text-xs font-mono text-success-text bg-success-soft px-2 py-0.5 rounded border border-success-line">
                   1 USD = ${(profile.usdToArsRate || 1250).toLocaleString('es-AR')} ARS
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-xs text-muted">
                 Se utiliza para alternar automáticamente todos los importes, presupuestos y consumos entre Dólares y Pesos Argentinos en todo el sistema.
               </p>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">$</span>
+                  <span className="absolute left-3 top-2 text-xs font-bold text-muted">$</span>
                   <input
                     type="number"
                     min={1}
@@ -201,7 +201,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onChange={(e) =>
                       setProfile({ ...profile, usdToArsRate: parseFloat(e.target.value) || 1250 })
                     }
-                    className="w-full pl-7 pr-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-sm text-slate-100 focus:border-amber-500 focus:outline-none"
+                    className="w-full pl-7 pr-3 py-1.5 rounded-lg bg-surface border border-edge font-mono text-sm text-strong focus:border-accent focus:outline-none"
                     placeholder="1250"
                   />
                 </div>
@@ -211,10 +211,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       key={rate}
                       type="button"
                       onClick={() => setProfile({ ...profile, usdToArsRate: rate })}
-                      className={`px-2 py-1.5 rounded text-[11px] font-mono font-semibold transition-colors ${
+                      className={`px-2 py-1.5 rounded text-xs font-mono font-semibold transition-colors ${
                         profile.usdToArsRate === rate
-                          ? 'bg-amber-500 text-slate-950 font-bold'
-                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                          ? 'bg-accent text-accent-fg font-bold'
+                          : 'bg-raised text-soft hover:bg-raised-strong'
                       }`}
                     >
                       ${rate}
@@ -226,7 +226,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           {/* Reset / Sample Data button */}
-          <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+          <div className="pt-3 border-t border-hairline flex items-center justify-between">
             <button
               type="button"
               onClick={() => {
@@ -235,7 +235,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onClose();
                 }
               }}
-              className="text-slate-400 hover:text-amber-400 text-xs flex items-center gap-1 transition-colors"
+              className="text-muted hover:text-accent-text text-xs flex items-center gap-1 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Cargar Ejemplo de Demostración</span>
@@ -245,13 +245,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold"
+                className="px-4 py-2 rounded-lg bg-raised text-soft hover:bg-raised-strong font-semibold"
               >
                 Cerrar
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold shadow-md shadow-amber-500/20"
+                className="px-5 py-2 rounded-lg bg-accent hover:bg-accent text-accent-fg font-bold shadow-md shadow-accent/20"
               >
                 Guardar Configuración
               </button>

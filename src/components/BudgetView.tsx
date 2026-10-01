@@ -522,39 +522,39 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
   const getCategoryBadgeColor = (category: BudgetCategory) => {
     switch (category) {
       case 'protecciones':
-        return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+        return 'bg-accent-soft text-accent-text border-accent-line';
       case 'tableros':
-        return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
+        return 'bg-info-soft text-info-text border-info-line';
       case 'puesta_a_tierra':
-        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+        return 'bg-success-soft text-success-text border-success-line';
       case 'cableado':
-        return 'bg-purple-500/10 text-purple-400 border-purple-500/30';
+        return 'bg-metric-soft text-metric-text border-metric-line';
       case 'mano_de_obra':
-        return 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30';
+        return 'bg-metric-soft text-metric-text border-metric-line';
       case 'certificacion':
-        return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30';
+        return 'bg-data-soft text-data-text border-data-line';
       default:
-        return 'bg-slate-800 text-slate-300 border-slate-700';
+        return 'bg-raised text-soft border-edge';
     }
   };
 
   return (
     <div className="space-y-6">
       {/* 0. MULTI-BUDGET TABS & SELECTOR (PER CLIENT) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+      <div className="bg-surface border border-hairline rounded-2xl p-4 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-hairline pb-3">
           <div className="flex items-center gap-2.5">
-            <FileText className="w-5 h-5 text-amber-400" />
+            <FileText className="w-5 h-5 text-accent-text" />
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-bold text-sm sm:text-base text-slate-100">
+                <h3 className="font-bold text-sm sm:text-base text-strong">
                   Presupuestos y Opciones para este Cliente
                 </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-accent-soft text-accent-text border border-accent-line">
                   {budgets.length} {budgets.length === 1 ? 'Presupuesto' : 'Presupuestos / Opciones'}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-xs text-muted">
                 Puedes generar y cotizar múltiples alternativas para el mismo cliente (ej. Opción Básica vs Premium, Etapas 1 y 2 o presupuestos independientes).
               </p>
             </div>
@@ -562,16 +562,16 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
 
           <div className="flex items-center gap-2 flex-wrap">
             {/* Currency Alternator & Base Conversion */}
-            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
-              <span className="text-[10px] uppercase font-bold text-slate-400 pl-1">Moneda:</span>
-              <div className="flex rounded-lg bg-slate-900 p-0.5 border border-slate-700 text-xs">
+            <div className="flex items-center gap-1.5 bg-sunken p-1 rounded-xl border border-hairline">
+              <span className="text-xs uppercase font-bold text-muted pl-1">Moneda:</span>
+              <div className="flex rounded-lg bg-surface p-0.5 border border-edge text-xs">
                 <button
                   type="button"
                   onClick={() => setActiveCurrency('USD')}
                   className={`px-2 py-0.5 rounded font-bold transition-colors ${
                     activeCurrency === 'USD'
-                      ? 'bg-amber-500 text-slate-950 shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-accent text-accent-fg shadow-sm'
+                      : 'text-muted hover:text-strong'
                   }`}
                   title="Ver presupuesto en Dólares (USD)"
                 >
@@ -582,8 +582,8 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   onClick={() => setActiveCurrency('ARS')}
                   className={`px-2 py-0.5 rounded font-bold transition-colors ${
                     activeCurrency === 'ARS'
-                      ? 'bg-amber-500 text-slate-950 shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-accent text-accent-fg shadow-sm'
+                      : 'text-muted hover:text-strong'
                   }`}
                   title="Ver presupuesto en Pesos Argentinos (ARS)"
                 >
@@ -599,10 +599,10 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   setConversionToast(`¡Valores base del cliente convertidos a ${target === 'ARS' ? 'Pesos Argentinos (ARS)' : 'Dólares (USD)'}!`);
                   setTimeout(() => setConversionToast(null), 4000);
                 }}
-                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                className="px-2 py-1 rounded-lg bg-raised hover:bg-raised-strong text-soft hover:text-strong border border-edge text-xs font-semibold flex items-center gap-1 transition-colors"
                 title={`Convertir base de datos de este cliente a ${client.currency === 'USD' ? 'ARS' : 'USD'} (Cotización: 1 USD = $${usdToArsRate.toLocaleString('es-AR')} ARS)`}
               >
-                <ArrowRightLeft className="w-3 h-3 text-amber-400" />
+                <ArrowRightLeft className="w-3 h-3 text-accent-text" />
                 <span className="hidden md:inline">Fijar Base</span>
                 <span>{client.currency === 'USD' ? 'ARS' : 'USD'}</span>
               </button>
@@ -614,8 +614,8 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                 onClick={() => setShowComparisonView(!showComparisonView)}
                 className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
                   showComparisonView
-                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-sm'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                    ? 'bg-accent text-accent-fg font-bold border-accent shadow-sm'
+                    : 'bg-raised hover:bg-raised-strong text-strong border-edge'
                 }`}
               >
                 <GitCompare className="w-3.5 h-3.5" />
@@ -629,7 +629,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                 setNewBudgetTitle(`Opción ${budgets.length + 1}: `);
                 setIsCreateModalOpen(true);
               }}
-              className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+              className="px-3.5 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>+ Nuevo Presupuesto</span>
@@ -638,8 +638,8 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
         </div>
 
         {conversionToast && (
-          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-2 animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <div className="p-3 rounded-xl bg-success-soft border border-success-line text-success-text text-xs font-bold flex items-center gap-2 animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 text-success-text flex-shrink-0" />
             <span>{conversionToast}</span>
           </div>
         )}
@@ -662,38 +662,38 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                 onClick={() => handleSwitchBudget(b.id)}
                 className={`flex-shrink-0 min-w-[240px] max-w-[300px] p-3 rounded-xl border transition-all cursor-pointer relative ${
                   isSelected
-                    ? 'bg-slate-950 border-amber-500 ring-2 ring-amber-500/20 shadow-md'
-                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-950'
+                    ? 'bg-sunken border-accent ring-2 ring-accent/20 shadow-md'
+                    : 'bg-sunken/60 border-hairline hover:border-edge hover:bg-sunken'
                 }`}
               >
                 <div className="flex items-center justify-between gap-1 mb-1">
-                  <span className="text-[10px] font-mono text-slate-400 font-bold">
+                  <span className="text-xs font-mono text-muted font-bold">
                     {b.budgetNumber}
                   </span>
                   <div className="flex items-center gap-1.5">
                     {isApproved && (
-                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-0.5">
+                      <span className="px-1.5 py-0.2 rounded text-xs font-bold bg-success-soft text-success-text border border-success-line flex items-center gap-0.5">
                         <Check className="w-2.5 h-2.5" /> APROBADO
                       </span>
                     )}
                     <span
                       className={`w-2 h-2 rounded-full ${
-                        isSelected ? 'bg-amber-400 animate-pulse' : 'bg-slate-700'
+                        isSelected ? 'bg-accent animate-pulse' : 'bg-raised-strong'
                       }`}
                       title={isSelected ? 'Presupuesto Activo' : 'Hacer clic para activar'}
                     />
                   </div>
                 </div>
 
-                <strong className="text-xs text-slate-200 block truncate font-sans" title={b.title}>
+                <strong className="text-xs text-strong block truncate font-sans" title={b.title}>
                   {b.title}
                 </strong>
 
-                <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-800/80 text-[11px]">
-                  <span className="text-slate-400 font-mono text-[10px]">
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-hairline/80 text-xs">
+                  <span className="text-muted font-mono text-xs">
                     {b.items.length} rubros
                   </span>
-                  <span className="font-bold font-mono text-amber-400 text-xs">
+                  <span className="font-bold font-mono text-accent-text text-xs">
                     {format(finalTotal, client.currency)}
                   </span>
                 </div>
@@ -705,15 +705,15 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
 
       {/* COMPARISON MATRIX (SHOWN WHEN TOGGLED) */}
       {showComparisonView && (
-        <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-5 shadow-lg space-y-4 animate-in fade-in">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="bg-surface border border-accent-line rounded-2xl p-5 shadow-lg space-y-4 animate-in fade-in">
+          <div className="flex items-center justify-between border-b border-hairline pb-3">
             <div className="flex items-center gap-2">
-              <GitCompare className="w-5 h-5 text-amber-400" />
+              <GitCompare className="w-5 h-5 text-accent-text" />
               <div>
-                <h3 className="font-bold text-sm sm:text-base text-slate-100">
+                <h3 className="font-bold text-sm sm:text-base text-strong">
                   Cuadro Comparativo de Presupuestos ({budgets.length} Opciones)
                 </h3>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-muted">
                   Compara los costos, alcances y condiciones entre las diferentes propuestas de este cliente.
                 </p>
               </div>
@@ -721,7 +721,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             <button
               type="button"
               onClick={() => setShowComparisonView(false)}
-              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+              className="text-muted hover:text-strong p-1 rounded-lg hover:bg-raised"
             >
               <X className="w-4 h-4" />
             </button>
@@ -748,69 +748,69 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   key={b.id}
                   className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 ${
                     isCurrent
-                      ? 'bg-slate-950 border-amber-500 shadow-md ring-1 ring-amber-500/30'
-                      : 'bg-slate-950/70 border-slate-800'
+                      ? 'bg-sunken border-accent shadow-md ring-1 ring-accent/30'
+                      : 'bg-sunken/70 border-hairline'
                   }`}
                 >
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono font-bold text-slate-400">
+                      <span className="text-xs font-mono font-bold text-muted">
                         {b.budgetNumber}
                       </span>
                       <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                        className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${
                           b.status === 'aprobado'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                            ? 'bg-success-soft text-success-text border border-success-line'
                             : b.status === 'enviado'
-                            ? 'bg-blue-500/20 text-blue-400'
-                            : 'bg-slate-800 text-slate-300'
+                            ? 'bg-info-soft text-info-text'
+                            : 'bg-raised text-soft'
                         }`}
                       >
                         {b.status}
                       </span>
                     </div>
 
-                    <h4 className="font-bold text-sm text-slate-100 line-clamp-2">
+                    <h4 className="font-bold text-sm text-strong line-clamp-2">
                       {b.title}
                     </h4>
 
                     {/* Breakdown Numbers */}
-                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80 space-y-1.5 text-xs font-mono">
-                      <div className="flex justify-between text-slate-400">
+                    <div className="p-2.5 rounded-lg bg-surface border border-hairline/80 space-y-1.5 text-xs font-mono">
+                      <div className="flex justify-between text-muted">
                         <span className="font-sans">Materiales:</span>
-                        <span className="text-slate-200">{format(bMaterials, client.currency)}</span>
+                        <span className="text-strong">{format(bMaterials, client.currency)}</span>
                       </div>
-                      <div className="flex justify-between text-slate-400">
+                      <div className="flex justify-between text-muted">
                         <span className="font-sans">Mano de Obra:</span>
-                        <span className="text-slate-200">{format(bLabor, client.currency)}</span>
+                        <span className="text-strong">{format(bLabor, client.currency)}</span>
                       </div>
                       {bDiscount > 0 && (
-                        <div className="flex justify-between text-rose-400">
+                        <div className="flex justify-between text-danger-text">
                           <span className="font-sans">Descuento:</span>
                           <span>-{format(bDiscount, client.currency)}</span>
                         </div>
                       )}
-                      <div className="pt-1.5 border-t border-slate-800 flex justify-between font-bold text-sm">
-                        <span className="font-sans text-amber-400">Total:</span>
-                        <span className="text-amber-400">{format(bGrandTotal, client.currency)}</span>
+                      <div className="pt-1.5 border-t border-hairline flex justify-between font-bold text-sm">
+                        <span className="font-sans text-accent-text">Total:</span>
+                        <span className="text-accent-text">{format(bGrandTotal, client.currency)}</span>
                       </div>
                     </div>
 
                     {/* Key specs */}
-                    <div className="text-[11px] text-slate-400 space-y-0.5 font-sans">
-                      <div>⏱️ Plazo de obra: <strong className="text-slate-300">{b.estimatedDaysToComplete} días</strong></div>
-                      <div>🛡️ Garantía técnica: <strong className="text-slate-300">{b.warrantyMonths} meses</strong></div>
-                      <div>📦 Rubros incluidos: <strong className="text-slate-300">{b.items.length} ítems</strong></div>
+                    <div className="text-xs text-muted space-y-0.5 font-sans">
+                      <div>⏱️ Plazo de obra: <strong className="text-soft">{b.estimatedDaysToComplete} días</strong></div>
+                      <div>🛡️ Garantía técnica: <strong className="text-soft">{b.warrantyMonths} meses</strong></div>
+                      <div>📦 Rubros incluidos: <strong className="text-soft">{b.items.length} ítems</strong></div>
                     </div>
                   </div>
 
                   {/* Actions for this option */}
-                  <div className="pt-2 border-t border-slate-800/80 flex items-center gap-1.5">
+                  <div className="pt-2 border-t border-hairline/80 flex items-center gap-1.5">
                     {!isCurrent && (
                       <button
                         type="button"
                         onClick={() => handleSwitchBudget(b.id)}
-                        className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-colors"
+                        className="flex-1 py-1.5 rounded-lg bg-raised hover:bg-raised-strong text-strong text-xs font-bold transition-colors"
                       >
                         Activar y Editar
                       </button>
@@ -820,7 +820,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                       <button
                         type="button"
                         onClick={() => handleSetAsApproved(b.id)}
-                        className="py-1.5 px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-colors flex items-center gap-1"
+                        className="py-1.5 px-2.5 rounded-lg bg-success-soft hover:bg-success-soft text-success-text border border-success-line text-xs font-bold transition-colors flex items-center gap-1"
                         title="Marcar este presupuesto como la opción aprobada por el cliente"
                       >
                         <Check className="w-3.5 h-3.5" />
@@ -831,7 +831,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                     <button
                       type="button"
                       onClick={() => generateBudgetPDF(client, b, technician, activeCurrency, usdToArsRate)}
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 transition-colors"
+                      className="p-1.5 rounded-lg bg-raised hover:bg-raised-strong text-accent-text transition-colors"
                       title="Descargar PDF de esta opción"
                     >
                       <Download className="w-3.5 h-3.5" />
@@ -845,16 +845,16 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       )}
 
       {/* 1. TOP HEADER & CONTROLS BANNER (FOR ACTIVE BUDGET) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+            <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-accent-soft text-accent-text border border-accent-line">
               {currentBudget.budgetNumber}
             </span>
 
             {/* Editable Title Badge */}
             <div className="flex items-center gap-1.5">
-              <h2 className="font-bold text-base sm:text-lg text-slate-100">
+              <h2 className="font-bold text-base sm:text-lg text-strong">
                 {currentBudget.title}
               </h2>
               <button
@@ -863,7 +863,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   setRenameTitle(currentBudget.title);
                   setIsRenameModalOpen(true);
                 }}
-                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1 rounded text-muted hover:text-strong hover:bg-raised"
                 title="Renombrar este presupuesto"
               >
                 <Edit2 className="w-3.5 h-3.5" />
@@ -881,14 +881,14 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               }
               className={`text-xs font-bold px-2.5 py-1 rounded-lg border focus:outline-none transition-colors ${
                 currentBudget.status === 'aprobado'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  ? 'bg-success-soft text-success-text border-success-line'
                   : currentBudget.status === 'enviado'
-                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                  ? 'bg-info-soft text-info-text border-info-line'
                   : currentBudget.status === 'en_ejecucion'
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  ? 'bg-accent-soft text-accent-text border-accent-line'
                   : currentBudget.status === 'rechazado'
-                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                  : 'bg-slate-800 text-slate-300 border-slate-700'
+                  ? 'bg-danger-soft text-danger-text border-danger-line'
+                  : 'bg-raised text-soft border-edge'
               }`}
             >
               <option value="borrador">📝 Borrador</option>
@@ -898,7 +898,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               <option value="rechazado">❌ Rechazado</option>
             </select>
           </div>
-          <p className="text-xs text-slate-400 max-w-2xl">
+          <p className="text-xs text-muted max-w-2xl">
             Edita los materiales, precios, márgenes comerciales de esta propuesta o sincroniza con tableros y diagnósticos.
           </p>
         </div>
@@ -909,10 +909,10 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
           <button
             type="button"
             onClick={() => handleDuplicateSpecificBudget(currentBudget)}
-            className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className="px-2.5 py-1.5 rounded-xl bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 transition-colors"
             title="Duplicar este presupuesto como una nueva alternativa para este cliente"
           >
-            <Copy className="w-3.5 h-3.5 text-amber-400" />
+            <Copy className="w-3.5 h-3.5 text-accent-text" />
             <span>Duplicar Opción</span>
           </button>
 
@@ -921,7 +921,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             <button
               type="button"
               onClick={() => handleDeleteBudget(currentBudget.id)}
-              className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              className="px-2.5 py-1.5 rounded-xl bg-danger-soft hover:bg-danger-soft text-danger-text border border-danger-line text-xs font-semibold flex items-center gap-1.5 transition-colors"
               title="Eliminar este presupuesto del cliente"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -932,17 +932,17 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
           <button
             type="button"
             onClick={handleRegenerateFromProject}
-            className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className="px-2.5 py-1.5 rounded-xl bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 transition-colors"
             title="Sincronizar y recalcular materiales según tableros, cargas y mediciones"
           >
-            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+            <RotateCcw className="w-3.5 h-3.5 text-accent-text" />
             <span>Sincronizar</span>
           </button>
 
           <button
             type="button"
             onClick={handleCopyForWhatsApp}
-            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            className="px-3 py-1.5 rounded-xl bg-success-solid hover:bg-success-solid text-strong text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
           >
             {copySuccess ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
             <span>{copySuccess ? '¡Copiado!' : 'WhatsApp'}</span>
@@ -951,7 +951,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
           <button
             type="button"
             onClick={handleDownloadPDF}
-            className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            className="px-3.5 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
           >
             <Download className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Descargar PDF</span>
@@ -962,15 +962,15 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       {/* 2. TOP KPI CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3">
         {/* Total General */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+        <div className="bg-surface border border-hairline rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between text-muted text-xs font-semibold mb-1">
             <span>Presupuesto Total ({activeCurrency})</span>
-            <DollarSign className="w-4 h-4 text-emerald-400" />
+            <DollarSign className="w-4 h-4 text-success-text" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-['JetBrains_Mono'] text-emerald-400">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-success-text">
             {format(totals.grandTotal, client.currency)}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
+          <div className="text-xs text-muted mt-1 truncate">
             {currentBudget.applyTax
               ? `Incluye ${currentBudget.taxPercent}% IVA/impuesto`
               : 'Valores netos de obra'}
@@ -978,55 +978,55 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
         </div>
 
         {/* Materiales */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+        <div className="bg-surface border border-hairline rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between text-muted text-xs font-semibold mb-1">
             <span>Materiales y Equipos</span>
-            <Package className="w-4 h-4 text-amber-400" />
+            <Package className="w-4 h-4 text-accent-text" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-['JetBrains_Mono'] text-slate-100">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-strong">
             {format(totals.materialsTotal, client.currency)}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
+          <div className="text-xs text-muted mt-1 truncate">
             {totals.materialsCount} rubros de suministros
           </div>
         </div>
 
         {/* Mano de Obra */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+        <div className="bg-surface border border-hairline rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between text-muted text-xs font-semibold mb-1">
             <span>Mano de Obra y Ensayos</span>
-            <Wrench className="w-4 h-4 text-indigo-400" />
+            <Wrench className="w-4 h-4 text-metric-text" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-['JetBrains_Mono'] text-indigo-300">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-metric-text">
             {format(totals.laborTotal, client.currency)}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
+          <div className="text-xs text-muted mt-1 truncate">
             {totals.laborCount} servicios técnicos
           </div>
         </div>
 
         {/* Plazo y Garantía */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+        <div className="bg-surface border border-hairline rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between text-muted text-xs font-semibold mb-1">
             <span>Plazo y Garantía</span>
-            <Clock className="w-4 h-4 text-cyan-400" />
+            <Clock className="w-4 h-4 text-data-text" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-['JetBrains_Mono'] text-cyan-300">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-data-text">
             {currentBudget.estimatedDaysToComplete}d{' '}
-            <span className="text-xs font-sans text-slate-400">/ {currentBudget.warrantyMonths}m</span>
+            <span className="text-xs font-sans text-muted">/ {currentBudget.warrantyMonths}m</span>
           </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
+          <div className="text-xs text-muted mt-1 truncate">
             Validez: {currentBudget.validityDays} días corridos
           </div>
         </div>
       </div>
 
       {/* 3. PROJECT TRACEABILITY BANNER */}
-      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+      <div className="p-3.5 rounded-xl bg-surface border border-hairline flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2.5">
-          <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
-          <div className="text-xs text-slate-300">
-            <span className="font-bold text-amber-300">Trazabilidad Técnica: </span>
+          <Sparkles className="w-4 h-4 text-accent-text flex-shrink-0" />
+          <div className="text-xs text-soft">
+            <span className="font-bold text-accent-text">Trazabilidad Técnica: </span>
             Los materiales y servicios reflejan las necesidades de los{' '}
             <strong>{client.panels?.length || 1} tableros</strong>,{' '}
             <strong>{client.loads.length} circuitos auditados</strong> y las mediciones de campo (puesta a tierra, protecciones y cableado).
@@ -1038,7 +1038,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             <button
               type="button"
               onClick={onNavigateToPanels}
-              className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline underline-offset-2 flex items-center gap-1"
+              className="text-xs text-accent-text hover:text-accent-text font-semibold underline underline-offset-2 flex items-center gap-1"
             >
               <Layers className="w-3 h-3" />
               <span>Ver Tableros</span>
@@ -1048,7 +1048,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             <button
               type="button"
               onClick={onNavigateToAudit}
-              className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline underline-offset-2 flex items-center gap-1 ml-2"
+              className="text-xs text-accent-text hover:text-accent-text font-semibold underline underline-offset-2 flex items-center gap-1 ml-2"
             >
               <Zap className="w-3 h-3" />
               <span>Ver Cargas</span>
@@ -1058,19 +1058,19 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       </div>
 
       {/* 4. MAIN ITEMS TABLE & CONTROLS */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-4">
         {/* Table Toolbar */}
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           <div className="flex items-center gap-2 flex-wrap flex-1">
             {/* Search Input */}
             <div className="relative flex-1 min-w-[200px] max-w-sm">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 placeholder="Buscar material o servicio..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-200 placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-sunken border border-edge text-xs text-strong placeholder-faint focus:border-accent focus:outline-none"
               />
             </div>
 
@@ -1078,7 +1078,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs font-semibold text-slate-200 focus:border-amber-500 focus:outline-none"
+              className="px-2.5 py-1.5 rounded-xl bg-sunken border border-edge text-xs font-semibold text-strong focus:border-accent focus:outline-none"
             >
               <option value="all">Todas las Categorías</option>
               <option value="protecciones">Protecciones (Térmicas/Diferenciales)</option>
@@ -1091,14 +1091,14 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             </select>
 
             {/* Type Filter */}
-            <div className="flex rounded-lg bg-slate-950 p-0.5 border border-slate-800 text-xs">
+            <div className="flex rounded-lg bg-sunken p-0.5 border border-hairline text-xs">
               <button
                 type="button"
                 onClick={() => setSelectedType('all')}
                 className={`px-2.5 py-1 rounded font-bold transition-colors ${
                   selectedType === 'all'
-                    ? 'bg-amber-500 text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-accent text-accent-fg shadow-sm'
+                    : 'text-muted hover:text-strong'
                 }`}
               >
                 Todos ({currentBudget.items.length})
@@ -1108,8 +1108,8 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                 onClick={() => setSelectedType('material')}
                 className={`px-2.5 py-1 rounded font-bold transition-colors ${
                   selectedType === 'material'
-                    ? 'bg-amber-500 text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-accent text-accent-fg shadow-sm'
+                    : 'text-muted hover:text-strong'
                 }`}
               >
                 Materiales
@@ -1119,8 +1119,8 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                 onClick={() => setSelectedType('mano_de_obra')}
                 className={`px-2.5 py-1 rounded font-bold transition-colors ${
                   selectedType === 'mano_de_obra'
-                    ? 'bg-amber-500 text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-accent text-accent-fg shadow-sm'
+                    : 'text-muted hover:text-strong'
                 }`}
               >
                 Mano de Obra
@@ -1133,16 +1133,16 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             <button
               type="button"
               onClick={() => setIsCatalogModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-raised hover:bg-raised-strong text-strong border border-edge font-bold text-xs flex items-center gap-1.5 transition-colors"
             >
-              <Package className="w-3.5 h-3.5 text-amber-400" />
+              <Package className="w-3.5 h-3.5 text-accent-text" />
               <span>+ Desde Catálogo</span>
             </button>
 
             <button
               type="button"
               onClick={() => handleOpenEditModal()}
-              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+              className="px-3 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>+ Ítem Personalizado</span>
@@ -1154,7 +1154,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
+              <tr className="border-b border-hairline text-muted uppercase text-xs font-bold">
                 <th className="py-2.5 px-3">#</th>
                 <th className="py-2.5 px-3">Descripción y Detalles del Material</th>
                 <th className="py-2.5 px-3 text-center">Categoría</th>
@@ -1166,10 +1166,10 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                 <th className="py-2.5 px-3 text-center">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 font-mono">
+            <tbody className="divide-y divide-hairline/60 font-mono">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-500 font-sans">
+                  <td colSpan={9} className="py-8 text-center text-faint font-sans">
                     No se encontraron rubros con los filtros seleccionados.
                   </td>
                 </tr>
@@ -1180,23 +1180,23 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   const itemSubtotal = item.quantity * finalUnitPrice;
 
                   return (
-                    <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="py-2.5 px-3 text-slate-500 text-center font-mono">
+                    <tr key={item.id} className="hover:bg-raised/30 transition-colors">
+                      <td className="py-2.5 px-3 text-faint text-center font-mono">
                         {index + 1}
                       </td>
 
                       {/* Description & Technical Detail */}
                       <td className="py-2.5 px-3 font-sans">
-                        <strong className="text-slate-100 block text-xs">
+                        <strong className="text-strong block text-xs">
                           {item.description}
                         </strong>
                         {item.detail && (
-                          <span className="text-[11px] text-slate-400 block mt-0.5">
+                          <span className="text-xs text-muted block mt-0.5">
                             {item.detail}
                           </span>
                         )}
                         {item.brand && (
-                          <span className="text-[10px] text-amber-400/90 font-mono block mt-0.5">
+                          <span className="text-xs text-accent-text/90 font-mono block mt-0.5">
                             Marca/Ref: {item.brand}
                           </span>
                         )}
@@ -1205,7 +1205,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                       {/* Category Badge */}
                       <td className="py-2.5 px-3 text-center font-sans">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold border capitalize ${getCategoryBadgeColor(
+                          className={`px-2 py-0.5 rounded text-xs font-bold border capitalize ${getCategoryBadgeColor(
                             item.category
                           )}`}
                         >
@@ -1215,7 +1215,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
 
                       {/* Source Badge */}
                       <td className="py-2.5 px-3 text-center font-sans">
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-800 text-slate-300">
+                        <span className="px-1.5 py-0.5 rounded text-xs font-mono bg-raised text-soft">
                           {item.suggestedFromSource === 'tablero'
                             ? '⚡ Tablero'
                             : item.suggestedFromSource === 'carga'
@@ -1227,26 +1227,26 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                       </td>
 
                       {/* Quantity & Unit */}
-                      <td className="py-2.5 px-3 text-center font-bold text-slate-200">
-                        {item.quantity} <span className="text-[10px] text-slate-400 font-sans">{item.unit}</span>
+                      <td className="py-2.5 px-3 text-center font-bold text-strong">
+                        {item.quantity} <span className="text-xs text-muted font-sans">{item.unit}</span>
                       </td>
 
                       {/* Unit Price */}
-                      <td className="py-2.5 px-3 text-right text-slate-300">
+                      <td className="py-2.5 px-3 text-right text-soft">
                         {format(item.unitPrice, client.currency)}
                       </td>
 
                       {/* Markup % */}
                       <td className="py-2.5 px-3 text-right">
                         {item.markupPercent && item.markupPercent > 0 ? (
-                          <span className="text-emerald-400 font-bold">+{item.markupPercent}%</span>
+                          <span className="text-success-text font-bold">+{item.markupPercent}%</span>
                         ) : (
-                          <span className="text-slate-500">0%</span>
+                          <span className="text-faint">0%</span>
                         )}
                       </td>
 
                       {/* Subtotal */}
-                      <td className="py-2.5 px-3 text-right font-bold text-amber-400 text-sm">
+                      <td className="py-2.5 px-3 text-right font-bold text-accent-text text-sm">
                         {format(itemSubtotal, client.currency)}
                       </td>
 
@@ -1256,7 +1256,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleOpenEditModal(item)}
-                            className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                            className="p-1 rounded text-muted hover:text-strong hover:bg-raised transition-colors"
                             title="Editar detalle de este material"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -1264,7 +1264,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleDuplicateItem(item)}
-                            className="p-1 rounded text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition-colors"
+                            className="p-1 rounded text-muted hover:text-accent-text hover:bg-raised transition-colors"
                             title="Duplicar rubro"
                           >
                             <Copy className="w-3.5 h-3.5" />
@@ -1272,7 +1272,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleDeleteItem(item.id)}
-                            className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                            className="p-1 rounded text-faint hover:text-danger-text hover:bg-raised transition-colors"
                             title="Eliminar de la cotización"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1291,15 +1291,15 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       {/* 5. COMMERCIAL CONDITIONS & FINANCIAL CONTROLS */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Commercial Conditions and Terms (7 cols) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 lg:col-span-7 shadow-sm">
-          <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-amber-400" />
+        <div className="bg-surface border border-hairline rounded-2xl p-5 space-y-4 lg:col-span-7 shadow-sm">
+          <h3 className="font-bold text-sm text-strong flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-accent-text" />
             <span>Condiciones Comerciales y de Ejecución de Obra</span>
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             <div>
-              <label className="text-slate-400 block mb-1 font-bold">Validez Presupuesto (Días)</label>
+              <label className="text-muted block mb-1 font-bold">Validez Presupuesto (Días)</label>
               <input
                 type="number"
                 min={1}
@@ -1310,12 +1310,12 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                     validityDays: parseInt(e.target.value) || 15,
                   })
                 }
-                className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 font-mono focus:border-amber-500 focus:outline-none"
+                className="w-full px-3 py-1.5 rounded-lg bg-sunken border border-edge text-strong font-mono focus:border-accent focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="text-slate-400 block mb-1 font-bold">Tiempo de Ejecución (Días)</label>
+              <label className="text-muted block mb-1 font-bold">Tiempo de Ejecución (Días)</label>
               <input
                 type="number"
                 min={1}
@@ -1326,12 +1326,12 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                     estimatedDaysToComplete: parseInt(e.target.value) || 3,
                   })
                 }
-                className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 font-mono focus:border-amber-500 focus:outline-none"
+                className="w-full px-3 py-1.5 rounded-lg bg-sunken border border-edge text-strong font-mono focus:border-accent focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="text-slate-400 block mb-1 font-bold">Garantía Escrita (Meses)</label>
+              <label className="text-muted block mb-1 font-bold">Garantía Escrita (Meses)</label>
               <input
                 type="number"
                 min={1}
@@ -1342,13 +1342,13 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                     warrantyMonths: parseInt(e.target.value) || 12,
                   })
                 }
-                className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 font-mono focus:border-amber-500 focus:outline-none"
+                className="w-full px-3 py-1.5 rounded-lg bg-sunken border border-edge text-strong font-mono focus:border-accent focus:outline-none"
               />
             </div>
           </div>
 
           <div>
-            <label className="text-slate-400 block mb-1 text-xs font-bold">Forma y Condiciones de Pago</label>
+            <label className="text-muted block mb-1 text-xs font-bold">Forma y Condiciones de Pago</label>
             <input
               type="text"
               value={currentBudget.paymentTerms}
@@ -1359,12 +1359,12 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                 })
               }
               placeholder="ej. 50% anticipo al iniciar, 50% al finalizar pruebas y puesta en servicio."
-              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:border-amber-500 focus:outline-none"
+              className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-xs text-strong focus:border-accent focus:outline-none"
             />
           </div>
 
           <div>
-            <label className="text-slate-400 block mb-1 text-xs font-bold">Notas y Observaciones Técnicas</label>
+            <label className="text-muted block mb-1 text-xs font-bold">Notas y Observaciones Técnicas</label>
             <textarea
               rows={3}
               value={currentBudget.notes || ''}
@@ -1375,36 +1375,36 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                 })
               }
               placeholder="Observaciones de seguridad, marcas homologadas, condiciones de acceso al tablero..."
-              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:border-amber-500 focus:outline-none"
+              className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-xs text-strong focus:border-accent focus:outline-none"
             />
           </div>
         </div>
 
         {/* Right: Subtotals, Discount & Tax Settlement Box (5 cols) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 lg:col-span-5 shadow-sm">
-          <h3 className="font-bold text-sm text-slate-200 uppercase tracking-wider text-[11px] text-amber-400">
+        <div className="bg-surface border border-hairline rounded-2xl p-5 space-y-4 lg:col-span-5 shadow-sm">
+          <h3 className="font-bold text-sm text-strong uppercase tracking-wider text-xs text-accent-text">
             Liquidación Financiera del Presupuesto
           </h3>
 
           <div className="space-y-2.5 text-xs">
-            <div className="flex items-center justify-between text-slate-300">
+            <div className="flex items-center justify-between text-soft">
               <span>Subtotal Materiales y Equipos:</span>
-              <span className="font-mono font-bold text-slate-100">
+              <span className="font-mono font-bold text-strong">
                 {format(totals.materialsTotal, client.currency)}
               </span>
             </div>
 
-            <div className="flex items-center justify-between text-slate-300">
+            <div className="flex items-center justify-between text-soft">
               <span>Subtotal Mano de Obra y Servicios:</span>
-              <span className="font-mono font-bold text-slate-100">
+              <span className="font-mono font-bold text-strong">
                 {format(totals.laborTotal, client.currency)}
               </span>
             </div>
 
             {/* Discount Setting */}
-            <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div className="p-2.5 rounded-xl bg-sunken border border-hairline space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-slate-400">Descuento Comercial:</span>
+                <span className="font-semibold text-muted">Descuento Comercial:</span>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
@@ -1418,14 +1418,14 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                         discountAmount: 0,
                       })
                     }
-                    className="w-14 px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-center font-mono text-xs text-amber-400"
+                    className="w-14 px-2 py-0.5 rounded bg-surface border border-edge text-center font-mono text-xs text-accent-text"
                   />
-                  <span className="text-slate-500">%</span>
+                  <span className="text-faint">%</span>
                 </div>
               </div>
 
               {totals.discountAmount > 0 && (
-                <div className="flex items-center justify-between text-rose-400 text-xs font-mono">
+                <div className="flex items-center justify-between text-danger-text text-xs font-mono">
                   <span>Ahorro para el cliente:</span>
                   <span>-{format(totals.discountAmount, client.currency)}</span>
                 </div>
@@ -1433,7 +1433,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             </div>
 
             {/* Tax Setting */}
-            <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div className="p-2.5 rounded-xl bg-sunken border border-hairline space-y-2">
               <div className="flex items-center justify-between">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1446,9 +1446,9 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                         taxPercent: currentBudget.taxPercent || 21,
                       })
                     }
-                    className="rounded text-amber-500 focus:ring-amber-500"
+                    className="rounded text-accent-text focus:ring-accent"
                   />
-                  <span className="font-semibold text-slate-300">Aplicar Impuesto / IVA</span>
+                  <span className="font-semibold text-soft">Aplicar Impuesto / IVA</span>
                 </label>
 
                 {currentBudget.applyTax && (
@@ -1461,7 +1461,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                           taxPercent: parseFloat(e.target.value) || 0,
                         })
                       }
-                      className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-center font-mono text-xs text-slate-200"
+                      className="px-2 py-0.5 rounded bg-surface border border-edge text-center font-mono text-xs text-strong"
                     >
                       <option value={10}>10%</option>
                       <option value={16}>16%</option>
@@ -1473,7 +1473,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               </div>
 
               {currentBudget.applyTax && (
-                <div className="flex items-center justify-between text-slate-400 text-xs font-mono">
+                <div className="flex items-center justify-between text-muted text-xs font-mono">
                   <span>Importe Impuesto:</span>
                   <span>+{format(totals.taxAmount, client.currency)}</span>
                 </div>
@@ -1481,12 +1481,12 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             </div>
 
             {/* Total Highlight */}
-            <div className="pt-3 border-t border-slate-800 flex items-baseline justify-between">
+            <div className="pt-3 border-t border-hairline flex items-baseline justify-between">
               <div>
-                <span className="text-xs uppercase font-bold text-slate-400 block">Total Cotización ({activeCurrency})</span>
-                <span className="text-[11px] text-slate-500 font-sans">Precio final para cliente</span>
+                <span className="text-xs uppercase font-bold text-muted block">Total Cotización ({activeCurrency})</span>
+                <span className="text-xs text-faint font-sans">Precio final para cliente</span>
               </div>
-              <div className="text-2xl font-extrabold font-['JetBrains_Mono'] text-amber-400">
+              <div className="text-2xl font-extrabold font-mono text-accent-text">
                 {format(totals.grandTotal, client.currency)}
               </div>
             </div>
@@ -1497,44 +1497,44 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       {/* 6. MODAL: ADD FROM DEFAULT MATERIALS CATALOG */}
       {isCatalogModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-surface border border-hairline rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            <div className="p-4 border-b border-hairline flex items-center justify-between">
               <div>
-                <h4 className="font-bold text-slate-100 flex items-center gap-2">
-                  <Package className="w-4 h-4 text-amber-400" />
+                <h4 className="font-bold text-strong flex items-center gap-2">
+                  <Package className="w-4 h-4 text-accent-text" />
                   <span>Catálogo de Materiales Eléctricos Homologados</span>
                 </h4>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-muted mt-0.5">
                   Haz clic en "Agregar" para incorporar el material o servicio técnico a la cotización activa.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsCatalogModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1 rounded-lg text-muted hover:text-strong hover:bg-raised"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Catalog Search & Category Filter */}
-            <div className="p-3 bg-slate-950 border-b border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="p-3 bg-sunken border-b border-hairline flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   placeholder="Buscar en catálogo (térmica, jabalina, cable 4mm, DPS...)"
                   value={catalogSearch}
                   onChange={(e) => setCatalogSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-200 placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-surface border border-edge text-xs text-strong placeholder-faint focus:border-accent focus:outline-none"
                 />
               </div>
 
               <select
                 value={catalogCategory}
                 onChange={(e) => setCatalogCategory(e.target.value)}
-                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                className="px-3 py-1.5 rounded-xl bg-surface border border-edge text-xs text-strong focus:border-accent focus:outline-none"
               >
                 <option value="all">Todas las Categorías</option>
                 <option value="protecciones">Protecciones</option>
@@ -1552,22 +1552,22 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               {filteredCatalog.map((mat) => (
                 <div
                   key={mat.id}
-                  className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors"
+                  className="p-3 rounded-xl bg-sunken border border-hairline hover:border-edge flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors"
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <strong className="text-xs text-slate-100">{mat.description}</strong>
-                      <span className="text-[10px] text-amber-400 font-mono">[{mat.brand}]</span>
+                      <strong className="text-xs text-strong">{mat.description}</strong>
+                      <span className="text-xs text-accent-text font-mono">[{mat.brand}]</span>
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-0.5">{mat.detail}</p>
+                    <p className="text-xs text-muted mt-0.5">{mat.detail}</p>
                   </div>
 
                   <div className="flex items-center gap-3 self-end sm:self-center">
                     <div className="text-right font-mono">
-                      <span className="text-xs font-bold text-emerald-400 block">
+                      <span className="text-xs font-bold text-success-text block">
                         {format(mat.unitPrice, 'USD')}
                       </span>
-                      <span className="text-[10px] text-slate-500">por {mat.unit}</span>
+                      <span className="text-xs text-faint">por {mat.unit}</span>
                     </div>
 
                     <button
@@ -1575,7 +1575,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                       onClick={() => {
                         handleAddFromCatalog(mat);
                       }}
-                      className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1 transition-colors shadow-sm"
+                      className="px-3 py-1 rounded-lg bg-accent hover:bg-accent text-accent-fg font-bold text-xs flex items-center gap-1 transition-colors shadow-sm"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Agregar</span>
@@ -1586,11 +1586,11 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="p-3 border-t border-slate-800 bg-slate-950 text-right">
+            <div className="p-3 border-t border-hairline bg-sunken text-right">
               <button
                 type="button"
                 onClick={() => setIsCatalogModalOpen(false)}
-                className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition-colors"
+                className="px-4 py-1.5 rounded-xl bg-raised hover:bg-raised-strong text-strong font-semibold text-xs transition-colors"
               >
                 Cerrar Catálogo
               </button>
@@ -1602,22 +1602,22 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       {/* 7. MODAL: EDIT / CREATE DETAILED ITEM */}
       {isItemEditModalOpen && editingItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-surface border border-hairline rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            <div className="p-4 border-b border-hairline flex items-center justify-between">
               <div>
-                <h4 className="font-bold text-slate-100 flex items-center gap-2">
-                  <Edit2 className="w-4 h-4 text-amber-400" />
+                <h4 className="font-bold text-strong flex items-center gap-2">
+                  <Edit2 className="w-4 h-4 text-accent-text" />
                   <span>Detalles del Material o Servicio</span>
                 </h4>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-muted mt-0.5">
                   Edita la descripción, marca comercial, cantidad, precio unitario y margen.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsItemEditModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1 rounded-lg text-muted hover:text-strong hover:bg-raised"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1627,37 +1627,37 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
               {/* Description */}
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Descripción del Rubro</label>
+                <label className="font-bold text-soft block mb-1">Descripción del Rubro</label>
                 <input
                   type="text"
                   value={editingItem.description}
                   onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
                   placeholder="ej. Disyuntor Diferencial 2x40A 30mA, Cable 4mm..."
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                 />
               </div>
 
               {/* Technical Detail & Brand */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Especificación Técnica / Detalle</label>
+                  <label className="font-bold text-soft block mb-1">Especificación Técnica / Detalle</label>
                   <input
                     type="text"
                     value={editingItem.detail || ''}
                     onChange={(e) => setEditingItem({ ...editingItem, detail: e.target.value })}
                     placeholder="ej. Curva C, poder de corte 6kA, clase AC..."
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Marca / Fabricante Sugerido</label>
+                  <label className="font-bold text-soft block mb-1">Marca / Fabricante Sugerido</label>
                   <input
                     type="text"
                     value={editingItem.brand || ''}
                     onChange={(e) => setEditingItem({ ...editingItem, brand: e.target.value })}
                     placeholder="ej. Schneider Electric, ABB, Prysmian..."
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                   />
                 </div>
               </div>
@@ -1665,7 +1665,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               {/* Category & Type */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Categoría</label>
+                  <label className="font-bold text-soft block mb-1">Categoría</label>
                   <select
                     value={editingItem.category}
                     onChange={(e) =>
@@ -1674,7 +1674,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                         category: e.target.value as BudgetCategory,
                       })
                     }
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                   >
                     <option value="protecciones">Protecciones Eléctricas</option>
                     <option value="tableros">Tableros y Gabinetes</option>
@@ -1687,7 +1687,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Tipo de Rubro</label>
+                  <label className="font-bold text-soft block mb-1">Tipo de Rubro</label>
                   <select
                     value={editingItem.type}
                     onChange={(e) =>
@@ -1696,7 +1696,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                         type: e.target.value as BudgetItemType,
                       })
                     }
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                   >
                     <option value="material">Material / Suministro Físico</option>
                     <option value="mano_de_obra">Mano de Obra Profesional</option>
@@ -1707,14 +1707,14 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               </div>
 
               {/* Quantities, Unit, Price, Markup */}
-              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
-                <span className="font-bold text-amber-400 block text-xs uppercase tracking-wider">
+              <div className="p-3.5 rounded-xl bg-sunken border border-hairline space-y-3">
+                <span className="font-bold text-accent-text block text-xs uppercase tracking-wider">
                   Cálculo de Precios y Cantidades
                 </span>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
-                    <label className="text-slate-400 block mb-1">Unidad</label>
+                    <label className="text-muted block mb-1">Unidad</label>
                     <select
                       value={editingItem.unit}
                       onChange={(e) =>
@@ -1723,7 +1723,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                           unit: e.target.value as any,
                         })
                       }
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge text-strong"
                     >
                       <option value="ud">Unidad (ud)</option>
                       <option value="m">Metros (m)</option>
@@ -1736,7 +1736,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-slate-400 block mb-1">Cantidad</label>
+                    <label className="text-muted block mb-1">Cantidad</label>
                     <input
                       type="number"
                       step={0.1}
@@ -1748,12 +1748,12 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                           quantity: parseFloat(e.target.value) || 1,
                         })
                       }
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-slate-100"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge font-mono text-strong"
                     />
                   </div>
 
                   <div>
-                    <label className="text-slate-400 block mb-1">Precio Costo ({client.currency})</label>
+                    <label className="text-muted block mb-1">Precio Costo ({client.currency})</label>
                     <input
                       type="number"
                       step={0.01}
@@ -1765,12 +1765,12 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                           unitPrice: parseFloat(e.target.value) || 0,
                         })
                       }
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-slate-100"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge font-mono text-strong"
                     />
                   </div>
 
                   <div>
-                    <label className="text-slate-400 block mb-1">Margen / Beneficio (%)</label>
+                    <label className="text-muted block mb-1">Margen / Beneficio (%)</label>
                     <input
                       type="number"
                       step={1}
@@ -1782,15 +1782,15 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                           markupPercent: parseFloat(e.target.value) || 0,
                         })
                       }
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-emerald-400"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge font-mono text-success-text"
                     />
                   </div>
                 </div>
 
                 {/* Subtotal Preview */}
-                <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
-                  <span className="text-slate-400">Subtotal Resultante:</span>
-                  <span className="text-base font-bold font-mono text-amber-400">
+                <div className="pt-2 border-t border-hairline flex items-center justify-between text-xs">
+                  <span className="text-muted">Subtotal Resultante:</span>
+                  <span className="text-base font-bold font-mono text-accent-text">
                     {format(
                       editingItem.quantity *
                         editingItem.unitPrice *
@@ -1803,30 +1803,30 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
 
               {/* Notes */}
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Notas de Montaje / Observación</label>
+                <label className="font-bold text-soft block mb-1">Notas de Montaje / Observación</label>
                 <input
                   type="text"
                   value={editingItem.notes || ''}
                   onChange={(e) => setEditingItem({ ...editingItem, notes: e.target.value })}
                   placeholder="ej. Sujeto a aprobación previa de corte de suministro..."
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                 />
               </div>
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-end gap-2">
+            <div className="p-4 border-t border-hairline bg-sunken flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setIsItemEditModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors"
+                className="px-4 py-2 rounded-xl bg-raised hover:bg-raised-strong text-soft font-semibold text-xs transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={handleSaveItem}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow-sm"
+                className="px-4 py-2 rounded-xl bg-accent hover:bg-accent text-accent-fg font-bold text-xs transition-colors shadow-sm"
               >
                 Guardar Rubro
               </button>
@@ -1838,22 +1838,22 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       {/* 8. MODAL: CREATE NEW BUDGET / OPTION */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-surface border border-hairline rounded-2xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            <div className="p-4 border-b border-hairline flex items-center justify-between">
               <div>
-                <h4 className="font-bold text-slate-100 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-amber-400" />
+                <h4 className="font-bold text-strong flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-accent-text" />
                   <span>Crear Nuevo Presupuesto / Opción</span>
                 </h4>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-muted mt-0.5">
                   Agrega una nueva cotización para este cliente ({client.clientName})
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsCreateModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1 rounded-lg text-muted hover:text-strong hover:bg-raised"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1862,7 +1862,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             {/* Modal Body */}
             <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
               <div>
-                <label className="font-bold text-slate-300 block mb-1">
+                <label className="font-bold text-soft block mb-1">
                   Nombre o Título de la Opción
                 </label>
                 <input
@@ -1870,13 +1870,13 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   value={newBudgetTitle}
                   onChange={(e) => setNewBudgetTitle(e.target.value)}
                   placeholder={`ej. Opción B: Materiales Premium, Etapa 2: Climatización...`}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="font-bold text-slate-300 block mb-2">
+                <label className="font-bold text-soft block mb-2">
                   Método de Generación de Rubros
                 </label>
                 <div className="space-y-2">
@@ -1884,8 +1884,8 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   <label
                     className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                       newBudgetScope === 'integral'
-                        ? 'bg-amber-500/10 border-amber-500/60 ring-1 ring-amber-500/30'
-                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                        ? 'bg-accent-soft border-accent-line ring-1 ring-accent/30'
+                        : 'bg-sunken border-hairline hover:border-edge'
                     }`}
                   >
                     <input
@@ -1893,13 +1893,13 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                       name="budgetScope"
                       checked={newBudgetScope === 'integral'}
                       onChange={() => setNewBudgetScope('integral')}
-                      className="mt-0.5 text-amber-500 focus:ring-amber-500"
+                      className="mt-0.5 text-accent-text focus:ring-accent"
                     />
                     <div>
-                      <strong className="text-slate-100 block text-xs">
+                      <strong className="text-strong block text-xs">
                         🚀 Diagnóstico Integral del Proyecto (Recomendado)
                       </strong>
-                      <span className="text-[11px] text-slate-400 block mt-0.5">
+                      <span className="text-xs text-muted block mt-0.5">
                         Evalúa tableros, cargas relevadas y ensayos de puesta a tierra para generar un cómputo exhaustivo de obra.
                       </span>
                     </div>
@@ -1909,8 +1909,8 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   <label
                     className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                       newBudgetScope === 'tableros'
-                        ? 'bg-amber-500/10 border-amber-500/60 ring-1 ring-amber-500/30'
-                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                        ? 'bg-accent-soft border-accent-line ring-1 ring-accent/30'
+                        : 'bg-sunken border-hairline hover:border-edge'
                     }`}
                   >
                     <input
@@ -1918,13 +1918,13 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                       name="budgetScope"
                       checked={newBudgetScope === 'tableros'}
                       onChange={() => setNewBudgetScope('tableros')}
-                      className="mt-0.5 text-amber-500 focus:ring-amber-500"
+                      className="mt-0.5 text-accent-text focus:ring-accent"
                     />
                     <div>
-                      <strong className="text-slate-100 block text-xs">
+                      <strong className="text-strong block text-xs">
                         ⚡ Solo Tableros y Protecciones
                       </strong>
-                      <span className="text-[11px] text-slate-400 block mt-0.5">
+                      <span className="text-xs text-muted block mt-0.5">
                         Enfocado exclusivamente en gabinetes, interruptores termomagnéticos, disyuntores diferenciales, DPS y peinado DIN.
                       </span>
                     </div>
@@ -1934,8 +1934,8 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   <label
                     className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                       newBudgetScope === 'seguridad'
-                        ? 'bg-amber-500/10 border-amber-500/60 ring-1 ring-amber-500/30'
-                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                        ? 'bg-accent-soft border-accent-line ring-1 ring-accent/30'
+                        : 'bg-sunken border-hairline hover:border-edge'
                     }`}
                   >
                     <input
@@ -1943,13 +1943,13 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                       name="budgetScope"
                       checked={newBudgetScope === 'seguridad'}
                       onChange={() => setNewBudgetScope('seguridad')}
-                      className="mt-0.5 text-amber-500 focus:ring-amber-500"
+                      className="mt-0.5 text-accent-text focus:ring-accent"
                     />
                     <div>
-                      <strong className="text-slate-100 block text-xs">
+                      <strong className="text-strong block text-xs">
                         🛡️ Seguridad Eléctrica y Puesta a Tierra
                       </strong>
-                      <span className="text-[11px] text-slate-400 block mt-0.5">
+                      <span className="text-xs text-muted block mt-0.5">
                         Jabalina, cámara de inspección, cable verde/amarillo de bajada, diferencial humano y protocolo con telurómetro.
                       </span>
                     </div>
@@ -1959,8 +1959,8 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   <label
                     className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                       newBudgetScope === 'duplicate'
-                        ? 'bg-amber-500/10 border-amber-500/60 ring-1 ring-amber-500/30'
-                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                        ? 'bg-accent-soft border-accent-line ring-1 ring-accent/30'
+                        : 'bg-sunken border-hairline hover:border-edge'
                     }`}
                   >
                     <input
@@ -1968,13 +1968,13 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                       name="budgetScope"
                       checked={newBudgetScope === 'duplicate'}
                       onChange={() => setNewBudgetScope('duplicate')}
-                      className="mt-0.5 text-amber-500 focus:ring-amber-500"
+                      className="mt-0.5 text-accent-text focus:ring-accent"
                     />
                     <div>
-                      <strong className="text-slate-100 block text-xs">
+                      <strong className="text-strong block text-xs">
                         📋 Duplicar Presupuesto Actual ({currentBudget.items.length} rubros)
                       </strong>
-                      <span className="text-[11px] text-slate-400 block mt-0.5">
+                      <span className="text-xs text-muted block mt-0.5">
                         Copia exacta para crear una variante B (ej. cambiar marcas económicas a premium o ajustar márgenes).
                       </span>
                     </div>
@@ -1984,8 +1984,8 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                   <label
                     className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                       newBudgetScope === 'blank'
-                        ? 'bg-amber-500/10 border-amber-500/60 ring-1 ring-amber-500/30'
-                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                        ? 'bg-accent-soft border-accent-line ring-1 ring-accent/30'
+                        : 'bg-sunken border-hairline hover:border-edge'
                     }`}
                   >
                     <input
@@ -1993,13 +1993,13 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                       name="budgetScope"
                       checked={newBudgetScope === 'blank'}
                       onChange={() => setNewBudgetScope('blank')}
-                      className="mt-0.5 text-amber-500 focus:ring-amber-500"
+                      className="mt-0.5 text-accent-text focus:ring-accent"
                     />
                     <div>
-                      <strong className="text-slate-100 block text-xs">
+                      <strong className="text-strong block text-xs">
                         📄 Presupuesto en Blanco
                       </strong>
-                      <span className="text-[11px] text-slate-400 block mt-0.5">
+                      <span className="text-xs text-muted block mt-0.5">
                         Inicia una propuesta vacía para agregar ítems manualmente o desde el catálogo.
                       </span>
                     </div>
@@ -2009,18 +2009,18 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-end gap-2">
+            <div className="p-4 border-t border-hairline bg-sunken flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setIsCreateModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors"
+                className="px-4 py-2 rounded-xl bg-raised hover:bg-raised-strong text-soft font-semibold text-xs transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={handleCreateNewBudget}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow-sm"
+                className="px-4 py-2 rounded-xl bg-accent hover:bg-accent text-accent-fg font-bold text-xs transition-colors shadow-sm"
               >
                 Crear Presupuesto
               </button>
@@ -2032,16 +2032,16 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       {/* 9. MODAL: RENAME BUDGET TITLE */}
       {isRenameModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-              <h4 className="font-bold text-slate-100 text-sm flex items-center gap-2">
-                <Edit2 className="w-4 h-4 text-amber-400" />
+          <div className="bg-surface border border-hairline rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-hairline flex items-center justify-between">
+              <h4 className="font-bold text-strong text-sm flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-accent-text" />
                 <span>Renombrar Presupuesto</span>
               </h4>
               <button
                 type="button"
                 onClick={() => setIsRenameModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                className="p-1 rounded-lg text-muted hover:text-strong"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2049,31 +2049,31 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
 
             <div className="p-4 space-y-3 text-xs">
               <div>
-                <label className="font-bold text-slate-300 block mb-1">
+                <label className="font-bold text-soft block mb-1">
                   Título de la Propuesta / Versión
                 </label>
                 <input
                   type="text"
                   value={renameTitle}
                   onChange={(e) => setRenameTitle(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                   autoFocus
                 />
               </div>
             </div>
 
-            <div className="p-3 border-t border-slate-800 bg-slate-950 flex items-center justify-end gap-2">
+            <div className="p-3 border-t border-hairline bg-sunken flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setIsRenameModalOpen(false)}
-                className="px-3.5 py-1.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs"
+                className="px-3.5 py-1.5 rounded-xl bg-raised text-soft font-semibold text-xs"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={handleSaveRename}
-                className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-sm"
+                className="px-4 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg font-bold text-xs shadow-sm"
               >
                 Guardar Nombre
               </button>

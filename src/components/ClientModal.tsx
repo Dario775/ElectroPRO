@@ -201,19 +201,19 @@ export const ClientModal: React.FC<ClientModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden my-6 animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-sunken/80 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-surface border border-edge rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden my-6 animate-in fade-in zoom-in-95 duration-150">
         {/* Header Modal */}
-        <div className="px-5 py-4 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between">
+        <div className="px-5 py-4 bg-surface/90 border-b border-hairline flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <div className="w-9 h-9 rounded-xl bg-accent-soft border border-accent-line flex items-center justify-center text-accent-text">
               <Building className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base sm:text-lg text-slate-100 leading-tight">
+              <h3 className="font-bold text-base sm:text-lg text-strong leading-tight">
                 {initialClient ? 'Editar Ficha Completa del Cliente' : 'Registrar Nuevo Cliente / Instalación'}
               </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-muted mt-0.5">
                 {initialClient
                   ? `ID: ${initialClient.id} • Modifica parámetros técnicos, tarifarios y de contacto`
                   : 'Ingresa los datos comerciales, red eléctrica y tarifas de la instalación'}
@@ -223,21 +223,21 @@ export const ClientModal: React.FC<ClientModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+            className="text-muted hover:text-strong p-1.5 rounded-lg hover:bg-raised transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center border-b border-slate-800 bg-slate-950/50 px-5 gap-1 overflow-x-auto">
+        <div className="flex items-center border-b border-hairline bg-sunken/50 px-5 gap-1 overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab('general')}
             className={`py-3 px-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
               activeTab === 'general'
-                ? 'border-amber-500 text-amber-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                ? 'border-accent text-accent-text'
+                : 'border-transparent text-muted hover:text-strong'
             }`}
           >
             <Building className="w-4 h-4" />
@@ -249,8 +249,8 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             onClick={() => setActiveTab('electrical')}
             className={`py-3 px-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
               activeTab === 'electrical'
-                ? 'border-amber-500 text-amber-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                ? 'border-accent text-accent-text'
+                : 'border-transparent text-muted hover:text-strong'
             }`}
           >
             <Zap className="w-4 h-4" />
@@ -262,8 +262,8 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             onClick={() => setActiveTab('tariff')}
             className={`py-3 px-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
               activeTab === 'tariff'
-                ? 'border-amber-500 text-amber-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                ? 'border-accent text-accent-text'
+                : 'border-transparent text-muted hover:text-strong'
             }`}
           >
             <DollarSign className="w-4 h-4" />
@@ -275,8 +275,8 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             onClick={() => setActiveTab('diagnosis')}
             className={`py-3 px-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
               activeTab === 'diagnosis'
-                ? 'border-amber-500 text-amber-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                ? 'border-accent text-accent-text'
+                : 'border-transparent text-muted hover:text-strong'
             }`}
           >
             <FileText className="w-4 h-4" />
@@ -292,7 +292,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="sm:col-span-2">
-                    <label className="font-bold text-slate-200 block mb-1 text-xs">
+                    <label className="font-bold text-strong block mb-1 text-xs">
                       Nombre Completo / Razón Social *
                     </label>
                     <input
@@ -301,12 +301,12 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                       placeholder="Ej. Juan Carlos Pérez / Metalúrgica San Jorge S.A."
                       value={clientName}
                       onChange={(e) => setClientName(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-slate-100 placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-sunken border border-edge text-sm text-strong placeholder-faint focus:border-accent focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1 text-xs">
+                    <label className="font-bold text-soft block mb-1 text-xs">
                       Documento Identificatorio (DNI / CUIT / CUIL / RUT / RFC)
                     </label>
                     <input
@@ -314,13 +314,13 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                       placeholder="Ej. 20-34988211-4 / DNI 34.988.211"
                       value={documentId}
                       onChange={(e) => setDocumentId(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-slate-100 placeholder-slate-500 focus:border-amber-500 focus:outline-none font-mono"
+                      className="w-full px-3.5 py-2 rounded-xl bg-sunken border border-edge text-sm text-strong placeholder-faint focus:border-accent focus:outline-none font-mono"
                     />
                   </div>
 
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1 text-xs flex items-center gap-1.5">
-                      <Phone className="w-3.5 h-3.5 text-amber-400" />
+                    <label className="font-bold text-soft block mb-1 text-xs flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5 text-accent-text" />
                       <span>Teléfono / WhatsApp de Contacto</span>
                     </label>
                     <input
@@ -328,13 +328,13 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                       placeholder="Ej. +54 9 11 5566-7788"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-slate-100 placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                      className="w-full px-3.5 py-2 rounded-xl bg-sunken border border-edge text-sm text-strong placeholder-faint focus:border-accent focus:outline-none"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="font-bold text-slate-300 block mb-1 text-xs flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-amber-400" />
+                    <label className="font-bold text-soft block mb-1 text-xs flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5 text-accent-text" />
                       <span>Correo Electrónico (para presupuestos y reportes)</span>
                     </label>
                     <input
@@ -342,13 +342,13 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                       placeholder="cliente@empresa.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-slate-100 placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                      className="w-full px-3.5 py-2 rounded-xl bg-sunken border border-edge text-sm text-strong placeholder-faint focus:border-accent focus:outline-none"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="font-bold text-slate-300 block mb-1 text-xs flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                    <label className="font-bold text-soft block mb-1 text-xs flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-accent-text" />
                       <span>Dirección del Inmueble / Ubicación de la Instalación</span>
                     </label>
                     <input
@@ -356,7 +356,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                       placeholder="Calle, Número, Piso/Depto, Barrio, Ciudad, Provincia"
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-slate-100 placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                      className="w-full px-3.5 py-2 rounded-xl bg-sunken border border-edge text-sm text-strong placeholder-faint focus:border-accent focus:outline-none"
                     />
                   </div>
                 </div>
@@ -367,36 +367,36 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             {activeTab === 'electrical' && (
               <div className="space-y-4">
                 {/* Presets Rápidos */}
-                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                <div className="p-3 rounded-xl bg-sunken/60 border border-hairline space-y-2">
+                  <span className="text-xs font-bold text-muted uppercase tracking-wider block">
                     Preconfiguraciones Rápidas de Red Habituales:
                   </span>
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => handleApplyPresetVoltage(220, 220, 'Monofásico (1F+N)')}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold"
+                      className="px-2.5 py-1 rounded-lg bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold"
                     >
                       🇦🇷 220V Monofásico (Arg / Latam)
                     </button>
                     <button
                       type="button"
                       onClick={() => handleApplyPresetVoltage(220, 380, 'Trifásico (3F+N)')}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold"
+                      className="px-2.5 py-1 rounded-lg bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold"
                     >
                       🇦🇷 380V / 220V Trifásico
                     </button>
                     <button
                       type="button"
                       onClick={() => handleApplyPresetVoltage(120, 240, 'Bifásico (2F+N)')}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold"
+                      className="px-2.5 py-1 rounded-lg bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold"
                     >
                       120V / 240V Split-Phase
                     </button>
                     <button
                       type="button"
                       onClick={() => handleApplyPresetVoltage(127, 220, 'Trifásico (3F+N)')}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold"
+                      className="px-2.5 py-1 rounded-lg bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold"
                     >
                       🇲🇽 220V / 127V Trifásico
                     </button>
@@ -405,11 +405,11 @@ export const ClientModal: React.FC<ClientModalProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1 text-xs">Tipo de Acometida</label>
+                    <label className="font-bold text-soft block mb-1 text-xs">Tipo de Acometida</label>
                     <select
                       value={serviceType}
                       onChange={(e) => handleServiceTypeChange(e.target.value as any)}
-                      className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-slate-100 font-semibold focus:border-amber-500 focus:outline-none"
+                      className="w-full px-3 py-2.5 rounded-xl bg-sunken border border-edge text-sm text-strong font-semibold focus:border-accent focus:outline-none"
                     >
                       <option value="Monofásico (1F+N)">Monofásico (1F+N)</option>
                       <option value="Bifásico (2F+N)">Bifásico (2F+N / Split Phase)</option>
@@ -418,7 +418,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1 text-xs">
+                    <label className="font-bold text-soft block mb-1 text-xs">
                       Tensión Fase-Neutro (L-N) [V]
                     </label>
                     <div className="relative">
@@ -428,14 +428,14 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                         max={300}
                         value={nominalVoltage}
                         onChange={(e) => setNominalVoltage(parseInt(e.target.value) || 220)}
-                        className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-slate-100 font-mono font-bold focus:border-amber-500 focus:outline-none"
+                        className="w-full px-3 py-2.5 rounded-xl bg-sunken border border-edge text-sm text-strong font-mono font-bold focus:border-accent focus:outline-none"
                       />
-                      <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">V</span>
+                      <span className="absolute right-3 top-2.5 text-xs text-muted font-bold">V</span>
                     </div>
                   </div>
 
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1 text-xs">
+                    <label className="font-bold text-soft block mb-1 text-xs">
                       Tensión Fase-Fase (L-L) [V]
                     </label>
                     <div className="relative">
@@ -445,19 +445,19 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                         max={600}
                         value={lineVoltage}
                         onChange={(e) => setLineVoltage(parseInt(e.target.value) || 380)}
-                        className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-slate-100 font-mono font-bold focus:border-amber-500 focus:outline-none"
+                        className="w-full px-3 py-2.5 rounded-xl bg-sunken border border-edge text-sm text-strong font-mono font-bold focus:border-accent focus:outline-none"
                       />
-                      <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">V</span>
+                      <span className="absolute right-3 top-2.5 text-xs text-muted font-bold">V</span>
                     </div>
                   </div>
 
                   <div className="sm:col-span-3">
-                    <label className="font-bold text-slate-300 block mb-1 text-xs flex items-center justify-between">
+                    <label className="font-bold text-soft block mb-1 text-xs flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
-                        <Gauge className="w-3.5 h-3.5 text-amber-400" />
+                        <Gauge className="w-3.5 h-3.5 text-accent-text" />
                         <span>Capacidad del Interruptor Principal (Térmica General)</span>
                       </span>
-                      <span className="text-amber-400 font-mono font-bold">{mainBreakerAmps} Amperios</span>
+                      <span className="text-accent-text font-mono font-bold">{mainBreakerAmps} Amperios</span>
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -467,7 +467,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                         step={5}
                         value={mainBreakerAmps}
                         onChange={(e) => setMainBreakerAmps(parseInt(e.target.value) || 32)}
-                        className="w-36 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-slate-100 font-mono font-bold focus:border-amber-500 focus:outline-none"
+                        className="w-36 px-3 py-2 rounded-xl bg-sunken border border-edge text-sm text-strong font-mono font-bold focus:border-accent focus:outline-none"
                       />
                       <div className="flex flex-wrap gap-1.5 flex-1">
                         {[16, 20, 25, 32, 40, 50, 63, 80, 100].map((amps) => (
@@ -477,8 +477,8 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                             onClick={() => setMainBreakerAmps(amps)}
                             className={`px-2 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
                               mainBreakerAmps === amps
-                                ? 'bg-amber-500 text-slate-950'
-                                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                ? 'bg-accent text-accent-fg'
+                                : 'bg-raised text-soft hover:bg-raised-strong'
                             }`}
                           >
                             {amps}A
@@ -486,7 +486,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                         ))}
                       </div>
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-1.5">
+                    <p className="text-xs text-faint mt-1.5">
                       Determina el límite de corriente admisible y las advertencias de sobrecarga en el balance de fases.
                     </p>
                   </div>
@@ -499,11 +499,11 @@ export const ClientModal: React.FC<ClientModalProps> = ({
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1 text-xs">Moneda Principal del Cliente</label>
+                    <label className="font-bold text-soft block mb-1 text-xs">Moneda Principal del Cliente</label>
                     <select
                       value={currency}
                       onChange={(e) => setCurrency(e.target.value as SupportedCurrency)}
-                      className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-slate-100 font-semibold focus:border-amber-500 focus:outline-none"
+                      className="w-full px-3 py-2.5 rounded-xl bg-sunken border border-edge text-sm text-strong font-semibold focus:border-accent focus:outline-none"
                     >
                       <option value="USD">💵 Dólares Estadounidenses (USD)</option>
                       <option value="ARS">🇦🇷 Pesos Argentinos (ARS)</option>
@@ -511,9 +511,9 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1 text-xs">Costo de Energía por kWh</label>
-                    <div className="flex rounded-xl bg-slate-950 border border-slate-700 overflow-hidden">
-                      <span className="px-3 py-2.5 text-slate-400 bg-slate-900 border-r border-slate-700 font-bold text-xs">
+                    <label className="font-bold text-soft block mb-1 text-xs">Costo de Energía por kWh</label>
+                    <div className="flex rounded-xl bg-sunken border border-edge overflow-hidden">
+                      <span className="px-3 py-2.5 text-muted bg-surface border-r border-edge font-bold text-xs">
                         {currency === 'ARS' ? '$' : 'US$'}
                       </span>
                       <input
@@ -522,18 +522,18 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                         min={0}
                         value={kwhCost}
                         onChange={(e) => setKwhCost(parseFloat(e.target.value) || 0)}
-                        className="w-full px-3 py-2 bg-transparent text-sm text-slate-100 font-mono font-bold focus:outline-none"
+                        className="w-full px-3 py-2 bg-transparent text-sm text-strong font-mono font-bold focus:outline-none"
                       />
                     </div>
-                    <span className="text-[10px] text-slate-500 mt-1 block">
+                    <span className="text-xs text-faint mt-1 block">
                       Ej: 0.165 en USD o 120.50 en ARS según la factura.
                     </span>
                   </div>
 
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1 text-xs">Cargo Fijo Mensual de la Factura</label>
-                    <div className="flex rounded-xl bg-slate-950 border border-slate-700 overflow-hidden">
-                      <span className="px-3 py-2.5 text-slate-400 bg-slate-900 border-r border-slate-700 font-bold text-xs">
+                    <label className="font-bold text-soft block mb-1 text-xs">Cargo Fijo Mensual de la Factura</label>
+                    <div className="flex rounded-xl bg-sunken border border-edge overflow-hidden">
+                      <span className="px-3 py-2.5 text-muted bg-surface border-r border-edge font-bold text-xs">
                         {currency === 'ARS' ? '$' : 'US$'}
                       </span>
                       <input
@@ -542,21 +542,21 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                         min={0}
                         value={fixedCharge}
                         onChange={(e) => setFixedCharge(parseFloat(e.target.value) || 0)}
-                        className="w-full px-3 py-2 bg-transparent text-sm text-slate-100 font-mono font-bold focus:outline-none"
+                        className="w-full px-3 py-2 bg-transparent text-sm text-strong font-mono font-bold focus:outline-none"
                       />
                     </div>
-                    <span className="text-[10px] text-slate-500 mt-1 block">
+                    <span className="text-xs text-faint mt-1 block">
                       Cargo fijo que cobra la empresa distribuidora mensualmente.
                     </span>
                   </div>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-slate-300 space-y-1">
-                  <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                <div className="p-3.5 rounded-xl bg-accent-soft border border-accent-line text-xs text-soft space-y-1">
+                  <div className="font-bold text-accent-text flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>Cálculo Automático de Consumos y Proyecciones</span>
                   </div>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-xs text-muted">
                     Estos valores tarifarios se utilizan en la pestaña de <strong>Auditoría de Cargas</strong> y en el{' '}
                     <strong>Historial de Consumo</strong> para calcular el costo proyectado en la moneda seleccionada.
                   </p>
@@ -568,7 +568,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             {activeTab === 'diagnosis' && (
               <div className="space-y-4">
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1 text-xs">
+                  <label className="font-bold text-soft block mb-1 text-xs">
                     Motivo del Servicio / Problema Reportado por el Cliente
                   </label>
                   <textarea
@@ -576,12 +576,12 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                     placeholder="Ej. Factura eléctrica excesiva, saltos periódicos del disyuntor, parpadeo de luces, ampliación de potencia..."
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                    className="w-full px-3.5 py-2 rounded-xl bg-sunken border border-edge text-xs text-strong placeholder-faint focus:border-accent focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1 text-xs">
+                  <label className="font-bold text-soft block mb-1 text-xs">
                     Notas y Diagnóstico Preliminar del Técnico Electricista
                   </label>
                   <textarea
@@ -589,15 +589,15 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                     placeholder="Ej. Tablero con térmicas viejas tipo unipolar en neutro, jabalina oxidada con resistencia de 45 ohms, desbalance marcado en fase 1..."
                     value={technicianNotes}
                     onChange={(e) => setTechnicianNotes(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                    className="w-full px-3.5 py-2 rounded-xl bg-sunken border border-edge text-xs text-strong placeholder-faint focus:border-accent focus:outline-none"
                   />
                 </div>
 
                 {/* Recommendations List Editor */}
-                <div className="space-y-2 pt-2 border-t border-slate-800">
+                <div className="space-y-2 pt-2 border-t border-hairline">
                   <div className="flex items-center justify-between">
-                    <label className="font-bold text-slate-300 block text-xs flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <label className="font-bold text-soft block text-xs flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-success-text" />
                       <span>Recomendaciones Técnicas Oficiales ({recommendations.length})</span>
                     </label>
                   </div>
@@ -615,12 +615,12 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                           handleAddRecommendation();
                         }
                       }}
-                      className="flex-1 px-3.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-slate-100 placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                      className="flex-1 px-3.5 py-1.5 rounded-lg bg-sunken border border-edge text-xs text-strong placeholder-faint focus:border-accent focus:outline-none"
                     />
                     <button
                       type="button"
                       onClick={handleAddRecommendation}
-                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1"
+                      className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent text-accent-fg font-bold text-xs flex items-center gap-1"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Agregar</span>
@@ -629,7 +629,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
 
                   {/* Quick Preset Buttons */}
                   <div className="flex flex-wrap gap-1.5 pt-1">
-                    <span className="text-[10px] text-slate-500 font-bold uppercase block w-full">
+                    <span className="text-xs text-faint font-bold uppercase block w-full">
                       Sugerencias Rápidas:
                     </span>
                     {COMMON_RECOMMENDATIONS.map((rec, i) => (
@@ -637,7 +637,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                         key={i}
                         type="button"
                         onClick={() => handleAddPresetRecommendation(rec)}
-                        className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 truncate max-w-xs transition-colors"
+                        className="text-xs px-2 py-0.5 rounded-md bg-raised hover:bg-raised-strong text-soft border border-edge/60 truncate max-w-xs transition-colors"
                         title={rec}
                       >
                         + {rec}
@@ -650,13 +650,13 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                     {recommendations.map((rec, index) => (
                       <div
                         key={index}
-                        className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-950/70 border border-slate-800 text-xs text-slate-200"
+                        className="flex items-center justify-between gap-2 p-2 rounded-lg bg-sunken/70 border border-hairline text-xs text-strong"
                       >
                         <span className="flex-1 truncate">• {rec}</span>
                         <button
                           type="button"
                           onClick={() => handleRemoveRecommendation(index)}
-                          className="p-1 text-slate-400 hover:text-rose-400 rounded transition-colors"
+                          className="p-1 text-muted hover:text-danger-text rounded transition-colors"
                           title="Eliminar recomendación"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -670,21 +670,21 @@ export const ClientModal: React.FC<ClientModalProps> = ({
           </div>
 
           {/* Footer Actions */}
-          <div className="px-5 py-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between">
-            <div className="text-[11px] text-slate-400">
+          <div className="px-5 py-4 bg-sunken/80 border-t border-hairline flex items-center justify-between">
+            <div className="text-xs text-muted">
               * Los cambios se aplican inmediatamente a todos los cálculos del proyecto.
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs sm:text-sm font-semibold transition-colors"
+                className="px-4 py-2 rounded-xl bg-raised text-soft hover:bg-raised-strong text-xs sm:text-sm font-semibold transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs sm:text-sm font-bold shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition-all"
+                className="px-5 py-2 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs sm:text-sm font-bold shadow-md shadow-accent/20 flex items-center gap-1.5 transition-all"
               >
                 <Check className="w-4 h-4 stroke-[2.5]" />
                 <span>Guardar Cliente Completo</span>

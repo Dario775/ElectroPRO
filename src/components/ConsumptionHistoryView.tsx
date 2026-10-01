@@ -189,40 +189,40 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
       const diffVsAvg = stats.avgKwh > 0 ? (((val - stats.avgKwh) / stats.avgKwh) * 100).toFixed(1) : '0';
 
       return (
-        <div className="bg-slate-950/95 border border-slate-700/80 rounded-xl p-3 shadow-2xl backdrop-blur-md text-xs font-sans min-w-[200px]">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
-            <span className="font-bold text-slate-100 text-sm">
+        <div className="bg-sunken/95 border border-edge/80 rounded-xl p-3 shadow-2xl backdrop-blur-md text-xs font-sans min-w-[200px]">
+          <div className="flex items-center justify-between border-b border-hairline pb-1.5 mb-2">
+            <span className="font-bold text-strong text-sm">
               {label} {data.year ? data.year : ''}
             </span>
             {data.isProjected ? (
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-slate-950">
+              <span className="px-2 py-0.5 rounded text-xs font-bold bg-accent text-accent-fg">
                 Auditoría Actual
               </span>
             ) : (
-              <span className="text-[10px] text-slate-400 font-mono">Factura Real</span>
+              <span className="text-xs text-muted font-mono">Factura Real</span>
             )}
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-slate-400">Consumo:</span>
-              <span className="font-mono font-bold text-amber-400 text-base">
+              <span className="text-muted">Consumo:</span>
+              <span className="font-mono font-bold text-accent-text text-base">
                 {data.kwh.toLocaleString()} kWh
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-400">Importe Est.:</span>
-              <span className="font-mono font-bold text-emerald-400">
+              <span className="text-muted">Importe Est.:</span>
+              <span className="font-mono font-bold text-success-text">
                 {format(parseFloat(costVal), client.currency)}
               </span>
             </div>
             {data.notes && (
-              <div className="text-[11px] text-slate-400 italic">
+              <div className="text-xs text-muted italic">
                 Nota: {data.notes}
               </div>
             )}
-            <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px]">
-              <span className="text-slate-500">Vs Promedio:</span>
-              <span className={`font-mono font-semibold ${parseFloat(diffVsAvg) >= 0 ? 'text-amber-400' : 'text-cyan-400'}`}>
+            <div className="flex items-center justify-between pt-1 border-t border-hairline/80 text-xs">
+              <span className="text-faint">Vs Promedio:</span>
+              <span className={`font-mono font-semibold ${parseFloat(diffVsAvg) >= 0 ? 'text-accent-text' : 'text-data-text'}`}>
                 {parseFloat(diffVsAvg) >= 0 ? `+${diffVsAvg}%` : `${diffVsAvg}%`}
               </span>
             </div>
@@ -236,18 +236,18 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
   return (
     <div className="space-y-6">
       {/* 1. Header Banner */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <BarChart3 className="w-5 h-5 text-amber-400" />
-            <h2 className="font-bold text-lg sm:text-xl text-slate-100">
+            <BarChart3 className="w-5 h-5 text-accent-text" />
+            <h2 className="font-bold text-lg sm:text-xl text-strong">
               Historial de Consumo Energético Mensual
             </h2>
-            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+            <span className="px-2 py-0.5 rounded text-xs font-bold bg-accent-soft text-accent-text border border-accent-line">
               Facturación vs Auditoría
             </span>
           </div>
-          <p className="text-xs text-slate-400 max-w-2xl">
+          <p className="text-xs text-muted max-w-2xl">
             Permite contrastar los recibos históricos emitidos por la distribuidora eléctrica con el consumo mensual
             proyectado del inventario de cargas. Esencial para detectar anomalías, fugas a tierra o medidores defectuosos.
           </p>
@@ -258,9 +258,9 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
             <button
               type="button"
               onClick={onNavigateToAudit}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 transition-colors"
             >
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <Zap className="w-3.5 h-3.5 text-accent-text" />
               <span>Ver Auditoría de Cargas</span>
             </button>
           )}
@@ -268,7 +268,7 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
           <button
             type="button"
             onClick={handleOpenEdit}
-            className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            className="px-3.5 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
           >
             <Edit3 className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Registrar / Editar Recibos</span>
@@ -279,57 +279,57 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
       {/* 2. Top Analytics KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-5 gap-3">
         {/* Consumo Auditado Actual */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+        <div className="bg-surface border border-hairline rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between text-muted text-xs font-semibold mb-1">
             <span>Auditado Actual</span>
-            <Zap className="w-4 h-4 text-amber-400" />
+            <Zap className="w-4 h-4 text-accent-text" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-['JetBrains_Mono'] text-amber-400">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-accent-text">
             {Math.round(projectedMonthlyKwh).toLocaleString('es-ES')}{' '}
-            <span className="text-xs font-sans text-slate-400 font-medium">kWh/m</span>
+            <span className="text-xs font-sans text-muted font-medium">kWh/m</span>
           </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
+          <div className="text-xs text-muted mt-1 truncate">
             {client.loads.length} cargas registradas
           </div>
         </div>
 
         {/* Promedio Histórico */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+        <div className="bg-surface border border-hairline rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between text-muted text-xs font-semibold mb-1">
             <span>Promedio Facturado</span>
-            <Clock className="w-4 h-4 text-indigo-400" />
+            <Clock className="w-4 h-4 text-metric-text" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-['JetBrains_Mono'] text-slate-100">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-strong">
             {stats.avgKwh.toLocaleString('es-ES')}{' '}
-            <span className="text-xs font-sans text-slate-400 font-medium">kWh/m</span>
+            <span className="text-xs font-sans text-muted font-medium">kWh/m</span>
           </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
+          <div className="text-xs text-muted mt-1 truncate">
             {format(stats.avgCost, client.currency)}/mes
           </div>
         </div>
 
         {/* Desviación vs Facturas */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+        <div className="bg-surface border border-hairline rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between text-muted text-xs font-semibold mb-1">
             <span>Desviación Auditoría</span>
             {stats.diffPercent >= 0 ? (
-              <TrendingUp className="w-4 h-4 text-amber-400" />
+              <TrendingUp className="w-4 h-4 text-accent-text" />
             ) : (
-              <TrendingDown className="w-4 h-4 text-cyan-400" />
+              <TrendingDown className="w-4 h-4 text-data-text" />
             )}
           </div>
           <div
-            className={`text-xl sm:text-2xl font-bold font-['JetBrains_Mono'] ${
+            className={`text-xl sm:text-2xl font-bold font-mono ${
               Math.abs(stats.diffPercent) <= 15
-                ? 'text-emerald-400'
+                ? 'text-success-text'
                 : Math.abs(stats.diffPercent) <= 30
-                ? 'text-amber-400'
-                : 'text-rose-400'
+                ? 'text-accent-text'
+                : 'text-danger-text'
             }`}
           >
             {stats.diffPercent > 0 ? `+${stats.diffPercent}%` : `${stats.diffPercent}%`}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
+          <div className="text-xs text-muted mt-1 truncate">
             {Math.abs(stats.diffPercent) <= 15
               ? 'Conforme (±15%)'
               : Math.abs(stats.diffPercent) <= 30
@@ -339,59 +339,59 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
         </div>
 
         {/* Mes Pico Máximo */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+        <div className="bg-surface border border-hairline rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between text-muted text-xs font-semibold mb-1">
             <span>Mes Pico Máximo</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+            <span className="w-2.5 h-2.5 rounded-full bg-danger-solid" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-['JetBrains_Mono'] text-rose-400">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-danger-text">
             {stats.maxKwh.toLocaleString('es-ES')}{' '}
-            <span className="text-xs font-sans text-slate-400 font-medium">kWh</span>
+            <span className="text-xs font-sans text-muted font-medium">kWh</span>
           </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
+          <div className="text-xs text-muted mt-1 truncate">
             {stats.maxMonth || 'N/A'}
           </div>
         </div>
 
         {/* Mes Valle Mínimo */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm col-span-2 sm:col-span-1">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+        <div className="bg-surface border border-hairline rounded-xl p-3.5 shadow-sm col-span-2 sm:col-span-1">
+          <div className="flex items-center justify-between text-muted text-xs font-semibold mb-1">
             <span>Mes Valle Mínimo</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
+            <span className="w-2.5 h-2.5 rounded-full bg-data" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold font-['JetBrains_Mono'] text-cyan-400">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-data-text">
             {stats.minKwh.toLocaleString('es-ES')}{' '}
-            <span className="text-xs font-sans text-slate-400 font-medium">kWh</span>
+            <span className="text-xs font-sans text-muted font-medium">kWh</span>
           </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate">
+          <div className="text-xs text-muted mt-1 truncate">
             {stats.minMonth || 'N/A'}
           </div>
         </div>
       </div>
 
       {/* 3. Bar Chart Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-4">
         {/* Toolbar inside card */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-hairline pb-3">
           <div className="flex items-center gap-2">
-            <h3 className="font-bold text-sm sm:text-base text-slate-200">
+            <h3 className="font-bold text-sm sm:text-base text-strong">
               Curva de Consumo y Facturación ({timeRange === '6m' ? 'Últimos 6 Meses' : 'Últimos 12 Meses'})
             </h3>
-            <span className="text-xs text-slate-400 font-mono">
+            <span className="text-xs text-muted font-mono">
               Tarifa: {format(client.kwhCost, client.currency)}/kWh
             </span>
           </div>
 
           <div className="flex items-center gap-2">
             {/* 6 vs 12 months */}
-            <div className="flex rounded-lg bg-slate-950 p-0.5 border border-slate-800 text-xs">
+            <div className="flex rounded-lg bg-sunken p-0.5 border border-hairline text-xs">
               <button
                 type="button"
                 onClick={() => setTimeRange('6m')}
                 className={`px-3 py-1 rounded font-bold transition-colors ${
                   timeRange === '6m'
-                    ? 'bg-amber-500 text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-accent text-accent-fg shadow-sm'
+                    : 'text-muted hover:text-strong'
                 }`}
               >
                 6 Meses
@@ -401,8 +401,8 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
                 onClick={() => setTimeRange('12m')}
                 className={`px-3 py-1 rounded font-bold transition-colors ${
                   timeRange === '12m'
-                    ? 'bg-amber-500 text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-accent text-accent-fg shadow-sm'
+                    : 'text-muted hover:text-strong'
                 }`}
               >
                 12 Meses
@@ -410,14 +410,14 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
             </div>
 
             {/* kWh vs Cost */}
-            <div className="flex rounded-lg bg-slate-950 p-0.5 border border-slate-800 text-xs">
+            <div className="flex rounded-lg bg-sunken p-0.5 border border-hairline text-xs">
               <button
                 type="button"
                 onClick={() => setViewMode('kwh')}
                 className={`px-3 py-1 rounded font-bold transition-colors ${
                   viewMode === 'kwh'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-metric text-strong shadow-sm'
+                    : 'text-muted hover:text-strong'
                 }`}
               >
                 kWh
@@ -427,8 +427,8 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
                 onClick={() => setViewMode('cost')}
                 className={`px-3 py-1 rounded font-bold transition-colors ${
                   viewMode === 'cost'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-success-solid text-strong shadow-sm'
+                    : 'text-muted hover:text-strong'
                 }`}
               >
                 {activeCurrency === 'ARS' ? '$ ARS' : '$ USD'}
@@ -519,44 +519,44 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
         </div>
 
         {/* Legend */}
-        <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-800/80 gap-2">
+        <div className="flex flex-wrap items-center justify-between text-xs text-muted pt-2 border-t border-hairline/80 gap-2">
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-sm bg-blue-500 inline-block" />
+              <span className="w-3 h-3 rounded-sm bg-info-solid inline-block" />
               <span>Factura Compañía Eléctrica</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-sm bg-amber-500 border border-amber-300 inline-block" />
-              <span className="text-amber-300 font-semibold">Proyección Auditoría Actual</span>
+              <span className="w-3 h-3 rounded-sm bg-accent border border-accent inline-block" />
+              <span className="text-accent-text font-semibold">Proyección Auditoría Actual</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-sm bg-red-500 inline-block" />
+              <span className="w-3 h-3 rounded-sm bg-danger-solid inline-block" />
               <span>Mes Pico (Mayor Demanda)</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-0.5 bg-indigo-500 border-dashed inline-block" />
+              <span className="w-4 h-0.5 bg-metric border-dashed inline-block" />
               <span>Línea Promedio</span>
             </div>
           </div>
 
-          <div className="text-xs font-mono text-slate-300">
-            Total periodo: <strong className="text-white">{stats.totalKwh.toLocaleString()} kWh</strong>
+          <div className="text-xs font-mono text-soft">
+            Total periodo: <strong className="text-strong">{stats.totalKwh.toLocaleString()} kWh</strong>
           </div>
         </div>
       </div>
 
       {/* 4. Diagnostic Technical Analysis for Electrician */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">
-        <h4 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-amber-400" />
+      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-3">
+        <h4 className="font-bold text-sm text-strong flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-accent-text" />
           <span>Diagnóstico Eléctrico Forense (Facturación vs Auditoría de Cargas)</span>
         </h4>
 
         {Math.abs(stats.diffPercent) <= 15 ? (
-          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-3">
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-slate-300 leading-relaxed">
-              <strong className="text-emerald-300 block mb-0.5">
+          <div className="p-3.5 rounded-xl bg-success-soft border border-success-line flex items-start gap-3">
+            <CheckCircle2 className="w-5 h-5 text-success-text flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-soft leading-relaxed">
+              <strong className="text-success-text block mb-0.5">
                 Excelente Correspondencia Energética (Desvío de solo {stats.diffPercent}%):
               </strong>
               El consumo mensual calculado a partir del inventario de electrodomésticos y sus horas declaradas de uso
@@ -566,15 +566,15 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
             </div>
           </div>
         ) : stats.diffPercent < -15 ? (
-          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-3">
-            <ShieldAlert className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-slate-300 leading-relaxed">
-              <strong className="text-rose-300 block mb-0.5">
+          <div className="p-3.5 rounded-xl bg-danger-soft border border-danger-line flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 text-danger-text flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-soft leading-relaxed">
+              <strong className="text-danger-text block mb-0.5">
                 Alerta de Sobrefacturación / Consumo No Declarado (Facturas superan la auditoría en +{Math.abs(stats.diffPercent)}%):
               </strong>
               La compañía eléctrica factura en promedio {stats.avgKwh} kWh/mes, mientras que todos los aparatos auditados
               en la vivienda solo suman {Math.round(projectedMonthlyKwh)} kWh/mes.
-              <ul className="list-disc list-inside mt-1.5 space-y-1 text-slate-300">
+              <ul className="list-disc list-inside mt-1.5 space-y-1 text-soft">
                 <li>Verificar posible <strong>fuga de corriente a tierra</strong> por aislamiento envejecido o conductores rozando cañerías metálicas.</li>
                 <li>Comprobar si existen <strong>cargas clandestinas / conexiones no autorizadas</strong> o circuitos exteriores ocultos.</li>
                 <li>Verificar refrigeradores o congeladores antiguos con termostato trabado (compresor marchando 24 horas continuas).</li>
@@ -583,10 +583,10 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
             </div>
           </div>
         ) : (
-          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
-            <Info className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-slate-300 leading-relaxed">
-              <strong className="text-amber-300 block mb-0.5">
+          <div className="p-3.5 rounded-xl bg-accent-soft border border-accent-line flex items-start gap-3">
+            <Info className="w-5 h-5 text-accent-text flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-soft leading-relaxed">
+              <strong className="text-accent-text block mb-0.5">
                 Auditoría Superior al Historial Facturado (+{stats.diffPercent}%):
               </strong>
               El inventario nominal de cargas arroja {Math.round(projectedMonthlyKwh)} kWh/mes frente a los {stats.avgKwh} kWh/mes
@@ -598,13 +598,13 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
       </div>
 
       {/* 5. Detailed Monthly Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">
+      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div>
-            <h4 className="font-bold text-sm sm:text-base text-slate-100">
+            <h4 className="font-bold text-sm sm:text-base text-strong">
               Desglose Mes a Mes de Facturas Registradas
             </h4>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-muted">
               Datos registrados para el cliente activo. Haz clic en "Registrar / Editar Recibos" para modificar lecturas.
             </p>
           </div>
@@ -612,9 +612,9 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
           <button
             type="button"
             onClick={handleOpenEdit}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 transition-colors"
           >
-            <Edit3 className="w-3.5 h-3.5 text-amber-400" />
+            <Edit3 className="w-3.5 h-3.5 text-accent-text" />
             <span>Modificar Tabla</span>
           </button>
         </div>
@@ -622,7 +622,7 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
+              <tr className="border-b border-hairline text-muted uppercase text-xs font-bold">
                 <th className="py-2.5 px-3">Periodo</th>
                 <th className="py-2.5 px-3 text-right">Consumo (kWh)</th>
                 <th className="py-2.5 px-3 text-right">Importe ({activeCurrency})</th>
@@ -632,7 +632,7 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
                 <th className="py-2.5 px-3">Observación / Nota</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 font-mono">
+            <tbody className="divide-y divide-hairline/60 font-mono">
               {displayData.map((item, idx) => {
                 const diffVsAvg = stats.avgKwh > 0 ? (((item.kwh - stats.avgKwh) / stats.avgKwh) * 100).toFixed(1) : '0';
                 const diffVsAudit = projectedMonthlyKwh > 0 ? (item.kwh - Math.round(projectedMonthlyKwh)) : 0;
@@ -643,47 +643,47 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
                     key={idx}
                     className={`transition-colors ${
                       item.isProjected
-                        ? 'bg-amber-500/10 font-bold border-l-2 border-amber-500'
+                        ? 'bg-accent-soft font-bold border-l-2 border-accent'
                         : isMax
-                        ? 'bg-rose-500/5'
-                        : 'hover:bg-slate-800/30'
+                        ? 'bg-danger-soft'
+                        : 'hover:bg-raised/30'
                     }`}
                   >
-                    <td className="py-2.5 px-3 font-sans font-bold text-slate-200">
+                    <td className="py-2.5 px-3 font-sans font-bold text-strong">
                       {item.month} {item.year || ''}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-bold text-amber-400">
+                    <td className="py-2.5 px-3 text-right font-bold text-accent-text">
                       {item.kwh.toLocaleString()} kWh
                     </td>
-                    <td className="py-2.5 px-3 text-right text-emerald-400 font-semibold">
+                    <td className="py-2.5 px-3 text-right text-success-text font-semibold">
                       {format(item.kwh * client.kwhCost + client.fixedCharge, client.currency)}
                     </td>
                     <td className="py-2.5 px-3 text-right">
-                      <span className={parseFloat(diffVsAvg) >= 0 ? 'text-amber-400' : 'text-cyan-400'}>
+                      <span className={parseFloat(diffVsAvg) >= 0 ? 'text-accent-text' : 'text-data-text'}>
                         {parseFloat(diffVsAvg) >= 0 ? `+${diffVsAvg}%` : `${diffVsAvg}%`}
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-right">
-                      <span className={diffVsAudit >= 0 ? 'text-slate-300' : 'text-slate-500'}>
+                      <span className={diffVsAudit >= 0 ? 'text-soft' : 'text-faint'}>
                         {diffVsAudit > 0 ? `+${diffVsAudit}` : diffVsAudit} kWh
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-center font-sans">
                       {item.isProjected ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-slate-950">
+                        <span className="px-2 py-0.5 rounded text-xs font-bold bg-accent text-accent-fg">
                           Auditoría Actual
                         </span>
                       ) : isMax ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                        <span className="px-2 py-0.5 rounded text-xs font-bold bg-danger-soft text-danger-text border border-danger-line">
                           Pico Anual
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">
+                        <span className="px-2 py-0.5 rounded text-xs bg-raised text-soft">
                           Recibo Real
                         </span>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 font-sans text-slate-400 text-[11px]">
+                    <td className="py-2.5 px-3 font-sans text-muted text-xs">
                       {item.notes || '-'}
                     </td>
                   </tr>
@@ -697,45 +697,45 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
       {/* 6. Modal: Edit Bill Readings */}
       {isEditing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-surface border border-hairline rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            <div className="p-4 border-b border-hairline flex items-center justify-between">
               <div>
-                <h4 className="font-bold text-slate-100 flex items-center gap-2">
-                  <Edit3 className="w-4 h-4 text-amber-400" />
+                <h4 className="font-bold text-strong flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-accent-text" />
                   <span>Historial de Facturación Eléctrica del Cliente</span>
                 </h4>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-muted mt-0.5">
                   Registra los kWh leídos de los recibos de la empresa suministradora para contrastar la auditoría.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsEditing(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1 rounded-lg text-muted hover:text-strong hover:bg-raised"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Modal Quick Actions */}
-            <div className="px-4 py-2.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-2 flex-wrap">
-              <span className="text-xs text-slate-400">Atajos de carga rápida:</span>
+            <div className="px-4 py-2.5 bg-sunken border-b border-hairline flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-xs text-muted">Atajos de carga rápida:</span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => handleRegenerateHistory(6)}
-                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 flex items-center gap-1"
+                  className="px-2.5 py-1 rounded bg-raised hover:bg-raised-strong text-xs font-semibold text-strong border border-edge flex items-center gap-1"
                 >
-                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <Sparkles className="w-3 h-3 text-accent-text" />
                   <span>Simular 6 Meses</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleRegenerateHistory(12)}
-                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 flex items-center gap-1"
+                  className="px-2.5 py-1 rounded bg-raised hover:bg-raised-strong text-xs font-semibold text-strong border border-edge flex items-center gap-1"
                 >
-                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <Sparkles className="w-3 h-3 text-accent-text" />
                   <span>Simular 12 Meses (Anual)</span>
                 </button>
               </div>
@@ -743,7 +743,7 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
 
             {/* Modal Table Body */}
             <div className="p-4 overflow-y-auto flex-1 space-y-2.5">
-              <div className="grid grid-cols-12 gap-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2">
+              <div className="grid grid-cols-12 gap-2 text-xs font-bold text-muted uppercase tracking-wider px-2">
                 <span className="col-span-3">Mes</span>
                 <span className="col-span-3">Consumo (kWh)</span>
                 <span className="col-span-3">Importe ({activeCurrency})</span>
@@ -756,16 +756,16 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
                     key={index}
                     className={`grid grid-cols-12 gap-2 items-center p-2 rounded-xl border ${
                       item.isProjected
-                        ? 'bg-amber-500/10 border-amber-500/40'
-                        : 'bg-slate-950 border-slate-800'
+                        ? 'bg-accent-soft border-accent-line'
+                        : 'bg-sunken border-hairline'
                     }`}
                   >
                     {/* Month name & year */}
-                    <div className="col-span-3 flex items-center gap-1.5 font-bold text-slate-200 text-xs">
+                    <div className="col-span-3 flex items-center gap-1.5 font-bold text-strong text-xs">
                       <span>{item.month}</span>
-                      <span className="text-[10px] text-slate-500 font-mono">{item.year}</span>
+                      <span className="text-xs text-faint font-mono">{item.year}</span>
                       {item.isProjected && (
-                        <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-amber-500 text-slate-950">
+                        <span className="px-1 py-0.2 rounded text-xs font-bold bg-accent text-accent-fg">
                           Auditado
                         </span>
                       )}
@@ -789,16 +789,16 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
                             };
                             setTempHistory(updated);
                           }}
-                          className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono font-bold text-amber-400 focus:border-amber-500 focus:outline-none"
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge text-xs font-mono font-bold text-accent-text focus:border-accent focus:outline-none"
                         />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-mono">
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-faint font-mono">
                           kWh
                         </span>
                       </div>
                     </div>
 
                     {/* Estimated Cost */}
-                    <div className="col-span-3 text-xs font-mono text-emerald-400">
+                    <div className="col-span-3 text-xs font-mono text-success-text">
                       {format(item.kwh * client.kwhCost + client.fixedCharge, client.currency)}
                     </div>
 
@@ -813,7 +813,7 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
                           updated[index] = { ...item, notes: e.target.value };
                           setTempHistory(updated);
                         }}
-                        className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                        className="w-full px-2 py-1 rounded bg-surface border border-edge text-xs text-strong focus:border-accent focus:outline-none"
                       />
                     </div>
                   </div>
@@ -822,23 +822,23 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between">
-              <span className="text-xs text-slate-400">
-                Tarifa actual aplicada: <strong className="text-slate-200">{format(client.kwhCost, client.currency)}/kWh</strong>
+            <div className="p-4 border-t border-hairline bg-sunken flex items-center justify-between">
+              <span className="text-xs text-muted">
+                Tarifa actual aplicada: <strong className="text-strong">{format(client.kwhCost, client.currency)}/kWh</strong>
               </span>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setIsEditing(false)}
-                  className="px-3.5 py-1.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-semibold"
+                  className="px-3.5 py-1.5 rounded-xl border border-edge text-soft hover:bg-raised text-xs font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
                   onClick={handleSaveEdit}
-                  className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-colors shadow-md"
+                  className="px-4 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold transition-colors shadow-md"
                 >
                   Guardar Historial
                 </button>

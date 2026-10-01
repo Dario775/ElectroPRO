@@ -342,18 +342,18 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
   return (
     <div className="space-y-6">
       {/* 1. TOP HEADER & MAP SUMMARY */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Layers className="w-5 h-5 text-amber-400" />
-            <h2 className="font-bold text-lg sm:text-xl text-slate-100">
+            <Layers className="w-5 h-5 text-accent-text" />
+            <h2 className="font-bold text-lg sm:text-xl text-strong">
               Mapeo de Tableros Eléctricos y Cuadros de Mando
             </h2>
-            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+            <span className="px-2 py-0.5 rounded text-xs font-bold bg-accent-soft text-accent-text border border-accent-line">
               {panels.length} {panels.length === 1 ? 'Tablero Registrado' : 'Tableros Registrados'}
             </span>
           </div>
-          <p className="text-xs text-slate-400 max-w-2xl">
+          <p className="text-xs text-muted max-w-2xl">
             Gestiona la arquitectura de tableros (General y Seccionales), registra componentes de protección (térmica,
             diferencial, DPS), mide parámetros in situ y asigna circuitos para tomar decisiones prácticas de diseño y seguridad.
           </p>
@@ -364,9 +364,9 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
             <button
               type="button"
               onClick={onNavigateToAudit}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 transition-colors"
             >
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <Zap className="w-3.5 h-3.5 text-accent-text" />
               <span>Ver Cargas</span>
             </button>
           )}
@@ -374,7 +374,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
           <button
             type="button"
             onClick={() => handleOpenPanelModal()}
-            className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            className="px-3.5 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
           >
             <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>+ Agregar Tablero</span>
@@ -383,40 +383,40 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       </div>
 
       {/* 2. VISUAL CIRCUIT MAP / HIERARCHY FLOW */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-hairline pb-2">
           <div className="flex items-center gap-2">
-            <GitBranch className="w-4 h-4 text-amber-400" />
-            <h3 className="font-bold text-sm sm:text-base text-slate-200">
+            <GitBranch className="w-4 h-4 text-accent-text" />
+            <h3 className="font-bold text-sm sm:text-base text-strong">
               Esquema Unifilar y Distribución Jerárquica del Inmueble
             </h3>
           </div>
-          <span className="text-xs text-slate-400 font-mono">
+          <span className="text-xs text-muted font-mono">
             {client.serviceType} • {client.nominalVoltage}V
           </span>
         </div>
 
         {/* Tree / Flow Visualizer */}
-        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800/80 overflow-x-auto">
+        <div className="p-4 rounded-xl bg-sunken border border-hairline/80 overflow-x-auto">
           <div className="min-w-[650px] flex items-center gap-4">
             {/* Medidor / Acometida Block */}
-            <div className="p-3 rounded-xl bg-slate-900 border border-slate-700 text-center w-40 flex-shrink-0 shadow-md">
-              <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto mb-1.5 text-amber-400 font-bold text-xs">
+            <div className="p-3 rounded-xl bg-surface border border-edge text-center w-40 flex-shrink-0 shadow-md">
+              <div className="w-8 h-8 rounded-full bg-raised border border-edge flex items-center justify-center mx-auto mb-1.5 text-accent-text font-bold text-xs">
                 kWh
               </div>
-              <strong className="text-xs text-slate-100 block">Medidor / Red</strong>
-              <span className="text-[10px] text-slate-400 block font-mono">
+              <strong className="text-xs text-strong block">Medidor / Red</strong>
+              <span className="text-xs text-muted block font-mono">
                 {client.serviceType.split(' ')[0]}
               </span>
-              <span className="text-[10px] text-emerald-400 font-bold block mt-1">
+              <span className="text-xs text-success-text font-bold block mt-1">
                 Acometida
               </span>
             </div>
 
             {/* Connecting Arrow */}
-            <div className="flex items-center text-slate-600">
-              <div className="w-8 h-0.5 bg-slate-700" />
-              <ArrowRight className="w-4 h-4 -ml-1 text-amber-500" />
+            <div className="flex items-center text-soft">
+              <div className="w-8 h-0.5 bg-raised-strong" />
+              <ArrowRight className="w-4 h-4 -ml-1 text-accent-text" />
             </div>
 
             {/* Panels Flow Columns */}
@@ -433,16 +433,16 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                     onClick={() => setSelectedPanelId(p.id)}
                     className={`flex-1 p-3.5 rounded-xl border-2 transition-all cursor-pointer shadow-md ${
                       isSelected
-                        ? 'bg-slate-900 border-amber-500 ring-2 ring-amber-500/20'
-                        : 'bg-slate-900/70 border-slate-800 hover:border-slate-700'
+                        ? 'bg-surface border-accent ring-2 ring-accent/20'
+                        : 'bg-surface/70 border-hairline hover:border-edge'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-1 mb-1.5">
                       <span
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                        className={`px-1.5 py-0.5 rounded text-xs font-bold uppercase ${
                           p.type === 'principal'
-                            ? 'bg-amber-500 text-slate-950'
-                            : 'bg-slate-800 text-slate-300'
+                            ? 'bg-accent text-accent-fg'
+                            : 'bg-raised text-soft'
                         }`}
                       >
                         {p.type}
@@ -450,40 +450,40 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
 
                       {/* Status indicator */}
                       {isOverloaded ? (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse">
+                        <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-danger-soft text-danger-text border border-danger-line animate-pulse">
                           Sobrecarga {item.capacityUtilization}%
                         </span>
                       ) : isWarning ? (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                        <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-accent-soft text-accent-text border border-accent-line">
                           {item.capacityUtilization}% Capacidad
                         </span>
                       ) : (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400">
+                        <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-success-soft text-success-text">
                           Normal ({item.capacityUtilization}%)
                         </span>
                       )}
                     </div>
 
-                    <h4 className="font-bold text-xs sm:text-sm text-slate-100 truncate mb-0.5">
+                    <h4 className="font-bold text-xs sm:text-sm text-strong truncate mb-0.5">
                       {p.name}
                     </h4>
-                    <span className="text-[10px] text-slate-400 flex items-center gap-1 mb-2">
-                      <MapPin className="w-2.5 h-2.5 text-slate-500" />
+                    <span className="text-xs text-muted flex items-center gap-1 mb-2">
+                      <MapPin className="w-2.5 h-2.5 text-faint" />
                       {p.location}
                     </span>
 
                     {/* Quick Specs */}
-                    <div className="grid grid-cols-2 gap-1 text-[10px] font-mono bg-slate-950 p-2 rounded-lg border border-slate-800/80 mb-2">
+                    <div className="grid grid-cols-2 gap-1 text-xs font-mono bg-sunken p-2 rounded-lg border border-hairline/80 mb-2">
                       <div>
-                        <span className="text-slate-500 block">Térmica:</span>
-                        <strong className="text-slate-200">
+                        <span className="text-faint block">Térmica:</span>
+                        <strong className="text-strong">
                           {p.mainBreakerAmps}A ({p.mainBreakerCurve || 'C'})
                         </strong>
                       </div>
                       <div>
-                        <span className="text-slate-500 block">Diferencial:</span>
+                        <span className="text-faint block">Diferencial:</span>
                         <strong
-                          className={p.hasDifferential ? 'text-emerald-400' : 'text-rose-400'}
+                          className={p.hasDifferential ? 'text-success-text' : 'text-danger-text'}
                         >
                           {p.hasDifferential ? `${p.differentialSensitivityMa}mA` : 'FALTA'}
                         </strong>
@@ -491,9 +491,9 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                     </div>
 
                     {/* Load count and power */}
-                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800 text-slate-300 font-sans">
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-hairline text-soft font-sans">
                       <span>{item.assignedLoads.length} Circuitos</span>
-                      <strong className="font-mono text-amber-400">
+                      <strong className="font-mono text-accent-text">
                         {(item.totalWatts / 1000).toFixed(2)} kW
                       </strong>
                     </div>
@@ -508,26 +508,26 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       {/* 3. SELECTED PANEL DETAILED VIEW & CONTROLS */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Panel Hardware Specs & Measurements (7 cols) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5 lg:col-span-7 shadow-sm">
+        <div className="bg-surface border border-hairline rounded-2xl p-5 space-y-5 lg:col-span-7 shadow-sm">
           {/* Header of Active Panel */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-hairline pb-3">
             <div>
               <div className="flex items-center gap-2">
                 <span
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                  className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
                     activePanel.type === 'principal'
-                      ? 'bg-amber-500 text-slate-950'
-                      : 'bg-slate-800 text-slate-300'
+                      ? 'bg-accent text-accent-fg'
+                      : 'bg-raised text-soft'
                   }`}
                 >
                   {activePanel.type}
                 </span>
-                <h3 className="font-bold text-base sm:text-lg text-slate-100">
+                <h3 className="font-bold text-base sm:text-lg text-strong">
                   {activePanel.name}
                 </h3>
               </div>
-              <span className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
-                <MapPin className="w-3.5 h-3.5 text-slate-500" />
+              <span className="text-xs text-muted flex items-center gap-1.5 mt-0.5">
+                <MapPin className="w-3.5 h-3.5 text-faint" />
                 Ubicación física: <strong>{activePanel.location}</strong>
               </span>
             </div>
@@ -536,10 +536,10 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleOpenPanelModal(activePanel)}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1 transition-colors"
+                className="px-2.5 py-1.5 rounded-lg bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1 transition-colors"
                 title="Editar especificaciones de este tablero"
               >
-                <Edit2 className="w-3 h-3 text-amber-400" />
+                <Edit2 className="w-3 h-3 text-accent-text" />
                 <span>Editar</span>
               </button>
 
@@ -551,7 +551,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                       handleDeletePanel(activePanel.id);
                     }
                   }}
-                  className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold flex items-center gap-1 transition-colors"
+                  className="px-2.5 py-1.5 rounded-lg bg-danger-soft hover:bg-danger-soft text-danger-text border border-danger-line text-xs font-semibold flex items-center gap-1 transition-colors"
                   title="Eliminar este tablero"
                 >
                   <Trash2 className="w-3 h-3" />
@@ -564,14 +564,14 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
           {/* Component Badges Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
             {/* Térmica Principal */}
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-              <span className="text-[10px] text-slate-400 block font-bold uppercase mb-0.5">
+            <div className="p-3 rounded-xl bg-sunken border border-hairline">
+              <span className="text-xs text-muted block font-bold uppercase mb-0.5">
                 Térmica de Cabecera
               </span>
-              <strong className="text-base text-amber-400 font-mono block">
+              <strong className="text-base text-accent-text font-mono block">
                 {activePanel.mainBreakerAmps} A
               </strong>
-              <span className="text-[10px] text-slate-400 block mt-0.5">
+              <span className="text-xs text-muted block mt-0.5">
                 Curva {activePanel.mainBreakerCurve || 'C'} • {activePanel.mainBreakerPoles} •{' '}
                 {activePanel.mainBreakerKACapacity || 4.5} kA
               </span>
@@ -581,29 +581,29 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
             <div
               className={`p-3 rounded-xl border ${
                 activePanel.hasDifferential
-                  ? 'bg-slate-950 border-slate-800'
-                  : 'bg-rose-950/20 border-rose-500/50'
+                  ? 'bg-sunken border-hairline'
+                  : 'bg-danger-soft border-danger-line'
               }`}
             >
-              <span className="text-[10px] text-slate-400 block font-bold uppercase mb-0.5">
+              <span className="text-xs text-muted block font-bold uppercase mb-0.5">
                 Disyuntor Diferencial
               </span>
               {activePanel.hasDifferential ? (
                 <>
-                  <strong className="text-base text-emerald-400 font-mono block">
+                  <strong className="text-base text-success-text font-mono block">
                     {activePanel.differentialSensitivityMa} mA
                   </strong>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                  <span className="text-xs text-muted block mt-0.5">
                     {activePanel.differentialAmps || activePanel.mainBreakerAmps}A •{' '}
                     {activePanel.differentialPoles || '2P'}
                   </span>
                 </>
               ) : (
                 <>
-                  <strong className="text-base text-rose-400 font-mono block">
+                  <strong className="text-base text-danger-text font-mono block">
                     NO INSTALADO
                   </strong>
-                  <span className="text-[10px] text-rose-300 block mt-0.5">
+                  <span className="text-xs text-danger-text block mt-0.5">
                     Peligro de electrocución
                   </span>
                 </>
@@ -611,25 +611,25 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
             </div>
 
             {/* Descargador de Sobretensiones DPS */}
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-              <span className="text-[10px] text-slate-400 block font-bold uppercase mb-0.5">
+            <div className="p-3 rounded-xl bg-sunken border border-hairline">
+              <span className="text-xs text-muted block font-bold uppercase mb-0.5">
                 Protección DPS
               </span>
               {activePanel.hasSurgeProtector ? (
                 <>
-                  <strong className="text-base text-cyan-400 font-mono block">
+                  <strong className="text-base text-data-text font-mono block">
                     {activePanel.surgeProtectorType || 'Clase II'}
                   </strong>
-                  <span className="text-[10px] text-emerald-400 block mt-0.5">
+                  <span className="text-xs text-success-text block mt-0.5">
                     Protege electrónica
                   </span>
                 </>
               ) : (
                 <>
-                  <strong className="text-base text-slate-500 font-mono block">
+                  <strong className="text-base text-faint font-mono block">
                     Sin DPS
                   </strong>
-                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                  <span className="text-xs text-faint block mt-0.5">
                     Recomendado en cabecera
                   </span>
                 </>
@@ -637,36 +637,36 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
             </div>
 
             {/* Alimentador de Entrada */}
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-              <span className="text-[10px] text-slate-400 block font-bold uppercase mb-0.5">
+            <div className="p-3 rounded-xl bg-sunken border border-hairline">
+              <span className="text-xs text-muted block font-bold uppercase mb-0.5">
                 Alimentador al Tablero
               </span>
-              <strong className="text-base text-slate-200 font-mono block">
+              <strong className="text-base text-strong font-mono block">
                 {activePanel.feederGauge || 'Sin especificar'}
               </strong>
-              <span className="text-[10px] text-slate-400 block mt-0.5">
+              <span className="text-xs text-muted block mt-0.5">
                 {activePanel.feederMaterial === 'aluminum' ? 'Aluminio (Al)' : 'Cobre (Cu)'} •{' '}
                 {activePanel.feederLengthMeters || 10} m
               </span>
             </div>
 
             {/* Barras de Tierra & Neutro */}
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-              <span className="text-[10px] text-slate-400 block font-bold uppercase mb-0.5">
+            <div className="p-3 rounded-xl bg-sunken border border-hairline">
+              <span className="text-xs text-muted block font-bold uppercase mb-0.5">
                 Barras Colectoras
               </span>
-              <div className="flex items-center gap-1.5 text-xs text-slate-300 mt-1">
+              <div className="flex items-center gap-1.5 text-xs text-soft mt-1">
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    activePanel.hasGroundBar ? 'bg-emerald-400' : 'bg-rose-500'
+                    activePanel.hasGroundBar ? 'bg-success-solid' : 'bg-danger-solid'
                   }`}
                 />
                 <span>Tierra PE {activePanel.hasGroundBar ? 'OK' : 'Falta'}</span>
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-slate-300 mt-0.5">
+              <div className="flex items-center gap-1.5 text-xs text-soft mt-0.5">
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    activePanel.hasIsolatedNeutralBar ? 'bg-emerald-400' : 'bg-amber-400'
+                    activePanel.hasIsolatedNeutralBar ? 'bg-success-solid' : 'bg-accent'
                   }`}
                 />
                 <span>Neutro {activePanel.hasIsolatedNeutralBar ? 'Aislado' : 'Sin barra'}</span>
@@ -674,22 +674,22 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
             </div>
 
             {/* Ocupación Módulos DIN */}
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-              <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase mb-0.5">
+            <div className="p-3 rounded-xl bg-sunken border border-hairline">
+              <div className="flex items-center justify-between text-xs font-bold text-muted uppercase mb-0.5">
                 <span>Capacidad DIN</span>
-                <span className="text-slate-300">{currentAnalytics.dinUtilization}%</span>
+                <span className="text-soft">{currentAnalytics.dinUtilization}%</span>
               </div>
-              <div className="text-sm font-mono font-bold text-slate-200 mt-0.5">
+              <div className="text-sm font-mono font-bold text-strong mt-0.5">
                 {currentAnalytics.estimatedDinOccupied} / {activePanel.totalDinModules} Mód.
               </div>
-              <div className="w-full h-1.5 bg-slate-800 rounded-full mt-1.5 overflow-hidden">
+              <div className="w-full h-1.5 bg-raised rounded-full mt-1.5 overflow-hidden">
                 <div
                   className={`h-full rounded-full ${
                     currentAnalytics.dinUtilization >= 100
-                      ? 'bg-rose-500'
+                      ? 'bg-danger-solid'
                       : currentAnalytics.dinUtilization >= 80
-                      ? 'bg-amber-500'
-                      : 'bg-emerald-400'
+                      ? 'bg-accent'
+                      : 'bg-success-solid'
                   }`}
                   style={{ width: `${Math.min(100, currentAnalytics.dinUtilization)}%` }}
                 />
@@ -698,14 +698,14 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
           </div>
 
           {/* In-Situ Field Measurements on This Panel */}
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                <Gauge className="w-4 h-4 text-cyan-400" />
+          <div className="p-4 rounded-xl bg-sunken border border-hairline space-y-3">
+            <div className="flex items-center justify-between border-b border-hairline pb-2">
+              <span className="text-xs font-bold text-strong flex items-center gap-1.5">
+                <Gauge className="w-4 h-4 text-data-text" />
                 Mediciones de Campo Registradas en este Tablero
               </span>
               {activePanel.measurements?.panelTempC && (
-                <span className="text-xs font-mono text-amber-400 flex items-center gap-1">
+                <span className="text-xs font-mono text-accent-text flex items-center gap-1">
                   <Thermometer className="w-3.5 h-3.5" />
                   {activePanel.measurements.panelTempC}°C
                 </span>
@@ -713,30 +713,30 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-              <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-500 block font-sans">Voltaje L1-N</span>
-                <strong className="text-slate-100 text-sm">
+              <div className="p-2 rounded bg-surface border border-hairline">
+                <span className="text-xs text-faint block font-sans">Voltaje L1-N</span>
+                <strong className="text-strong text-sm">
                   {activePanel.measurements?.vL1N ? `${activePanel.measurements.vL1N} V` : '-'}
                 </strong>
               </div>
 
-              <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-500 block font-sans">Voltaje L2-N</span>
-                <strong className="text-slate-100 text-sm">
+              <div className="p-2 rounded bg-surface border border-hairline">
+                <span className="text-xs text-faint block font-sans">Voltaje L2-N</span>
+                <strong className="text-strong text-sm">
                   {activePanel.measurements?.vL2N ? `${activePanel.measurements.vL2N} V` : '-'}
                 </strong>
               </div>
 
-              <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-500 block font-sans">Corriente L1</span>
-                <strong className="text-amber-400 text-sm">
+              <div className="p-2 rounded bg-surface border border-hairline">
+                <span className="text-xs text-faint block font-sans">Corriente L1</span>
+                <strong className="text-accent-text text-sm">
                   {activePanel.measurements?.iL1 ? `${activePanel.measurements.iL1} A` : '-'}
                 </strong>
               </div>
 
-              <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-500 block font-sans">Corriente Neutro</span>
-                <strong className="text-slate-300 text-sm">
+              <div className="p-2 rounded bg-surface border border-hairline">
+                <span className="text-xs text-faint block font-sans">Corriente Neutro</span>
+                <strong className="text-soft text-sm">
                   {activePanel.measurements?.iNeutro ? `${activePanel.measurements.iNeutro} A` : '-'}
                 </strong>
               </div>
@@ -746,23 +746,23 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
           {/* Circuits and Loads Assigned to This Panel */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <h4 className="font-bold text-xs sm:text-sm text-slate-200">
+              <h4 className="font-bold text-xs sm:text-sm text-strong">
                 Circuitos y Cargas Alimentadas ({currentAnalytics.assignedLoads.length})
               </h4>
-              <span className="text-xs font-mono text-amber-400">
+              <span className="text-xs font-mono text-accent-text">
                 Demanda total: {(currentAnalytics.totalWatts / 1000).toFixed(2)} kW ({currentAnalytics.maxPhaseAmps.toFixed(1)}A max)
               </span>
             </div>
 
             {currentAnalytics.assignedLoads.length === 0 ? (
-              <div className="p-6 text-center rounded-xl bg-slate-950 border border-dashed border-slate-800 text-xs text-slate-400">
+              <div className="p-6 text-center rounded-xl bg-sunken border border-dashed border-hairline text-xs text-muted">
                 No hay cargas asignadas actualmente a este tablero. Puedes asignar circuitos desde la vista de Auditoría o usando el botón de reasignar.
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
+                    <tr className="border-b border-hairline text-muted uppercase text-xs font-bold">
                       <th className="py-2 px-2.5">Circuito</th>
                       <th className="py-2 px-2.5">Equipo / Carga</th>
                       <th className="py-2 px-2.5 text-right">Potencia</th>
@@ -771,22 +771,22 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                       <th className="py-2 px-2.5 text-center">Acciones</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                  <tbody className="divide-y divide-hairline/60 font-mono">
                     {currentAnalytics.assignedLoads.map((load) => (
-                      <tr key={load.id} className="hover:bg-slate-800/30">
-                        <td className="py-2 px-2.5 font-bold text-amber-400">
+                      <tr key={load.id} className="hover:bg-raised/30">
+                        <td className="py-2 px-2.5 font-bold text-accent-text">
                           {load.circuitName || 'C-General'}
                         </td>
-                        <td className="py-2 px-2.5 font-sans text-slate-200 truncate max-w-[180px]">
+                        <td className="py-2 px-2.5 font-sans text-strong truncate max-w-[180px]">
                           {load.name}
                         </td>
-                        <td className="py-2 px-2.5 text-right text-slate-300">
+                        <td className="py-2 px-2.5 text-right text-soft">
                           {load.powerWatts * load.quantity} W
                         </td>
-                        <td className="py-2 px-2.5 text-center font-bold text-slate-400">
+                        <td className="py-2 px-2.5 text-center font-bold text-muted">
                           {load.assignedPhase}
                         </td>
-                        <td className="py-2 px-2.5 text-right text-cyan-400">
+                        <td className="py-2 px-2.5 text-right text-data-text">
                           {load.breakerRatingAmps}A
                         </td>
                         <td className="py-2 px-2.5 text-center">
@@ -799,7 +799,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                                   panels.find((p) => p.id !== activePanel.id)?.id || ''
                                 );
                               }}
-                              className="px-2 py-1 rounded text-[10px] font-sans font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-colors"
+                              className="px-2 py-1 rounded text-xs font-sans font-semibold bg-raised hover:bg-raised-strong text-accent-text border border-edge transition-colors"
                             >
                               Transferir
                             </button>
@@ -817,8 +817,8 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
         {/* Right Column: Diagnostic Decision Engine for this Panel (5 cols) */}
         <div className="space-y-4 lg:col-span-5">
           {/* Panel Health Status Card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
+          <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-4">
+            <span className="text-xs uppercase font-bold text-muted tracking-wider block">
               Diagnóstico y Toma de Decisiones Prácticas
             </span>
 
@@ -826,54 +826,54 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
             <div
               className={`p-4 rounded-xl border-2 transition-all ${
                 currentAnalytics.capacityUtilization > 100
-                  ? 'bg-rose-950/20 border-rose-500/70'
+                  ? 'bg-danger-soft border-danger-line'
                   : currentAnalytics.capacityUtilization > 80
-                  ? 'bg-amber-950/20 border-amber-500/60'
-                  : 'bg-emerald-950/20 border-emerald-500/60'
+                  ? 'bg-accent-soft border-accent-line'
+                  : 'bg-success-soft border-success-line'
               }`}
             >
               <div className="flex items-baseline justify-between">
                 <div>
-                  <span className="text-3xl sm:text-4xl font-extrabold font-['JetBrains_Mono'] text-white">
+                  <span className="text-3xl sm:text-4xl font-extrabold font-mono text-strong">
                     {currentAnalytics.capacityUtilization}%
                   </span>
-                  <span className="text-xs text-slate-400 font-sans ml-1.5">
+                  <span className="text-xs text-muted font-sans ml-1.5">
                     de carga nominal
                   </span>
                 </div>
 
-                <span className="text-xs font-mono font-bold text-slate-300">
+                <span className="text-xs font-mono font-bold text-soft">
                   {currentAnalytics.maxPhaseAmps.toFixed(1)}A / {activePanel.mainBreakerAmps}A
                 </span>
               </div>
 
               {/* Progress bar */}
-              <div className="w-full h-2.5 bg-slate-950 rounded-full mt-3 overflow-hidden border border-slate-800">
+              <div className="w-full h-2.5 bg-sunken rounded-full mt-3 overflow-hidden border border-hairline">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ${
                     currentAnalytics.capacityUtilization > 100
-                      ? 'bg-rose-500'
+                      ? 'bg-danger-solid'
                       : currentAnalytics.capacityUtilization > 80
-                      ? 'bg-amber-500'
-                      : 'bg-emerald-400'
+                      ? 'bg-accent'
+                      : 'bg-success-solid'
                   }`}
                   style={{ width: `${Math.min(100, Math.max(5, currentAnalytics.capacityUtilization))}%` }}
                 />
               </div>
 
-              <div className="mt-3 text-xs text-slate-300 font-medium">
+              <div className="mt-3 text-xs text-soft font-medium">
                 {currentAnalytics.capacityUtilization > 100 ? (
-                  <span className="text-rose-400 font-bold flex items-center gap-1.5">
+                  <span className="text-danger-text font-bold flex items-center gap-1.5">
                     <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                     Sobrecarga crítica: Requiere cambio de térmica o alivio de cargas.
                   </span>
                 ) : currentAnalytics.capacityUtilization > 80 ? (
-                  <span className="text-amber-400 font-bold flex items-center gap-1.5">
+                  <span className="text-accent-text font-bold flex items-center gap-1.5">
                     <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                     Carga continua al límite térmico del interruptor.
                   </span>
                 ) : (
-                  <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                  <span className="text-success-text font-bold flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
                     Capacidad holgada y conforme a normativa de protección.
                   </span>
@@ -883,12 +883,12 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
 
             {/* List of Practical Actionable Tasks */}
             <div className="space-y-2.5">
-              <span className="text-xs font-bold text-slate-200 block">
+              <span className="text-xs font-bold text-strong block">
                 Acciones Técnicas Recomendadas ({currentAnalytics.issues.length}):
               </span>
 
               {currentAnalytics.issues.length === 0 ? (
-                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                <div className="p-3.5 rounded-xl bg-success-soft border border-success-line text-success-text text-xs flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
                   <span>Este tablero cumple con todas las directrices de seguridad y balance.</span>
                 </div>
@@ -899,23 +899,23 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                       key={idx}
                       className={`p-3 rounded-xl border text-xs space-y-1 ${
                         issue.severity === 'critica'
-                          ? 'bg-rose-950/25 border-rose-500/40 text-rose-200'
+                          ? 'bg-danger-soft border-danger-line text-danger-text'
                           : issue.severity === 'alta'
-                          ? 'bg-amber-950/25 border-amber-500/40 text-amber-200'
-                          : 'bg-slate-950 border-slate-800 text-slate-300'
+                          ? 'bg-accent-soft border-accent-line text-accent-text'
+                          : 'bg-sunken border-hairline text-soft'
                       }`}
                     >
                       <div className="flex items-center gap-1.5 font-bold">
                         {issue.severity === 'critica' ? (
-                          <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                          <ShieldAlert className="w-3.5 h-3.5 text-danger-text" />
                         ) : issue.severity === 'alta' ? (
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                          <AlertTriangle className="w-3.5 h-3.5 text-accent-text" />
                         ) : (
-                          <Info className="w-3.5 h-3.5 text-blue-400" />
+                          <Info className="w-3.5 h-3.5 text-info-text" />
                         )}
                         <span>{issue.message}</span>
                       </div>
-                      <div className="text-[11px] text-slate-400 pl-5">
+                      <div className="text-xs text-muted pl-5">
                         👉 <strong>Solución:</strong> {issue.action}
                       </div>
                     </div>
@@ -925,13 +925,13 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
             </div>
 
             {/* Practical Quick Action Buttons */}
-            <div className="pt-2 border-t border-slate-800 flex flex-col gap-2">
+            <div className="pt-2 border-t border-hairline flex flex-col gap-2">
               <button
                 type="button"
                 onClick={() => handleOpenPanelModal(activePanel)}
-                className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border border-slate-700"
+                className="w-full py-2 rounded-xl bg-raised hover:bg-raised-strong text-strong font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border border-edge"
               >
-                <Cpu className="w-4 h-4 text-amber-400" />
+                <Cpu className="w-4 h-4 text-accent-text" />
                 <span>Actualizar Componentes del Tablero</span>
               </button>
             </div>
@@ -942,26 +942,26 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       {/* 4. MODAL: CREATE / EDIT ELECTRICAL PANEL */}
       {isPanelModalOpen && editingPanel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-surface border border-hairline rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            <div className="p-4 border-b border-hairline flex items-center justify-between">
               <div>
-                <h4 className="font-bold text-slate-100 flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-amber-400" />
+                <h4 className="font-bold text-strong flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-accent-text" />
                   <span>
                     {panels.some((p) => p.id === editingPanel.id)
                       ? 'Editar Tablero Eléctrico'
                       : 'Registrar Nuevo Tablero'}
                   </span>
                 </h4>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-muted mt-0.5">
                   Define el tipo, interruptores de protección, alimentador y mediciones in situ.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsPanelModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1 rounded-lg text-muted hover:text-strong hover:bg-raised"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -972,22 +972,22 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
               {/* Identificación Básica */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Nombre / Identificador</label>
+                  <label className="font-bold text-soft block mb-1">Nombre / Identificador</label>
                   <input
                     type="text"
                     value={editingPanel.name}
                     onChange={(e) => setEditingPanel({ ...editingPanel, name: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                     placeholder="ej. Tablero General (TG-01)"
                   />
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Tipo de Tablero</label>
+                  <label className="font-bold text-soft block mb-1">Tipo de Tablero</label>
                   <select
                     value={editingPanel.type}
                     onChange={(e) => setEditingPanel({ ...editingPanel, type: e.target.value as PanelType })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                   >
                     <option value="principal">Tablero Principal / General (TP)</option>
                     <option value="seccional">Tablero Seccional (TS)</option>
@@ -1000,23 +1000,23 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
               {/* Ubicación y Tablero Padre */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Ubicación Física</label>
+                  <label className="font-bold text-soft block mb-1">Ubicación Física</label>
                   <input
                     type="text"
                     value={editingPanel.location}
                     onChange={(e) => setEditingPanel({ ...editingPanel, location: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                     placeholder="ej. Pasillo planta baja, Pilar acometida, Sala de máquinas"
                   />
                 </div>
 
                 {editingPanel.type !== 'principal' && (
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1">Tablero Aguas Arriba (Alimentador)</label>
+                    <label className="font-bold text-soft block mb-1">Tablero Aguas Arriba (Alimentador)</label>
                     <select
                       value={editingPanel.parentPanelId || ''}
                       onChange={(e) => setEditingPanel({ ...editingPanel, parentPanelId: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 focus:border-amber-500 focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                     >
                       <option value="">Seleccionar tablero padre...</option>
                       {panels
@@ -1032,18 +1032,18 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
               </div>
 
               {/* Térmica Principal de Cabecera */}
-              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
-                <span className="font-bold text-amber-400 block text-xs uppercase tracking-wider">
+              <div className="p-3.5 rounded-xl bg-sunken border border-hairline space-y-3">
+                <span className="font-bold text-accent-text block text-xs uppercase tracking-wider">
                   Interruptor Termomagnético Principal del Tablero
                 </span>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
-                    <label className="text-slate-400 block mb-1">Calibre (Amperios)</label>
+                    <label className="text-muted block mb-1">Calibre (Amperios)</label>
                     <select
                       value={editingPanel.mainBreakerAmps}
                       onChange={(e) => setEditingPanel({ ...editingPanel, mainBreakerAmps: parseInt(e.target.value) || 25 })}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-slate-100"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge font-mono text-strong"
                     >
                       {[15, 20, 25, 32, 40, 50, 60, 63, 70, 80, 100, 125].map((a) => (
                         <option key={a} value={a}>
@@ -1054,11 +1054,11 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-slate-400 block mb-1">Polos</label>
+                    <label className="text-muted block mb-1">Polos</label>
                     <select
                       value={editingPanel.mainBreakerPoles}
                       onChange={(e) => setEditingPanel({ ...editingPanel, mainBreakerPoles: e.target.value as any })}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge text-strong"
                     >
                       <option value="1P+N">1P+N (Monofásico)</option>
                       <option value="2P">2P (Bifásico/Monofásico)</option>
@@ -1069,11 +1069,11 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-slate-400 block mb-1">Curva</label>
+                    <label className="text-muted block mb-1">Curva</label>
                     <select
                       value={editingPanel.mainBreakerCurve || 'C'}
                       onChange={(e) => setEditingPanel({ ...editingPanel, mainBreakerCurve: e.target.value as any })}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge text-strong"
                     >
                       <option value="B">Curva B (Generadores/Electrónica)</option>
                       <option value="C">Curva C (Estándar residencial/comercial)</option>
@@ -1082,11 +1082,11 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-slate-400 block mb-1">Capacidad Ruptura</label>
+                    <label className="text-muted block mb-1">Capacidad Ruptura</label>
                     <select
                       value={editingPanel.mainBreakerKACapacity || 4.5}
                       onChange={(e) => setEditingPanel({ ...editingPanel, mainBreakerKACapacity: parseFloat(e.target.value) || 4.5 })}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-slate-100"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge font-mono text-strong"
                     >
                       <option value={3}>3 kA</option>
                       <option value={4.5}>4.5 kA (Estándar)</option>
@@ -1098,9 +1098,9 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
               </div>
 
               {/* Disyuntor Diferencial */}
-              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="p-3.5 rounded-xl bg-sunken border border-hairline space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-200 text-xs">
+                  <span className="font-bold text-strong text-xs">
                     Disyuntor Diferencial / Interruptor de Fuga
                   </span>
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -1110,18 +1110,18 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                       onChange={(e) => setEditingPanel({ ...editingPanel, hasDifferential: e.target.checked })}
                       className="accent-amber-500 w-4 h-4 rounded"
                     />
-                    <span className="text-slate-300 font-semibold">¿Está instalado?</span>
+                    <span className="text-soft font-semibold">¿Está instalado?</span>
                   </label>
                 </div>
 
                 {editingPanel.hasDifferential && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                     <div>
-                      <label className="text-slate-400 block mb-1">Sensibilidad</label>
+                      <label className="text-muted block mb-1">Sensibilidad</label>
                       <select
                         value={editingPanel.differentialSensitivityMa || 30}
                         onChange={(e) => setEditingPanel({ ...editingPanel, differentialSensitivityMa: parseInt(e.target.value) || 30 })}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge text-strong"
                       >
                         <option value={30}>30 mA (Protección Vidas Humanas)</option>
                         <option value={300}>300 mA (Protección Incendio / Selectivo)</option>
@@ -1129,11 +1129,11 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                     </div>
 
                     <div>
-                      <label className="text-slate-400 block mb-1">Amperaje Diferencial</label>
+                      <label className="text-muted block mb-1">Amperaje Diferencial</label>
                       <select
                         value={editingPanel.differentialAmps || 40}
                         onChange={(e) => setEditingPanel({ ...editingPanel, differentialAmps: parseInt(e.target.value) || 40 })}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-slate-100"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge font-mono text-strong"
                       >
                         <option value={25}>25 A</option>
                         <option value={40}>40 A</option>
@@ -1142,11 +1142,11 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                     </div>
 
                     <div>
-                      <label className="text-slate-400 block mb-1">Polos</label>
+                      <label className="text-muted block mb-1">Polos</label>
                       <select
                         value={editingPanel.differentialPoles || '2P'}
                         onChange={(e) => setEditingPanel({ ...editingPanel, differentialPoles: e.target.value as any })}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge text-strong"
                       >
                         <option value="2P">Bipolar (2P)</option>
                         <option value="4P">Tetrapolar (4P)</option>
@@ -1159,11 +1159,11 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
               {/* Alimentador, Gabinete y Seguridad */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Calibre Alimentador</label>
+                  <label className="font-bold text-soft block mb-1">Calibre Alimentador</label>
                   <select
                     value={editingPanel.feederGauge || '8 AWG'}
                     onChange={(e) => setEditingPanel({ ...editingPanel, feederGauge: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 font-mono"
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-sunken border border-edge text-strong font-mono"
                   >
                     {WIRE_GAUGES.map((w) => (
                       <option key={w.awg} value={w.awg}>
@@ -1174,22 +1174,22 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Distancia del Cable (m)</label>
+                  <label className="font-bold text-soft block mb-1">Distancia del Cable (m)</label>
                   <input
                     type="number"
                     min={1}
                     value={editingPanel.feederLengthMeters || 10}
                     onChange={(e) => setEditingPanel({ ...editingPanel, feederLengthMeters: Math.max(1, parseInt(e.target.value) || 1) })}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 font-mono"
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-sunken border border-edge text-strong font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Módulos DIN Totales</label>
+                  <label className="font-bold text-soft block mb-1">Módulos DIN Totales</label>
                   <select
                     value={editingPanel.totalDinModules || 12}
                     onChange={(e) => setEditingPanel({ ...editingPanel, totalDinModules: parseInt(e.target.value) || 12 })}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 font-mono"
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-sunken border border-edge text-strong font-mono"
                   >
                     {[4, 6, 8, 12, 18, 24, 36, 48, 54, 72].map((m) => (
                       <option key={m} value={m}>
@@ -1202,55 +1202,55 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
 
               {/* Checkboxes de Estado Físico y Barras */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
+                <label className="flex items-center gap-2 p-2 rounded-lg bg-sunken border border-hairline cursor-pointer">
                   <input
                     type="checkbox"
                     checked={editingPanel.hasSurgeProtector}
                     onChange={(e) => setEditingPanel({ ...editingPanel, hasSurgeProtector: e.target.checked })}
                     className="accent-amber-500 w-4 h-4 rounded"
                   />
-                  <span className="text-slate-300">Tiene DPS</span>
+                  <span className="text-soft">Tiene DPS</span>
                 </label>
 
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
+                <label className="flex items-center gap-2 p-2 rounded-lg bg-sunken border border-hairline cursor-pointer">
                   <input
                     type="checkbox"
                     checked={editingPanel.hasGroundBar}
                     onChange={(e) => setEditingPanel({ ...editingPanel, hasGroundBar: e.target.checked })}
                     className="accent-amber-500 w-4 h-4 rounded"
                   />
-                  <span className="text-slate-300">Barra de Tierra</span>
+                  <span className="text-soft">Barra de Tierra</span>
                 </label>
 
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
+                <label className="flex items-center gap-2 p-2 rounded-lg bg-sunken border border-hairline cursor-pointer">
                   <input
                     type="checkbox"
                     checked={editingPanel.isLabeled}
                     onChange={(e) => setEditingPanel({ ...editingPanel, isLabeled: e.target.checked })}
                     className="accent-amber-500 w-4 h-4 rounded"
                   />
-                  <span className="text-slate-300">Rotulado</span>
+                  <span className="text-soft">Rotulado</span>
                 </label>
 
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
+                <label className="flex items-center gap-2 p-2 rounded-lg bg-sunken border border-hairline cursor-pointer">
                   <input
                     type="checkbox"
                     checked={editingPanel.hasHotSpots}
                     onChange={(e) => setEditingPanel({ ...editingPanel, hasHotSpots: e.target.checked })}
                     className="accent-rose-500 w-4 h-4 rounded"
                   />
-                  <span className="text-rose-400 font-bold">Puntos Calientes</span>
+                  <span className="text-danger-text font-bold">Puntos Calientes</span>
                 </label>
               </div>
 
               {/* Mediciones de campo in-situ */}
-              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                <span className="font-bold text-slate-200 block text-xs">
+              <div className="p-3.5 rounded-xl bg-sunken border border-hairline space-y-2">
+                <span className="font-bold text-strong block text-xs">
                   Mediciones Tomadas en este Tablero (Opcional)
                 </span>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div>
-                    <label className="text-slate-500 text-[10px] block">Tensión L1 (V)</label>
+                    <label className="text-faint text-xs block">Tensión L1 (V)</label>
                     <input
                       type="number"
                       value={editingPanel.measurements?.vL1N || ''}
@@ -1263,13 +1263,13 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                           },
                         })
                       }
-                      className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-100 font-mono text-xs"
+                      className="w-full px-2 py-1 rounded bg-surface border border-edge text-strong font-mono text-xs"
                       placeholder="120"
                     />
                   </div>
 
                   <div>
-                    <label className="text-slate-500 text-[10px] block">Tensión L2 (V)</label>
+                    <label className="text-faint text-xs block">Tensión L2 (V)</label>
                     <input
                       type="number"
                       value={editingPanel.measurements?.vL2N || ''}
@@ -1282,13 +1282,13 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                           },
                         })
                       }
-                      className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-100 font-mono text-xs"
+                      className="w-full px-2 py-1 rounded bg-surface border border-edge text-strong font-mono text-xs"
                       placeholder="120"
                     />
                   </div>
 
                   <div>
-                    <label className="text-slate-500 text-[10px] block">Corriente L1 (A)</label>
+                    <label className="text-faint text-xs block">Corriente L1 (A)</label>
                     <input
                       type="number"
                       value={editingPanel.measurements?.iL1 || ''}
@@ -1301,13 +1301,13 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                           },
                         })
                       }
-                      className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-amber-400 font-mono text-xs"
+                      className="w-full px-2 py-1 rounded bg-surface border border-edge text-accent-text font-mono text-xs"
                       placeholder="25"
                     />
                   </div>
 
                   <div>
-                    <label className="text-slate-500 text-[10px] block">Temp. Tablero (°C)</label>
+                    <label className="text-faint text-xs block">Temp. Tablero (°C)</label>
                     <input
                       type="number"
                       value={editingPanel.measurements?.panelTempC || ''}
@@ -1320,7 +1320,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                           },
                         })
                       }
-                      className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-100 font-mono text-xs"
+                      className="w-full px-2 py-1 rounded bg-surface border border-edge text-strong font-mono text-xs"
                       placeholder="35"
                     />
                   </div>
@@ -1329,18 +1329,18 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-end gap-2">
+            <div className="p-4 border-t border-hairline bg-sunken flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setIsPanelModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-semibold"
+                className="px-4 py-2 rounded-xl border border-edge text-soft hover:bg-raised text-xs font-semibold"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={() => handleSavePanel(editingPanel)}
-                className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-colors shadow-md"
+                className="px-5 py-2 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold transition-colors shadow-md"
               >
                 Guardar Tablero
               </button>
@@ -1352,43 +1352,43 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       {/* 5. MODAL: REASSIGN LOAD TO ANOTHER PANEL */}
       {reassignLoadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <h4 className="font-bold text-slate-100 text-sm flex items-center gap-1.5">
-                <ArrowRight className="w-4 h-4 text-amber-400" />
+          <div className="bg-surface border border-hairline rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-hairline pb-2">
+              <h4 className="font-bold text-strong text-sm flex items-center gap-1.5">
+                <ArrowRight className="w-4 h-4 text-accent-text" />
                 <span>Reasignar Circuito a Otro Tablero</span>
               </h4>
               <button
                 type="button"
                 onClick={() => setReassignLoadModal(null)}
-                className="text-slate-400 hover:text-white"
+                className="text-muted hover:text-strong"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="text-xs space-y-2">
-              <p className="text-slate-300">
+              <p className="text-soft">
                 Selecciona a qué tablero deseas transferir el siguiente circuito para aliviar la carga térmica:
               </p>
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <strong className="text-amber-400 block font-bold text-sm">
+              <div className="p-3 rounded-xl bg-sunken border border-hairline">
+                <strong className="text-accent-text block font-bold text-sm">
                   {reassignLoadModal.circuitName} - {reassignLoadModal.name}
                 </strong>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-xs text-muted">
                   Potencia: {reassignLoadModal.powerWatts} W • Fase: {reassignLoadModal.assignedPhase} • Térmica: {reassignLoadModal.breakerRatingAmps}A
                 </span>
               </div>
             </div>
 
             <div>
-              <label className="font-bold text-slate-300 text-xs block mb-1">
+              <label className="font-bold text-soft text-xs block mb-1">
                 Tablero de Destino
               </label>
               <select
                 value={targetPanelForReassign}
                 onChange={(e) => setTargetPanelForReassign(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:border-amber-500 focus:outline-none"
+                className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong text-xs focus:border-accent focus:outline-none"
               >
                 {panels.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -1398,18 +1398,18 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
               </select>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-hairline">
               <button
                 type="button"
                 onClick={() => setReassignLoadModal(null)}
-                className="px-3.5 py-1.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs"
+                className="px-3.5 py-1.5 rounded-xl border border-edge text-soft hover:bg-raised text-xs"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={handleExecuteReassign}
-                className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-colors"
+                className="px-4 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold transition-colors"
               >
                 Confirmar Transferencia
               </button>

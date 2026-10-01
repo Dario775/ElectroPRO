@@ -19,7 +19,11 @@ Verificado en este repositorio:
 |---|---|---|
 | Tipos (modo `strict`) | `npm run lint` | ✅ 0 errores (TypeScript 7.0.2) |
 | Build de producción | `npm run build` | ✅ 2455 módulos → `dist/` |
-| Pruebas automatizadas | — | ❌ No existen todavía |
+| Sistema de diseño (tokens, tamaños, fuentes) | `node check-ui.mjs` | ✅ 24 archivos revisados, sin incumplimientos |
+| Contraste WCAG AA en tema claro y oscuro | `node contrast.mjs` | ✅ 52 pares en verde |
+| Lógica del recorrido (progreso y siguiente paso) | `npx tsx check-workflow.ts` | ✅ 6 escenarios |
+| Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
+| Pruebas automatizadas del proyecto | — | ❌ No existen todavía |
 
 ---
 
@@ -148,6 +152,61 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
 
 ---
 
+## Interfaz: sistema de diseño y flujo guiado
+
+La interfaz se reorganizó alrededor de **cómo se trabaja de verdad**, no de una lista de pantallas.
+
+### Navegación por etapas
+
+Antes había nueve pestañas planas que mezclaban pasos del trabajo con herramientas sueltas, sin indicar el orden.
+Ahora el recorrido tiene cuatro etapas y la aplicación dice siempre **qué falta y cuál es el próximo paso**:
+
+| Etapa | Pasos |
+|---|---|
+| **1. Relevar el inmueble** | Cargas y consumos · Tableros y protecciones · Mediciones y diagnóstico · Historial de facturación |
+| **2. Analizar** | Balance de fases · Calculadoras eléctricas (herramienta) |
+| **3. Presupuestar** | Presupuesto y materiales |
+| **4. Entregar** | Informe para el cliente (herramienta) |
+
+- El estado de cada paso (`pendiente` / `en curso` / `listo`) se **deriva de los datos del cliente**
+  (`src/utils/workflow.ts`), no de un estado paralelo que se pueda desincronizar. El paso de balance se completa
+  cuando el desbalance real entre fases entra en tolerancia, calculado con el mismo motor que usa la vista.
+- En escritorio la navegación es una barra lateral con el progreso y el botón de siguiente paso; en móvil son dos
+  filas de botones (etapas arriba, pasos de la etapa activa abajo) más una barra inferior con la acción siguiente.
+- La franja de contexto de cada vista indica la etapa, si el paso está completo y qué falta concretamente.
+
+### Tema claro y oscuro
+
+- Los colores ya no se escriben crudos (`bg-slate-900`), sino a través de **tokens semánticos**
+  (`bg-surface`, `text-muted`, `border-hairline`) definidos en `src/index.css`.
+- El tema se aplica con `data-theme` en `<html>`, se guarda en `localStorage`, respeta la preferencia del sistema y
+  se fija antes del primer pintado (script en `index.html`) para que no haya destello.
+- Los valores del tema oscuro son **idénticos** a los colores que ya usaba la aplicación, así que la migración de
+  las 9 vistas (2.895 reemplazos en 13 archivos) no cambió el aspecto en oscuro.
+- Verificación objetiva: 52 pares texto/fondo comprobados contra WCAG AA en ambos temas
+  (`.devtools/contrast.mjs`), incluido el borde de los campos de formulario como elemento de control.
+
+### Legibilidad
+
+- **Nada por debajo de 12 px**: se eliminaron las 165 clases de 9, 10 y 11 px que hacían que la interfaz se viera
+  apretada. La base del cuerpo es 15 px.
+- Primitivas de UI propias (`src/components/ui/`): `Button`, `Card`, `SectionHeader`, `Badge`, `Stat`, `Callout`,
+  `EmptyState`, `ProgressBar`, `Modal`, `Field`, `TextField`, `NumberField`, `SelectField`, `SwitchField`,
+  `SegmentedControl` y `HelpTip`.
+- Los campos técnicos explican qué son: etiqueta siempre visible, unidad dentro del campo, valores frecuentes como
+  atajos (110/220/380 V) y ayuda desplegable para la jerga (cos φ, NEMA, DIN, curva C).
+
+### Comprobaciones automáticas de la interfaz
+
+```bash
+cd .devtools
+node check-ui.mjs      # sin clases de color crudas, sin fuentes a mano, sin texto < 12 px
+node contrast.mjs      # contraste WCAG AA de los tokens en ambos temas
+npx tsx check-workflow.ts   # progreso y siguiente paso del recorrido
+```
+
+---
+
 ## Motor de cálculo
 
 `src/utils/electricalMath.ts` (funciones puras, sin dependencias de React):
@@ -243,7 +302,15 @@ Todo se guarda en `localStorage` del navegador:
    mismos defectos que tenía el presupuesto (importes con código de moneda que se parten y paginación forzada a una
    hoja recortando el sobrante).
 5. **Texto de UI hardcodeado en español**: si se prevé uso en otros países, introducir una capa de i18n.
-6. **Funciones de IA**: `@google/genai` está instalado y sin usar. Como la app es cliente puro, una clave de API
+6. **Rediseño de formularios pendiente**: la fundación ya está (tema, primitivas, tipografía), pero los formularios
+   técnicos de las vistas (alta de cargas, tableros, mediciones) todavía usan los `input` con estilos sueltos; hay
+   que pasarlos a `Field`/`NumberField`/`SelectField` con ayudas y unidades, y agrupar los campos en pasos.
+7. **Vistas pendientes de pulir**: `PanelsView`, `DiagnosticView`, `ConsumptionHistoryView`, `CalculatorsView` y
+   `ClientList` ya usan los tokens y cumplen el mínimo de tipografía, pero conservan su densidad y sus tablas
+   propias; conviene llevar sus bloques a `Card`/`SectionHeader`/`Stat` y simplificar la carga de datos.
+8. **Panel de inicio por cliente**: falta una pantalla de resumen que responda "¿en qué estado está este trabajo?"
+   con las cifras clave y el próximo paso, en lugar de entrar directo al inventario de cargas.
+9. **Funciones de IA**: `@google/genai` está instalado y sin usar. Como la app es cliente puro, una clave de API
    incrustada en el frontend queda expuesta: cualquier función de IA necesita un backend o un proxy.
-7. **Sin backend**: no hay sincronización entre dispositivos ni trabajo en equipo; evaluar exportación/importación
-   como vía de traspaso mientras tanto.
+10. **Sin backend**: no hay sincronización entre dispositivos ni trabajo en equipo; evaluar exportación/importación
+    como vía de traspaso mientras tanto.
