@@ -58,7 +58,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-2 px-3 py-2.5 sm:px-5">
         {/* Identidad */}
         <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent-line bg-gradient-to-br from-accent to-accent shadow-sm">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent-line bg-gradient-to-br from-accent to-accent-strong shadow-sm">
             <Zap className="h-5 w-5 text-accent-fg" strokeWidth={2.5} />
           </span>
           <div className="leading-tight">

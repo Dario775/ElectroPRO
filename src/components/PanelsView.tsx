@@ -23,7 +23,7 @@ import {
 import { ClientRecord, ElectricalPanel, ApplianceLoad, PanelMeasurements, PanelType } from '../types/electrical';
 import { WIRE_GAUGES } from '../utils/electricalMath';
 import { Button } from './ui/Button';
-import { Callout } from './ui/Card';
+import { Badge, Callout, SectionHeader } from './ui/Card';
 import { NumberField, SelectField, SwitchField, TextField } from './ui/Form';
 import { Modal } from './ui/Modal';
 
@@ -356,46 +356,28 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. TOP HEADER & MAP SUMMARY */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Layers className="w-5 h-5 text-accent-text" />
-            <h2 className="font-bold text-lg sm:text-xl text-strong">
-              Mapeo de Tableros Eléctricos y Cuadros de Mando
-            </h2>
-            <span className="px-2 py-0.5 rounded text-xs font-bold bg-accent-soft text-accent-text border border-accent-line">
-              {panels.length} {panels.length === 1 ? 'Tablero Registrado' : 'Tableros Registrados'}
-            </span>
-          </div>
-          <p className="text-xs text-muted max-w-2xl">
-            Gestiona la arquitectura de tableros (General y Seccionales), registra componentes de protección (térmica,
-            diferencial, DPS), mide parámetros in situ y asigna circuitos para tomar decisiones prácticas de diseño y seguridad.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {onNavigateToAudit && (
-            <button
-              type="button"
-              onClick={onNavigateToAudit}
-              className="px-3 py-1.5 rounded-xl bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 transition-colors"
-            >
-              <Zap className="w-3.5 h-3.5 text-accent-text" />
-              <span>Ver Cargas</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => handleOpenPanelModal()}
-            className="px-3.5 py-1.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>+ Agregar Tablero</span>
-          </button>
-        </div>
-      </div>
+      {/* 1. Cabecera del paso */}
+      <SectionHeader
+        eyebrow="Paso 2 · Relevamiento"
+        title="Tableros y protecciones"
+        description="Cargá los tableros del inmueble, sus protecciones y cómo se conectan entre ellos. De acá salen el esquema del tablero, el control de capacidad y las advertencias de seguridad."
+        icon={<Layers className="h-4 w-4" />}
+        actions={
+          <>
+            <Badge tone="neutral">
+              {panels.length} {panels.length === 1 ? 'tablero' : 'tableros'}
+            </Badge>
+            {onNavigateToAudit && (
+              <Button variant="secondary" icon={<Zap className="h-4 w-4" />} onClick={onNavigateToAudit}>
+                Ver las cargas
+              </Button>
+            )}
+            <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => handleOpenPanelModal()}>
+              Agregar tablero
+            </Button>
+          </>
+        }
+      />
 
       {/* 2. VISUAL CIRCUIT MAP / HIERARCHY FLOW */}
       <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-4">
@@ -954,7 +936,6 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
         </div>
       </div>
 
-      {/* 4. MODAL: CREATE / EDIT ELECTRICAL PANEL */}
       {/* 4. MODAL: ALTA Y EDICIÓN DE TABLERO */}
       <Modal
         isOpen={isPanelModalOpen && editingPanel !== null}

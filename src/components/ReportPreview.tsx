@@ -15,6 +15,8 @@ import { ClientRecord, TechnicianProfile } from '../types/electrical';
 import { calculatePhaseBalance, calculateCurrent, calculateMonthlyKwh, formatCurrency } from '../utils/electricalMath';
 import { generateTechnicalReportPDF } from '../services/pdfReportService';
 import { useCurrency } from '../context/CurrencyContext';
+import { Button } from './ui/Button';
+import { Callout, SectionHeader } from './ui/Card';
 
 interface ReportPreviewProps {
   client: ClientRecord;
@@ -64,45 +66,33 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ client, technician
 
   return (
     <div className="space-y-6">
-      {/* Top Action Bar */}
-      <div className="bg-surface border border-hairline rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-accent-text" />
-            <h2 className="text-base sm:text-lg font-bold text-strong">
-              Generador de Reporte Técnico para Clientes
-            </h2>
-          </div>
-          <p className="text-xs text-muted mt-0.5">
-            Genera un informe profesional imprimible en PDF con tus datos técnicos, balance de fases, desglose de consumo y
-            recomendaciones oficiales.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <button
-            onClick={() => window.print()}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold transition-colors"
-          >
-            <Printer className="w-4 h-4" />
-            <span>Imprimir</span>
-          </button>
-
-          <button
-            onClick={handleDownloadPDF}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-accent to-accent hover:from-accent hover:to-accent text-accent-fg font-extrabold text-xs sm:text-sm shadow-lg shadow-accent/20 transition-all active:scale-95"
-          >
-            <Download className="w-4 h-4 stroke-[2.5]" />
-            <span>Descargar Reporte PDF</span>
-          </button>
-        </div>
-      </div>
+      {/* Cabecera del paso */}
+      <SectionHeader
+        eyebrow="Etapa 4 · Entregar"
+        title="Informe para el cliente"
+        description="Revisá el informe completo y descargalo en PDF: incluye tus datos profesionales, el balance de fases, el consumo calculado, el diagnóstico y las recomendaciones."
+        icon={<FileText className="h-4 w-4" />}
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              icon={<Printer className="h-4 w-4" />}
+              onClick={() => window.print()}
+              className="hidden sm:inline-flex"
+            >
+              Imprimir
+            </Button>
+            <Button variant="primary" icon={<Download className="h-4 w-4" />} onClick={handleDownloadPDF}>
+              Descargar el informe
+            </Button>
+          </>
+        }
+      />
 
       {downloadSuccess && (
-        <div className="p-3 rounded-xl bg-success-soft border border-success-line text-success-text text-xs font-bold flex items-center gap-2 animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-success-text flex-shrink-0" />
-          <span>¡Reporte técnico PDF generado y descargado exitosamente en tu dispositivo!</span>
-        </div>
+        <Callout tone="success">
+          El informe se generó y se descargó en este dispositivo. Buscalo en la carpeta de descargas.
+        </Callout>
       )}
 
       {/* Report Customization Form: Observations & Recommendations */}

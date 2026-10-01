@@ -14,12 +14,15 @@ import {
   Sliders,
   Flame,
   Info,
+  ArrowRight,
 } from 'lucide-react';
 import { ClientRecord, FieldMeasurements, DiagnosticActionItem } from '../types/electrical';
 import { analyzeInstallation, DEFAULT_MEASUREMENTS } from '../utils/diagnosticEngine';
 import { WIRE_GAUGES } from '../utils/electricalMath';
 import { Card, SectionHeader, Stat } from './ui/Card';
 import { Callout } from './ui/Card';
+import { Badge } from './ui/Card';
+import { Button } from './ui/Button';
 import { NumberField, SelectField, SwitchField } from './ui/Form';
 import { cx } from '../utils/cx';
 
@@ -120,48 +123,31 @@ export const DiagnosticView: React.FC<DiagnosticViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. TOP HEADER BANNER */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <ClipboardCheck className="w-5 h-5 text-accent-text" />
-            <h2 className="text-lg font-bold text-strong">
-              Diagnóstico Sistemático y Plan de Trabajo Eléctrico
-            </h2>
-            <span className="px-2 py-0.5 rounded text-xs font-bold bg-accent-soft text-accent-text border border-accent-line">
-              {client.serviceType}
-            </span>
-          </div>
-          <p className="text-xs text-muted mt-1 max-w-2xl">
-            Ingresa las mediciones de campo (tensiones, corrientes por fase, puesta a tierra e inspección visual) para
-            determinar automáticamente el estado técnico y generar el plan de trabajo sistemático por prioridades.
-          </p>
-        </div>
-
-        <button
-          onClick={handleTransferToReport}
-          className="flex-shrink-0 px-4 py-2.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg font-bold text-xs sm:text-sm flex items-center gap-2 shadow-md shadow-accent/20 transition-all active:scale-95"
-        >
-          <Send className="w-4 h-4 stroke-[2.5]" />
-          <span>Vincular al Reporte PDF</span>
-        </button>
-      </div>
+      {/* 1. Cabecera del paso */}
+      <SectionHeader
+        eyebrow="Paso 3 · Relevamiento"
+        title="Diagnóstico y plan de trabajo"
+        description="Con las mediciones de campo y la inspección visual, el programa evalúa el estado de la instalación y arma el plan de trabajo ordenado por prioridad: qué hay que resolver primero y qué puede esperar."
+        icon={<ClipboardCheck className="h-4 w-4" />}
+        actions={
+          <>
+            <Badge tone="accent">{client.serviceType}</Badge>
+            <Button variant="primary" icon={<Send className="h-4 w-4" />} onClick={handleTransferToReport}>
+              Pasar al informe
+            </Button>
+          </>
+        }
+      />
 
       {copiedSuccess && (
-        <div className="p-3 rounded-xl bg-success-soft border border-success-line text-success-text text-xs font-bold flex items-center justify-between gap-2 animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-success-text" />
-            <span>
-              ¡Plan de trabajo y diagnóstico vinculados exitosamente a las recomendaciones del reporte PDF!
-            </span>
+        <Callout tone="success" title="Diagnóstico y plan agregados al informe">
+          <div className="flex flex-wrap items-center gap-2">
+            <span>Ya podés verlo en el informe que recibe el cliente.</span>
+            <Button variant="ghost" size="sm" iconRight={<ArrowRight className="h-3.5 w-3.5" />} onClick={onNavigateToReport}>
+              Ver el informe
+            </Button>
           </div>
-          <button
-            onClick={onNavigateToReport}
-            className="underline hover:text-strong text-xs font-semibold"
-          >
-            Ver Reporte &rarr;
-          </button>
-        </div>
+        </Callout>
       )}
 
       {/* 2. DIAGNOSTIC SCORECARD SUMMARY */}

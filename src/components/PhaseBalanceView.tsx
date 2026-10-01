@@ -17,6 +17,8 @@ import {
   autoBalanceLoads,
   calculateCurrent,
 } from '../utils/electricalMath';
+import { Button } from './ui/Button';
+import { Badge, Callout, SectionHeader } from './ui/Card';
 
 interface PhaseBalanceViewProps {
   client: ClientRecord;
@@ -87,42 +89,29 @@ export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUp
 
   return (
     <div className="space-y-6">
-      {/* 1. HEADER BANNER */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-lg">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Scale className="w-5 h-5 text-accent-text" />
-            <h2 className="text-lg font-bold text-strong">
-              Analizador y Balanceador de Cargas en Tablero
-            </h2>
-            <span className="px-2 py-0.5 rounded text-xs font-bold bg-accent-soft text-accent-text border border-accent-line">
-              {client.serviceType}
-            </span>
-          </div>
-          <p className="text-xs text-muted max-w-2xl">
-            Monitorea en tiempo real la corriente por fase y el retorno por neutro. Distribuye las cargas para evitar
-            sobrecalentamiento de conductores, caídas de tensión desbalanceadas y disparos intempestivos del disyuntor
-            principal.
-          </p>
-        </div>
+      {/* 1. Cabecera del paso */}
+      <SectionHeader
+        eyebrow="Etapa 2 · Analizar"
+        title="Balance de fases"
+        description="Mirá cuánta corriente queda en cada fase y cuánta vuelve por el neutro. Repartir bien las cargas evita que los cables se calienten, que la tensión caiga despareja y que salte la térmica principal sin motivo."
+        icon={<Scale className="h-4 w-4" />}
+        actions={
+          <>
+            <Badge tone="accent">{client.serviceType}</Badge>
+            {!isSinglePhase && (
+              <Button
+                variant="primary"
+                icon={<Sparkles className="h-4 w-4" />}
+                onClick={handleAutoBalance}
+              >
+                Repartir automáticamente
+              </Button>
+            )}
+          </>
+        }
+      />
 
-        {!isSinglePhase && (
-          <button
-            onClick={handleAutoBalance}
-            className="flex-shrink-0 px-4 py-2.5 rounded-xl bg-gradient-to-r from-accent to-accent hover:from-accent hover:to-accent text-accent-fg font-extrabold text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-accent/20 transition-all active:scale-95"
-          >
-            <Sparkles className="w-4 h-4 stroke-[2.5]" />
-            <span>Autobalancear Cargas</span>
-          </button>
-        )}
-      </div>
-
-      {successMessage && (
-        <div className="p-3.5 rounded-xl bg-success-soft border border-success-line text-success-text text-xs font-bold flex items-center gap-2 animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-success-text flex-shrink-0" />
-          <span>{successMessage}</span>
-        </div>
-      )}
+      {successMessage && <Callout tone="success">{successMessage}</Callout>}
 
       {/* 2. SINGLE PHASE NOTICE */}
       {isSinglePhase && (
@@ -256,7 +245,7 @@ export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUp
                 </div>
                 <div className="h-4 bg-sunken rounded-full overflow-hidden p-0.5 border border-hairline">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-accent to-accent transition-all duration-500"
+                    className="h-full rounded-full bg-gradient-to-r from-accent to-accent-strong transition-all duration-500"
                     style={{ width: `${Math.min(100, Math.max(2, l2Percent))}%` }}
                   />
                 </div>

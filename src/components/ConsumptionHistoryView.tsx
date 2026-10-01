@@ -31,6 +31,8 @@ import {
 import { ClientRecord, MonthlyConsumptionRecord } from '../types/electrical';
 import { calculatePhaseBalance, formatCurrency } from '../utils/electricalMath';
 import { useCurrency } from '../context/CurrencyContext';
+import { Button } from './ui/Button';
+import { SectionHeader } from './ui/Card';
 
 interface ConsumptionHistoryViewProps {
   client: ClientRecord;
@@ -235,46 +237,25 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. Header Banner */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <BarChart3 className="w-5 h-5 text-accent-text" />
-            <h2 className="font-bold text-lg sm:text-xl text-strong">
-              Historial de Consumo Energético Mensual
-            </h2>
-            <span className="px-2 py-0.5 rounded text-xs font-bold bg-accent-soft text-accent-text border border-accent-line">
-              Facturación vs Auditoría
-            </span>
-          </div>
-          <p className="text-xs text-muted max-w-2xl">
-            Permite contrastar los recibos históricos emitidos por la distribuidora eléctrica con el consumo mensual
-            proyectado del inventario de cargas. Esencial para detectar anomalías, fugas a tierra o medidores defectuosos.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {onNavigateToAudit && (
-            <button
-              type="button"
-              onClick={onNavigateToAudit}
-              className="px-3 py-1.5 rounded-xl bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 transition-colors"
-            >
-              <Zap className="w-3.5 h-3.5 text-accent-text" />
-              <span>Ver Auditoría de Cargas</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={handleOpenEdit}
-            className="px-3.5 py-1.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
-          >
-            <Edit3 className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Registrar / Editar Recibos</span>
-          </button>
-        </div>
-      </div>
+      {/* 1. Cabecera del paso */}
+      <SectionHeader
+        eyebrow="Paso 4 · Relevamiento"
+        title="Historial de facturación"
+        description="Cargá los kWh de las últimas facturas y comparalos con lo que consume el inmueble según las cargas relevadas. Si la factura cobra mucho más de lo que corresponde, suele haber una fuga a tierra o un medidor descalibrado."
+        icon={<BarChart3 className="h-4 w-4" />}
+        actions={
+          <>
+            {onNavigateToAudit && (
+              <Button variant="secondary" icon={<Zap className="h-4 w-4" />} onClick={onNavigateToAudit}>
+                Ver las cargas
+              </Button>
+            )}
+            <Button variant="primary" icon={<Edit3 className="h-4 w-4" />} onClick={handleOpenEdit}>
+              Cargar facturas
+            </Button>
+          </>
+        }
+      />
 
       {/* 2. Top Analytics KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-5 gap-3">

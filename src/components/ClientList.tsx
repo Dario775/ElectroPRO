@@ -17,6 +17,8 @@ import {
 import { ClientRecord } from '../types/electrical';
 import { StorageService } from '../services/storageService';
 import { calculatePhaseBalance } from '../utils/electricalMath';
+import { Button } from './ui/Button';
+import { SectionHeader } from './ui/Card';
 
 interface ClientListProps {
   clients: ClientRecord[];
@@ -97,46 +99,30 @@ export const ClientList: React.FC<ClientListProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header & Backup Controls */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-surface border border-hairline rounded-2xl p-5 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-accent-text" />
-            <h2 className="text-lg font-bold text-strong">Base de Datos Local de Clientes</h2>
-          </div>
-          <p className="text-xs text-muted mt-0.5">
-            Todos los expedientes técnicos se almacenan de manera local y 100% privada en tu dispositivo.
-          </p>
-        </div>
+      {/* Cabecera y copias de seguridad */}
+      <SectionHeader
+        eyebrow="Gestión"
+        title="Mis clientes"
+        description="Todas las fichas y auditorías se guardan en este dispositivo, sin conexión a internet. Exportá una copia de seguridad antes de cambiar de equipo o borrar los datos del navegador."
+        icon={<Users className="h-4 w-4" />}
+        actions={
+          <>
+            <Button variant="secondary" icon={<Download className="h-4 w-4" />} onClick={handleExportBackup}>
+              Exportar copia
+            </Button>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Export JSON */}
-          <button
-            onClick={handleExportBackup}
-            className="px-3 py-1.5 rounded-lg bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 transition-colors"
-            title="Exportar respaldo de todos tus clientes a un archivo JSON"
-          >
-            <Download className="w-3.5 h-3.5 text-accent-text" />
-            <span>Exportar Backup</span>
-          </button>
+            <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-edge bg-raised px-4 text-sm font-semibold text-strong transition-colors hover:brightness-110">
+              <Upload className="h-4 w-4 text-data-text" />
+              Restaurar copia
+              <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
+            </label>
 
-          {/* Import JSON */}
-          <label className="px-3 py-1.5 rounded-lg bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors">
-            <Upload className="w-3.5 h-3.5 text-data-text" />
-            <span>Restaurar Backup</span>
-            <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
-          </label>
-
-          {/* New Client Button */}
-          <button
-            onClick={onOpenNewClientModal}
-            className="px-4 py-2 rounded-xl bg-accent hover:brightness-110 text-accent-fg font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-md shadow-accent/20 transition-all"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>Nuevo Cliente</span>
-          </button>
-        </div>
-      </div>
+            <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={onOpenNewClientModal}>
+              Nuevo cliente
+            </Button>
+          </>
+        }
+      />
 
       {backupSuccess && (
         <div className="p-3 rounded-xl bg-success-soft border border-success-line text-success-text text-xs font-bold animate-in fade-in">
