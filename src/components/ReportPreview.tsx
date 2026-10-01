@@ -10,6 +10,7 @@ import {
   Building,
   Calendar,
   Zap,
+  Edit3,
 } from 'lucide-react';
 import { ClientRecord, TechnicianProfile } from '../types/electrical';
 import { calculatePhaseBalance, calculateCurrent, calculateMonthlyKwh, formatCurrency } from '../utils/electricalMath';
@@ -17,6 +18,7 @@ import { generateTechnicalReportPDF } from '../services/pdfReportService';
 import { useCurrency } from '../context/CurrencyContext';
 import { Button } from './ui/Button';
 import { Callout, SectionHeader } from './ui/Card';
+import { Collapsible } from './ui/Collapsible';
 
 interface ReportPreviewProps {
   client: ClientRecord;
@@ -95,11 +97,28 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ client, technician
         </Callout>
       )}
 
-      {/* Report Customization Form: Observations & Recommendations */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 space-y-4 shadow-sm">
-        <h3 className="text-sm font-bold text-strong uppercase tracking-wider text-xs text-accent-text">
-          Ajustes del Informe Oficial
-        </h3>
+      {/* Observaciones y recomendaciones (plegable) */}
+      <Collapsible
+        id="report-settings"
+        title="Observaciones y recomendaciones"
+        icon={<Edit3 className="h-4 w-4" />}
+        description="Lo que escribas acá se imprime en el informe. Es tu parte técnica: el diagnóstico del estado de la instalación y qué le recomendás al cliente."
+        summary={`${client.recommendations?.length || 0} recomendaciones cargadas${
+          client.technicianNotes ? ' · con observaciones del técnico' : ' · sin observaciones del técnico'
+        }`}
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Printer className="h-3.5 w-3.5" />}
+            onClick={() => window.print()}
+            className="hidden sm:inline-flex"
+          >
+            Imprimir
+          </Button>
+        }
+      >
+        <div className="space-y-4">
 
         {/* Observaciones del técnico */}
         <div>
@@ -158,7 +177,8 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ client, technician
             </button>
           </form>
         </div>
-      </div>
+        </div>
+      </Collapsible>
 
       {/* LIVE DOCUMENT PREVIEW CONTAINER (Styled like an official paper report) */}
       <div className="bg-sunken border border-hairline rounded-2xl p-4 sm:p-8 max-w-4xl mx-auto shadow-2xl space-y-6 text-strong print:bg-white print:text-black">

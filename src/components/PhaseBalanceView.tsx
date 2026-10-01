@@ -8,6 +8,7 @@ import {
   Zap,
   RotateCcw,
   ArrowRight,
+  ArrowRightLeft,
   Info,
   ShieldAlert,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ import {
 } from '../utils/electricalMath';
 import { Button } from './ui/Button';
 import { Badge, Callout, SectionHeader } from './ui/Card';
+import { Collapsible } from './ui/Collapsible';
 
 interface PhaseBalanceViewProps {
   client: ClientRecord;
@@ -311,22 +313,24 @@ export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUp
         </div>
       )}
 
-      {/* 4. INTERACTIVE LOAD REASSIGNMENT TABLE */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-          <div>
-            <h3 className="font-bold text-base text-strong">
-              Reasignación Rápida de Circuitos entre Fases
-            </h3>
-            <p className="text-xs text-muted">
-              Haz clic en los botones de fase para reubicar cualquier circuito. Observa cómo cambia el porcentaje de
-              desbalance en tiempo real.
-            </p>
-          </div>
-          <span className="text-xs font-mono text-muted">
-            {client.loads.length} circuitos en panel
-          </span>
-        </div>
+      {/* 4. Reasignación de circuitos (plegable) */}
+      <Collapsible
+        id="balance-reassign"
+        title="Reasignar circuitos entre fases"
+        icon={<ArrowRightLeft className="h-4 w-4" />}
+        description="Cambiá de fase cualquier circuito y mirá cómo se mueve el desbalance al instante. Es la forma manual de equilibrar cuando no querés usar el reparto automático."
+        summary={
+          isSinglePhase
+            ? 'No aplica: el suministro es monofásico'
+            : `${client.loads.length} circuitos · desbalance actual ${summary.unbalancePercent.toFixed(1)} %`
+        }
+        badge={
+          <Badge tone={summary.unbalanceStatus === 'excelente' || summary.unbalanceStatus === 'aceptable' ? 'success' : 'warning'}>
+            desbalance {summary.unbalancePercent.toFixed(1)} %
+          </Badge>
+        }
+      >
+        <div className="space-y-4">
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -465,7 +469,8 @@ export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUp
             </tbody>
           </table>
         </div>
-      </div>
+        </div>
+      </Collapsible>
     </div>
   );
 };

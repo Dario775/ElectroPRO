@@ -24,6 +24,7 @@ import { ClientRecord, ElectricalPanel, ApplianceLoad, PanelMeasurements, PanelT
 import { WIRE_GAUGES } from '../utils/electricalMath';
 import { Button } from './ui/Button';
 import { Badge, Callout, SectionHeader } from './ui/Card';
+import { Collapsible } from './ui/Collapsible';
 import { NumberField, SelectField, SwitchField, TextField } from './ui/Form';
 import { Modal } from './ui/Modal';
 
@@ -379,20 +380,14 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
         }
       />
 
-      {/* 2. VISUAL CIRCUIT MAP / HIERARCHY FLOW */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-hairline pb-2">
-          <div className="flex items-center gap-2">
-            <GitBranch className="w-4 h-4 text-accent-text" />
-            <h3 className="font-bold text-sm sm:text-base text-strong">
-              Esquema Unifilar y Distribución Jerárquica del Inmueble
-            </h3>
-          </div>
-          <span className="text-xs text-muted font-mono">
-            {client.serviceType} • {client.nominalVoltage}V
-          </span>
-        </div>
-
+      {/* 2. Esquema jerárquico (plegable) */}
+      <Collapsible
+        id="panels-map"
+        title="Esquema del inmueble"
+        icon={<GitBranch className="h-4 w-4" />}
+        description="Cómo se conectan el medidor y los tableros entre sí, de la acometida hacia adentro. Sirve para saber de dónde le llega la energía a cada tablero."
+        summary={`${panels.length} ${panels.length === 1 ? 'tablero' : 'tableros'} · ${client.serviceType} · ${client.nominalVoltage} V`}
+      >
         {/* Tree / Flow Visualizer */}
         <div className="p-4 rounded-xl bg-sunken border border-hairline/80 overflow-x-auto">
           <div className="min-w-[650px] flex items-center gap-4">
@@ -500,9 +495,24 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      </Collapsible>
 
-      {/* 3. SELECTED PANEL DETAILED VIEW & CONTROLS */}
+      {/* 3. Detalle del tablero seleccionado (plegable) */}
+      <Collapsible
+        id="panels-detail"
+        title={`Detalle: ${activePanel.name}`}
+        icon={<Gauge className="h-4 w-4" />}
+        description="Protecciones, alimentador, estado físico y mediciones del tablero que elegiste arriba. También desde acá podés editar sus datos o mover circuitos a otro tablero."
+        summary={`Cabecera de ${activePanel.mainBreakerAmps} A · ${activePanel.location} · ${
+          currentAnalytics.assignedLoads.length
+        } circuitos asignados · ${Math.round(currentAnalytics.capacityUtilization)} % de uso`}
+        badge={
+          <Badge tone={currentAnalytics.capacityUtilization > 80 ? 'danger' : currentAnalytics.issues.length > 0 ? 'warning' : 'success'}>
+            {currentAnalytics.issues.length > 0 ? `${currentAnalytics.issues.length} avisos` : 'sin avisos'}
+          </Badge>
+        }
+        defaultOpen
+      >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Panel Hardware Specs & Measurements (7 cols) */}
         <div className="bg-surface border border-hairline rounded-2xl p-5 space-y-5 lg:col-span-7 shadow-sm">
@@ -935,6 +945,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
           </div>
         </div>
       </div>
+      </Collapsible>
 
       {/* 4. MODAL: ALTA Y EDICIÓN DE TABLERO */}
       <Modal

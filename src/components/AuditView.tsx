@@ -33,7 +33,8 @@ import {
 import { useCurrency } from '../context/CurrencyContext';
 import { cx } from '../utils/cx';
 import { Button } from './ui/Button';
-import { Callout, Card, EmptyState, SectionHeader, Stat } from './ui/Card';
+import { Badge, Callout, EmptyState, SectionHeader, Stat } from './ui/Card';
+import { Collapsible } from './ui/Collapsible';
 import { Field, NumberField, SegmentedControl, SelectField, TextField } from './ui/Form';
 import { Modal } from './ui/Modal';
 
@@ -488,51 +489,18 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
         </div>
       )}
 
-      {/* 3. Barra de la lista: filtro por tablero y recuento */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-bold uppercase tracking-wide text-muted">
-          Equipos cargados{' '}
-          <span className="ml-1 font-mono text-strong">{displayedLoads.length}</span>
-        </h3>
-
-        {client.panels && client.panels.length > 1 && (
-          <label className="flex items-center gap-2 text-xs font-semibold text-muted">
-            Ver solo el tablero
-            <select
-              value={selectedPanelFilter}
-              onChange={(e) => setSelectedPanelFilter(e.target.value)}
-              className="h-9 rounded-xl border border-field-line bg-sunken px-2.5 text-xs font-bold text-strong focus:border-accent focus:outline-none"
-            >
-              <option value="all">Todos ({client.loads.length})</option>
-              {client.panels.map((p) => {
-                const count = client.loads.filter((l) => (l.panelId || client.panels?.[0]?.id) === p.id).length;
-                return (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({count})
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-        )}
-      </div>
-
-      {/* 4. Catálogo de equipos */}
-      {showCatalog && (
-        <Card padding="lg" className="animate-pop space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="text-base font-bold text-strong">Catálogo de equipos</h3>
-              <p className="mt-0.5 text-sm text-muted">
-                {APPLIANCE_CATALOG.length} equipos con valores típicos ya cargados. Al agregar uno, se reparte solo a la
-                fase menos cargada.
-              </p>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => setShowCatalog(false)}>
-              Cerrar
-            </Button>
-          </div>
-
+      {/* 3. Catálogo de equipos (plegable) */}
+      <Collapsible
+        id="audit-catalog"
+        title="Catálogo de equipos"
+        icon={<Layers className="h-4 w-4" />}
+        description="Equipos comunes con su potencia, su factor de potencia y sus horas de uso ya cargadas. Al agregar uno se reparte solo a la fase menos cargada y podés ajustarlo después."
+        summary={`${APPLIANCE_CATALOG.length} equipos comunes listos para agregar con un clic`}
+        open={showCatalog}
+        onToggle={setShowCatalog}
+        badge={<Badge tone="neutral">{APPLIANCE_CATALOG.length}</Badge>}
+      >
+        <div className="space-y-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             {/* Búsqueda */}
             <div className="relative w-full lg:max-w-sm">
@@ -630,36 +598,79 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
               </p>
             )}
           </div>
-        </Card>
-      )}
+        </div>
+      </Collapsible>
 
-      {/* 5. LOADS TABLE & EDITOR */}
-      {client.loads.length === 0 ? (
-        <EmptyState
-          icon={<Zap className="h-6 w-6" />}
-          title="Todavía no cargaste ningún equipo"
-          description="Empezá por el catálogo: trae los equipos más comunes con su potencia y sus horas de uso ya puestas. Si el equipo no está en la lista, cargalo a mano."
-          action={
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button
-                variant="primary"
-                icon={<Layers className="h-4 w-4" />}
-                onClick={() => {
-                  setShowCatalog(true);
-                  setShowCustomModal(false);
-                }}
-              >
-                Ver el catálogo
-              </Button>
-              <Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => setShowCustomModal(true)}>
-                Cargar un equipo a mano
-              </Button>
+      {/* 4. Equipos cargados (plegable) */}
+      <Collapsible
+        id="audit-loads"
+        title="Equipos cargados"
+        icon={<Zap className="h-4 w-4" />}
+        description="Cada equipo con su consumo y su costo. Podés editar cualquier valor en el lugar: el programa recalcula todo al instante."
+        summary={
+          client.loads.length === 0
+            ? 'Todavía no cargaste equipos'
+            : `${client.loads.length} equipos · ${(summary.totalWatts / 1000).toFixed(2)} kW · ${Math.round(
+                summary.totalMonthlyKwh
+              ).toLocaleString('es-ES')} kWh/mes · ${format(summary.totalMonthlyCost, client.currency, undefined, {
+                hideCode: true,
+              })} por mes`
+        }
+        badge={<Badge tone={client.loads.length > 0 ? 'accent' : 'neutral'}>{client.loads.length}</Badge>}
+        defaultOpen
+      >
+        {client.loads.length === 0 ? (
+          <EmptyState
+            icon={<Zap className="h-6 w-6" />}
+            title="Todavía no cargaste ningún equipo"
+            description="Empezá por el catálogo: trae los equipos más comunes con su potencia y sus horas de uso ya puestas. Si el equipo no está en la lista, cargalo a mano."
+            action={
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button
+                  variant="primary"
+                  icon={<Layers className="h-4 w-4" />}
+                  onClick={() => setShowCatalog(true)}
+                >
+                  Ver el catálogo
+                </Button>
+                <Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => setShowCustomModal(true)}>
+                  Cargar un equipo a mano
+                </Button>
+              </div>
+            }
+          />
+        ) : (
+          <div className="space-y-4">
+            {/* Filtro por tablero */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted">
+                Mostrando <strong className="font-mono text-strong">{displayedLoads.length}</strong> de{' '}
+                {client.loads.length} equipos
+              </p>
+              {client.panels && client.panels.length > 1 && (
+                <label className="flex items-center gap-2 text-xs font-semibold text-muted">
+                  Ver solo el tablero
+                  <select
+                    value={selectedPanelFilter}
+                    onChange={(e) => setSelectedPanelFilter(e.target.value)}
+                    className="h-9 rounded-xl border border-field-line bg-sunken px-2.5 text-xs font-bold text-strong focus:border-accent focus:outline-none"
+                  >
+                    <option value="all">Todos ({client.loads.length})</option>
+                    {client.panels.map((p) => {
+                      const count = client.loads.filter((l) => (l.panelId || client.panels?.[0]?.id) === p.id).length;
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({count})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+              )}
             </div>
-          }
-        />
-      ) : (
-        <div className="space-y-3">
-          {displayedLoads.map((load, index) => {
+
+            <div className="space-y-3">
+              {displayedLoads.map((load, index) => {
             const current = calculateCurrent(
               load.powerWatts * load.quantity,
               load.voltage || client.nominalVoltage,
@@ -917,11 +928,12 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
               </div>
             );
           })}
-        </div>
-      )}
+            </div>
+          </div>
+        )}
+      </Collapsible>
 
-      {/* 6. MODAL: CREATE CUSTOM LOAD */}
-      {/* Registrar una carga a mano, con resultado en vivo */}
+      {/* 5. Registrar una carga a mano, con resultado en vivo */}
       <Modal
         isOpen={showCustomModal}
         onClose={() => setShowCustomModal(false)}

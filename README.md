@@ -211,6 +211,26 @@ campo, valores frecuentes como atajos y explicación de la jerga:
 | **Ficha de cliente** (`ClientModal`) | Cuatro secciones con las tensiones, la térmica general y las tarifas con unidad y ayuda |
 | **Ajustes del técnico** (`SettingsModal`) | Identificación profesional, valores por defecto y cotización, con la advertencia de qué reemplaza el botón de datos de ejemplo |
 
+### Bloques plegables (divulgación progresiva)
+
+Tener todo abierto a la vez abrumaba. Ahora los bloques de contenido son plegables con el componente `Collapsible`:
+cerrados muestran el título y **un resumen con los números reales**; al abrirlos aparece todo el contenido. El estado
+de cada bloque se recuerda entre visitas (`electropro_ui_sections_v1` en el almacenamiento local).
+
+| Vista | Bloques plegables |
+|---|---|
+| Cargas y consumos | Catálogo de equipos · Equipos cargados (con kW, kWh/mes y costo por mes en el resumen) |
+| Tableros | Esquema del inmueble · Detalle del tablero (cabecera, circuitos y % de uso) |
+| Mediciones | Mediciones en el lugar (abierto solo si faltan) · Plan de trabajo (tareas, horas y riesgo) |
+| Historial | Curva de consumo · Diagnóstico facturación vs auditoría (con el desvío) · Desglose mes a mes |
+| Presupuesto | Rubros (cantidad y subtotal) · Condiciones y totales (total, impuestos y validez) |
+| Balance de fases | Reasignación de circuitos entre fases (desbalance actual) |
+| Informe | Observaciones y recomendaciones |
+
+El **menú lateral** usa el mismo principio: la etapa en la que estás aparece desplegada con sus pasos y las otras
+quedan plegadas con su avance ("2 de 4"), de modo que la relación entre etapa y pasos se ve sin tener ocho pasos en
+pantalla a la vez. Los pasos terminados se marcan con un tilde en lugar de un punto de color.
+
 ### Cabeceras de las vistas
 
 Cada pantalla arranca con la misma cabecera: etapa del recorrido, título en lenguaje llano, explicación de qué se hace

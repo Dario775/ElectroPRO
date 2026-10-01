@@ -23,6 +23,7 @@ import { Card, SectionHeader, Stat } from './ui/Card';
 import { Callout } from './ui/Card';
 import { Badge } from './ui/Card';
 import { Button } from './ui/Button';
+import { Collapsible } from './ui/Collapsible';
 import { NumberField, SelectField, SwitchField } from './ui/Form';
 import { cx } from '../utils/cx';
 
@@ -233,14 +234,25 @@ export const DiagnosticView: React.FC<DiagnosticViewProps> = ({
         </div>
       </div>
 
-      {/* 3. Toma de datos en obra */}
-      <Card padding="lg" className="space-y-5">
-        <SectionHeader
-          eyebrow="Paso 3 · Relevamiento"
-          title="Mediciones en el lugar"
-          description="Cargá lo que mediste con el multímetro, la pinza y el telurómetro. Cada dato alimenta el índice de seguridad y el plan de trabajo de abajo, que se actualiza mientras escribís."
-          icon={<Sliders className="h-4 w-4" />}
-        />
+      {/* 3. Toma de datos en obra (plegable) */}
+      <Collapsible
+        id="diag-measurements"
+        eyebrow="Paso 3 · Relevamiento"
+        title="Mediciones en el lugar"
+        icon={<Sliders className="h-4 w-4" />}
+        description="Cargá lo que mediste con el multímetro, la pinza y el telurómetro. Cada dato alimenta el índice de seguridad y el plan de trabajo, que se actualizan mientras escribís."
+        summary={
+          client.diagnosticMeasurements
+            ? `${measurements.vL1N} V en L1 · ${measurements.iL1} A en L1 · ${measurements.groundResistanceOhms} Ω de puesta a tierra`
+            : 'Todavía no cargaste las mediciones: abrí este bloque para completarlas'
+        }
+        badge={
+          <Badge tone={client.diagnosticMeasurements ? 'success' : 'warning'}>
+            {client.diagnosticMeasurements ? 'cargadas' : 'falta'}
+          </Badge>
+        }
+        defaultOpen={!client.diagnosticMeasurements}
+      >
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           {/* A. Tensiones */}
@@ -423,29 +435,24 @@ export const DiagnosticView: React.FC<DiagnosticViewProps> = ({
             </div>
           </section>
         </div>
-      </Card>
+      </Collapsible>
 
-
-      {/* 4. SYSTEMATIC ACTION PLAN & WORK ORDER */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 space-y-4 shadow-sm">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-hairline pb-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Wrench className="w-5 h-5 text-accent-text" />
-              <h3 className="font-bold text-base text-strong">
-                Plan de Trabajo Técnico Determinado Sistemáticamente
-              </h3>
-            </div>
-            <p className="text-xs text-muted mt-0.5">
-              Acciones ordenadas por nivel de riesgo y urgencia operativa para presentar al cliente.
-            </p>
-          </div>
-
-          <div className="text-xs text-muted font-mono">
-            {Object.values(completedTasks).filter(Boolean).length} de {diagnostic.actionPlan.length} completadas
-          </div>
-        </div>
-
+      {/* 4. Plan de trabajo (plegable) */}
+      <Collapsible
+        id="diag-plan"
+        title="Plan de trabajo"
+        icon={<Wrench className="h-4 w-4" />}
+        description="Acciones ordenadas por nivel de riesgo y urgencia, listas para presentarle al cliente. Marcá cada tarea a medida que la hacés."
+        summary={`${diagnostic.actionPlan.length} tareas · ${diagnostic.totalEstimatedHours} horas de mano de obra · ${
+          Object.values(completedTasks).filter(Boolean).length
+        } completadas`}
+        badge={
+          <Badge tone={diagnostic.riskLevel === 'Peligro Crítico' || diagnostic.riskLevel === 'Alto' ? 'danger' : 'neutral'}>
+            {diagnostic.riskLevel}
+          </Badge>
+        }
+        defaultOpen
+      >
         <div className="space-y-3">
           {diagnostic.actionPlan.map((action, idx) => {
             const isDone = !!completedTasks[action.id];
@@ -514,7 +521,7 @@ export const DiagnosticView: React.FC<DiagnosticViewProps> = ({
             );
           })}
         </div>
-      </div>
+      </Collapsible>
     </div>
   );
 };

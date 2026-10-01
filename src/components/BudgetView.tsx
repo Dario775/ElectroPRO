@@ -33,6 +33,7 @@ import {
   Tag,
   ArrowRight,
   ArrowRightLeft,
+  ListChecks,
 } from 'lucide-react';
 import {
   ClientRecord,
@@ -51,6 +52,9 @@ import {
   CatalogMaterial,
 } from '../services/budgetGeneratorService';
 import { generateBudgetPDF } from '../services/budgetPdfService';
+import { Button } from './ui/Button';
+import { Badge } from './ui/Card';
+import { Collapsible } from './ui/Collapsible';
 
 interface BudgetViewProps {
   client: ClientRecord;
@@ -1060,8 +1064,27 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
         </div>
       </div>
 
-      {/* 4. MAIN ITEMS TABLE & CONTROLS */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-4">
+      {/* 4. Rubros del presupuesto (plegable) */}
+      <Collapsible
+        id="budget-items"
+        title="Rubros del presupuesto"
+        icon={<ListChecks className="h-4 w-4" />}
+        description="Materiales, mano de obra y gestiones del trabajo. Podés buscar, filtrar y editar cualquier importe en el lugar."
+        summary={`${currentBudget.items.length} rubros · subtotal ${format(totals.grossTotal, client.currency)}`}
+        badge={<Badge tone="accent">{currentBudget.items.length}</Badge>}
+        actions={
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Plus className="h-3.5 w-3.5" />}
+            onClick={() => setIsCatalogModalOpen(true)}
+          >
+            Agregar rubro
+          </Button>
+        }
+        defaultOpen
+      >
+        <div className="space-y-4">
         {/* Table Toolbar */}
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           <div className="flex items-center gap-2 flex-wrap flex-1">
@@ -1289,9 +1312,21 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             </tbody>
           </table>
         </div>
-      </div>
+        </div>
+      </Collapsible>
 
-      {/* 5. COMMERCIAL CONDITIONS & FINANCIAL CONTROLS */}
+      {/* 5. Condiciones comerciales y totales (plegable) */}
+      <Collapsible
+        id="budget-conditions"
+        title="Condiciones comerciales y totales"
+        icon={<FileText className="h-4 w-4" />}
+        description="Forma de pago, plazo, garantía, validez, impuestos y descuentos. Es lo que fija el total que va a ver el cliente."
+        summary={`Total general ${format(totals.grandTotal, client.currency)} · ${
+          currentBudget.applyTax ? `IVA ${currentBudget.taxPercent}%` : 'sin impuestos'
+        } · válido ${currentBudget.validityDays} días`}
+        badge={<Badge tone="success">{format(totals.grandTotal, client.currency)}</Badge>}
+        defaultOpen
+      >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Commercial Conditions and Terms (7 cols) */}
         <div className="bg-surface border border-hairline rounded-2xl p-5 space-y-4 lg:col-span-7 shadow-sm">
@@ -1496,6 +1531,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
           </div>
         </div>
       </div>
+      </Collapsible>
 
       {/* 6. MODAL: ADD FROM DEFAULT MATERIALS CATALOG */}
       {isCatalogModalOpen && (

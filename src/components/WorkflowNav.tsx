@@ -1,22 +1,17 @@
-import React from 'react';
-import { ArrowRight, CheckCircle2, Users } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowRight, Check, CheckCircle2, ChevronDown, Users } from 'lucide-react';
 import { cx } from '../utils/cx';
-import {
-  ViewId,
-  WorkflowGroup,
-  WorkflowProgress,
-  WorkflowStep,
-  findGroupOfStep,
-} from '../utils/workflow';
-import { Badge, ProgressBar, StatusDot } from './ui/Card';
+import { GroupId, ViewId, WorkflowGroup, WorkflowProgress, WorkflowStep, findGroupOfStep } from '../utils/workflow';
+import { Badge, ProgressBar } from './ui/Card';
 import { Button } from './ui/Button';
 
 /**
  * Navegación del recorrido de trabajo.
  *
- * En escritorio es una barra lateral con las cuatro etapas y sus pasos; en móvil
- * son dos filas de botones (etapas arriba, pasos de la etapa activa abajo), que
- * es lo que cabe y se puede tocar con el dedo.
+ * La relación entre etapas y pasos se muestra desplegando: la etapa en la que
+ * estás aparece abierta con sus pasos, y las otras quedan plegadas con su
+ * resumen. Así se ve de un vistazo el recorrido completo sin tener los ocho
+ * pasos en pantalla a la vez.
  */
 
 export interface WorkflowNavProps {
@@ -27,8 +22,16 @@ export interface WorkflowNavProps {
   progress: WorkflowProgress;
 }
 
+/** Marca de paso terminado: menos ruido que un punto de color por paso. */
+const DoneMark: React.FC<{ done: boolean }> = ({ done }) =>
+  done ? (
+    <Check className="h-4 w-4 flex-shrink-0 text-success-text" strokeWidth={3} />
+  ) : (
+    <span className="h-4 w-4 flex-shrink-0 rounded-full border border-edge" />
+  );
+
 /* ------------------------------------------------------------------ */
-/* Escritorio: barra lateral                                           */
+/* Escritorio: barra lateral con etapas plegables                      */
 /* ------------------------------------------------------------------ */
 
 export const WorkflowSidebar: React.FC<WorkflowNavProps> = ({
@@ -37,110 +40,153 @@ export const WorkflowSidebar: React.FC<WorkflowNavProps> = ({
   onNavigate,
   nextStep,
   progress,
-}) => (
-  <aside className="hidden w-[290px] flex-shrink-0 lg:block">
-    <div className="sticky top-[76px] space-y-4 py-5">
-      <div className="rounded-2xl border border-hairline bg-surface p-4">
-        <ProgressBar
-          value={progress.done}
-          max={progress.total}
-          label={`Trabajo del cliente: ${progress.done} de ${progress.total} pasos`}
-        />
-        {nextStep ? (
-          <Button
-            variant="primary"
-            iconRight={<ArrowRight className="h-4 w-4" />}
-            className="mt-3"
-            fullWidth
-            onClick={() => onNavigate(nextStep.id)}
-          >
-            Siguiente: {nextStep.label}
-          </Button>
-        ) : (
-          <div className="mt-3 flex items-center gap-2 rounded-xl border border-success-line bg-success-soft px-3 py-2.5 text-sm font-semibold text-success-text">
-            <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-            Trabajo completo
-          </div>
-        )}
-      </div>
+}) => {
+  const activeGroup = findGroupOfStep(workflow, activeView as WorkflowStep['id']);
+  const [expanded, setExpanded] = useState<GroupId[]>(activeGroup ? [activeGroup.id] : []);
 
-      <nav aria-label="Etapas del trabajo" className="space-y-4">
-        {workflow.map((group) => {
-          const groupIsActive = findGroupOfStep(workflow, activeView as WorkflowStep['id'])?.id === group.id;
-          return (
-            <div key={group.id}>
-              <div className="mb-1.5 flex items-start gap-2 px-2">
-                <span
-                  className={cx(
-                    'mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold',
-                    groupIsActive ? 'bg-accent text-accent-fg' : 'bg-raised text-muted'
-                  )}
-                >
-                  {group.index}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-strong">{group.title}</p>
-                  <p className="text-xs leading-snug text-muted">{group.description}</p>
-                </div>
-              </div>
+  // Al cambiar de paso se abre la etapa correspondiente, sin cerrar las que el
+  // usuario haya abierto a mano.
+  useEffect(() => {
+    if (activeGroup && !expanded.includes(activeGroup.id)) {
+      setExpanded((previous) => [...previous, activeGroup.id]);
+    }
+  }, [activeGroup, expanded]);
 
-              <div className="space-y-1">
-                {group.steps.map((step) => {
-                  const active = activeView === step.id;
-                  return (
-                    <button
-                      key={step.id}
-                      type="button"
-                      onClick={() => onNavigate(step.id)}
-                      aria-current={active ? 'step' : undefined}
-                      className={cx(
-                        'flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors',
-                        active
-                          ? 'border-accent-line bg-accent-soft'
-                          : 'border-transparent hover:border-hairline hover:bg-raised'
-                      )}
-                    >
-                      <StatusDot status={step.status} />
-                      <span className={cx('flex-1 truncate text-sm', active ? 'font-bold text-strong' : 'font-medium text-soft')}>
-                        {step.label}
-                      </span>
-                      {step.badge && (
-                        <span className="flex-shrink-0 font-mono text-xs text-muted">{step.badge}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+  const toggleGroup = (groupId: GroupId): void => {
+    setExpanded((previous) =>
+      previous.includes(groupId) ? previous.filter((id) => id !== groupId) : [...previous, groupId]
+    );
+  };
+
+  return (
+    <aside className="hidden w-[280px] flex-shrink-0 lg:block">
+      <div className="sticky top-[76px] space-y-4 py-5">
+        {/* Progreso del trabajo y próximo paso */}
+        <div className="rounded-2xl border border-hairline bg-surface p-4">
+          <ProgressBar value={progress.done} max={progress.total} label={`${progress.done} de ${progress.total} pasos`} />
+          {nextStep ? (
+            <Button
+              variant="primary"
+              iconRight={<ArrowRight className="h-4 w-4" />}
+              className="mt-3"
+              fullWidth
+              onClick={() => onNavigate(nextStep.id)}
+            >
+              Siguiente: {nextStep.label}
+            </Button>
+          ) : (
+            <div className="mt-3 flex items-center gap-2 rounded-xl border border-success-line bg-success-soft px-3 py-2.5 text-sm font-semibold text-success-text">
+              <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+              Trabajo completo
             </div>
-          );
-        })}
-      </nav>
-
-      <div className="border-t border-hairline pt-4">
-        <button
-          type="button"
-          onClick={() => onNavigate('clients')}
-          aria-current={activeView === 'clients' ? 'page' : undefined}
-          className={cx(
-            'flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors',
-            activeView === 'clients'
-              ? 'border-accent-line bg-accent-soft'
-              : 'border-hairline hover:border-accent-line hover:bg-raised'
           )}
-        >
-          <Users className="h-4 w-4 flex-shrink-0 text-muted" />
-          <span className="flex-1">
-            <span className="block text-sm font-semibold text-soft">Clientes y copias</span>
-            <span className="block text-xs text-muted">Fichas, respaldos y datos de ejemplo</span>
-          </span>
-        </button>
+        </div>
+
+        {/* Etapas */}
+        <nav aria-label="Etapas del trabajo" className="space-y-2">
+          {workflow.map((group) => {
+            const isActiveGroup = activeGroup?.id === group.id;
+            const isExpanded = expanded.includes(group.id);
+            const doneInGroup = group.steps.filter((step) => step.status === 'listo').length;
+
+            return (
+              <div
+                key={group.id}
+                className={cx(
+                  'overflow-hidden rounded-2xl border transition-colors',
+                  isActiveGroup ? 'border-accent-line bg-surface' : 'border-hairline bg-surface/60'
+                )}
+              >
+                {/* Cabecera de la etapa: despliega y pliega sus pasos */}
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.id)}
+                  aria-expanded={isExpanded}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-raised/60"
+                >
+                  <span
+                    className={cx(
+                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                      isActiveGroup ? 'bg-accent text-accent-fg' : 'bg-raised text-muted'
+                    )}
+                  >
+                    {group.index}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className={cx('block truncate text-sm', isActiveGroup ? 'font-bold text-strong' : 'font-semibold text-soft')}>
+                      {group.title}
+                    </span>
+                    <span className="block font-mono text-xs text-muted">
+                      {doneInGroup} de {group.steps.length}
+                    </span>
+                  </span>
+                  <ChevronDown
+                    className={cx('h-4 w-4 flex-shrink-0 text-muted transition-transform duration-200', isExpanded && 'rotate-180')}
+                  />
+                </button>
+
+                {/* Pasos de la etapa */}
+                {isExpanded && (
+                  <div className="space-y-0.5 border-t border-hairline px-2 py-2">
+                    <p className="px-2 pb-1.5 pt-0.5 text-xs leading-snug text-muted">{group.description}</p>
+                    {group.steps.map((step) => {
+                      const isActive = activeView === step.id;
+                      return (
+                        <button
+                          key={step.id}
+                          type="button"
+                          onClick={() => onNavigate(step.id)}
+                          aria-current={isActive ? 'step' : undefined}
+                          className={cx(
+                            'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors',
+                            isActive ? 'bg-accent-soft' : 'hover:bg-raised'
+                          )}
+                        >
+                          <DoneMark done={step.status === 'listo'} />
+                          <span
+                            className={cx(
+                              'min-w-0 flex-1 truncate text-sm',
+                              isActive ? 'font-bold text-strong' : 'text-soft'
+                            )}
+                          >
+                            {step.label}
+                          </span>
+                          {step.status === 'herramienta' && <Badge tone="info">herramienta</Badge>}
+                          {step.badge && step.status !== 'herramienta' && (
+                            <span className="flex-shrink-0 font-mono text-xs text-muted">{step.badge}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* Clientes: no es un paso del recorrido */}
+        <div className="border-t border-hairline pt-3">
+          <button
+            type="button"
+            onClick={() => onNavigate('clients')}
+            aria-current={activeView === 'clients' ? 'page' : undefined}
+            className={cx(
+              'flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors',
+              activeView === 'clients' ? 'bg-accent-soft font-bold text-strong' : 'text-soft hover:bg-raised'
+            )}
+          >
+            <Users className="h-4 w-4 flex-shrink-0 text-muted" />
+            Clientes y copias de seguridad
+          </button>
+        </div>
       </div>
-    </div>
-  </aside>
-);
+    </aside>
+  );
+};
 
 /* ------------------------------------------------------------------ */
-/* Móvil: fila de etapas y de pasos                                    */
+/* Móvil: etapa activa y sus pasos                                     */
 /* ------------------------------------------------------------------ */
 
 export const WorkflowRail: React.FC<WorkflowNavProps> = ({ workflow, activeView, onNavigate, progress }) => {
@@ -148,6 +194,7 @@ export const WorkflowRail: React.FC<WorkflowNavProps> = ({ workflow, activeView,
 
   return (
     <div className="sticky top-0 z-20 border-b border-hairline bg-surface/95 backdrop-blur-md lg:hidden">
+      {/* Etapas */}
       <div className="flex items-center gap-2 overflow-x-auto px-3 pb-1.5 pt-2 scrollbar-none">
         {workflow.map((group) => {
           const active = group.id === activeGroup.id;
@@ -177,6 +224,7 @@ export const WorkflowRail: React.FC<WorkflowNavProps> = ({ workflow, activeView,
         </span>
       </div>
 
+      {/* Pasos de la etapa activa */}
       <div className="flex items-center gap-2 overflow-x-auto px-3 pb-2 scrollbar-none">
         {activeGroup.steps.map((step) => {
           const active = activeView === step.id;
@@ -191,7 +239,7 @@ export const WorkflowRail: React.FC<WorkflowNavProps> = ({ workflow, activeView,
                 active ? 'border-accent-line bg-accent-soft text-strong' : 'border-hairline bg-surface text-muted'
               )}
             >
-              <StatusDot status={step.status} />
+              <DoneMark done={step.status === 'listo'} />
               {step.label}
             </button>
           );

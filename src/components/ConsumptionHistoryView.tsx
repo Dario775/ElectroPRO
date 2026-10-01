@@ -27,12 +27,14 @@ import {
   ArrowRight,
   Plus,
   Info,
+  Table,
 } from 'lucide-react';
 import { ClientRecord, MonthlyConsumptionRecord } from '../types/electrical';
 import { calculatePhaseBalance, formatCurrency } from '../utils/electricalMath';
 import { useCurrency } from '../context/CurrencyContext';
 import { Button } from './ui/Button';
-import { SectionHeader } from './ui/Card';
+import { Badge, SectionHeader } from './ui/Card';
+import { Collapsible } from './ui/Collapsible';
 
 interface ConsumptionHistoryViewProps {
   client: ClientRecord;
@@ -350,15 +352,22 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
         </div>
       </div>
 
-      {/* 3. Bar Chart Card */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-4">
+      {/* 3. Curva de consumo (plegable) */}
+      <Collapsible
+        id="history-chart"
+        title="Curva de consumo y facturación"
+        icon={<BarChart3 className="h-4 w-4" />}
+        description="Compará el consumo de cada mes con el que proyectan las cargas relevadas. Lo que cobra la distribuidora y lo que debería consumir el inmueble, mes a mes."
+        summary={`Promedio facturado: ${stats.avgKwh} kWh por mes · proyectado por las cargas: ${Math.round(
+          projectedMonthlyKwh
+        )} kWh por mes`}
+        defaultOpen
+      >
+        <div className="space-y-4">
         {/* Toolbar inside card */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-hairline pb-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3">
           <div className="flex items-center gap-2">
-            <h3 className="font-bold text-sm sm:text-base text-strong">
-              Curva de Consumo y Facturación ({timeRange === '6m' ? 'Últimos 6 Meses' : 'Últimos 12 Meses'})
-            </h3>
-            <span className="text-xs text-muted font-mono">
+            <span className="text-sm text-muted font-mono">
               Tarifa: {format(client.kwhCost, client.currency)}/kWh
             </span>
           </div>
@@ -524,14 +533,28 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
             Total periodo: <strong className="text-strong">{stats.totalKwh.toLocaleString()} kWh</strong>
           </div>
         </div>
-      </div>
+        </div>
+      </Collapsible>
 
-      {/* 4. Diagnostic Technical Analysis for Electrician */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-3">
-        <h4 className="font-bold text-sm text-strong flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-accent-text" />
-          <span>Diagnóstico Eléctrico Forense (Facturación vs Auditoría de Cargas)</span>
-        </h4>
+      {/* 4. Diagnóstico forense (plegable) */}
+      <Collapsible
+        id="history-forensic"
+        title="Diagnóstico: facturación contra auditoría"
+        icon={<AlertCircle className="h-4 w-4" />}
+        description="Cruza lo que cobra la distribuidora con lo que consumen las cargas relevadas. Si la diferencia es grande, suele haber una fuga a tierra, un medidor descalibrado o cargas no declaradas."
+        summary={
+          Math.abs(stats.diffPercent) <= 15
+            ? `Los números coinciden (desvío del ${stats.diffPercent} %)`
+            : stats.diffPercent < -15
+            ? `La factura cobra ${Math.abs(stats.diffPercent)} % más de lo auditado: hay que investigar`
+            : `La auditoría da ${stats.diffPercent} % más que la factura: revisá las horas declaradas`
+        }
+        badge={
+          <Badge tone={Math.abs(stats.diffPercent) <= 15 ? 'success' : stats.diffPercent < -15 ? 'danger' : 'warning'}>
+            desvío {stats.diffPercent} %
+          </Badge>
+        }
+      >
 
         {Math.abs(stats.diffPercent) <= 15 ? (
           <div className="p-3.5 rounded-xl bg-success-soft border border-success-line flex items-start gap-3">
@@ -576,29 +599,25 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
             </div>
           </div>
         )}
-      </div>
+      </Collapsible>
 
-      {/* 5. Detailed Monthly Table */}
-      <div className="bg-surface border border-hairline rounded-2xl p-5 shadow-sm space-y-3">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-          <div>
-            <h4 className="font-bold text-sm sm:text-base text-strong">
-              Desglose Mes a Mes de Facturas Registradas
-            </h4>
-            <p className="text-xs text-muted">
-              Datos registrados para el cliente activo. Haz clic en "Registrar / Editar Recibos" para modificar lecturas.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleOpenEdit}
-            className="px-3 py-1.5 rounded-lg bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 transition-colors"
-          >
-            <Edit3 className="w-3.5 h-3.5 text-accent-text" />
-            <span>Modificar Tabla</span>
-          </button>
-        </div>
+      {/* 5. Desglose mes a mes (plegable) */}
+      <Collapsible
+        id="history-table"
+        title="Desglose mes a mes"
+        icon={<Table className="h-4 w-4" />}
+        description="Cada factura cargada, con su consumo, su importe y cuánto se aparta del promedio."
+        summary={
+          client.consumptionHistory && client.consumptionHistory.length > 0
+            ? `${client.consumptionHistory.length} facturas cargadas · total ${stats.totalKwh.toLocaleString()} kWh`
+            : 'Todavía no cargaste facturas'
+        }
+        actions={
+          <Button variant="secondary" size="sm" icon={<Edit3 className="h-3.5 w-3.5" />} onClick={handleOpenEdit}>
+            Cargar facturas
+          </Button>
+        }
+      >
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -673,7 +692,7 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
             </tbody>
           </table>
         </div>
-      </div>
+      </Collapsible>
 
       {/* 6. Modal: Edit Bill Readings */}
       {isEditing && (
