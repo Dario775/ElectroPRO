@@ -374,7 +374,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
           <button
             type="button"
             onClick={() => handleOpenPanelModal()}
-            className="px-3.5 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            className="px-3.5 py-1.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
           >
             <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>+ Agregar Tablero</span>
@@ -1340,7 +1340,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleSavePanel(editingPanel)}
-                className="px-5 py-2 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold transition-colors shadow-md"
+                className="px-5 py-2 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs font-bold transition-colors shadow-md"
               >
                 Guardar Tablero
               </button>
@@ -1409,7 +1409,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
               <button
                 type="button"
                 onClick={handleExecuteReassign}
-                className="px-4 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold transition-colors"
+                className="px-4 py-1.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs font-bold transition-colors"
               >
                 Confirmar Transferencia
               </button>

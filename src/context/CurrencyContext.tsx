@@ -28,26 +28,41 @@ export interface CurrencyContextType {
 
 const CurrencyContext = createContext<CurrencyContextType | undefined>(undefined);
 
+/**
+ * Lee del almacenamiento local solo si está disponible. En un entorno sin
+ * `localStorage` (por ejemplo un render de servidor o una prueba) se usan los
+ * valores por defecto en lugar de ensuciar la consola con errores.
+ */
+function readStored(key: string): string | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(key: string, value: string): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(key, value);
+  } catch {
+    /* almacenamiento no disponible */
+  }
+}
+
 export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeCurrency, setActiveCurrencyState] = useState<SupportedCurrency>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_CURRENCY);
-      if (saved === 'ARS' || saved === 'USD') return saved;
-    } catch (e) {
-      console.error(e);
-    }
+    const saved = readStored(STORAGE_KEY_CURRENCY);
+    if (saved === 'ARS' || saved === 'USD') return saved;
     return 'USD';
   });
 
   const [usdToArsRate, setUsdToArsRateState] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_RATE);
-      if (saved) {
-        const val = parseFloat(saved);
-        if (!isNaN(val) && val > 0) return val;
-      }
-    } catch (e) {
-      console.error(e);
+    const saved = readStored(STORAGE_KEY_RATE);
+    if (saved) {
+      const val = parseFloat(saved);
+      if (!isNaN(val) && val > 0) return val;
     }
     return DEFAULT_USD_ARS_RATE;
   });
@@ -55,11 +70,7 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const setActiveCurrency = (c: SupportedCurrency) => {
     const valid = c === 'ARS' ? 'ARS' : 'USD';
     setActiveCurrencyState(valid);
-    try {
-      localStorage.setItem(STORAGE_KEY_CURRENCY, valid);
-    } catch (e) {
-      console.error(e);
-    }
+    writeStored(STORAGE_KEY_CURRENCY, valid);
   };
 
   const toggleCurrency = () => {
@@ -69,11 +80,7 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const setUsdToArsRate = (rate: number) => {
     const safeRate = rate > 0 ? rate : DEFAULT_USD_ARS_RATE;
     setUsdToArsRateState(safeRate);
-    try {
-      localStorage.setItem(STORAGE_KEY_RATE, safeRate.toString());
-    } catch (e) {
-      console.error(e);
-    }
+    writeStored(STORAGE_KEY_RATE, safeRate.toString());
   };
 
   const convert = (

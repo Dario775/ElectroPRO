@@ -629,7 +629,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                 setNewBudgetTitle(`Opción ${budgets.length + 1}: `);
                 setIsCreateModalOpen(true);
               }}
-              className="px-3.5 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+              className="px-3.5 py-1.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>+ Nuevo Presupuesto</span>
@@ -942,7 +942,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
           <button
             type="button"
             onClick={handleCopyForWhatsApp}
-            className="px-3 py-1.5 rounded-xl bg-success-solid hover:bg-success-solid text-strong text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            className="px-3 py-1.5 rounded-xl bg-success-solid hover:brightness-110 text-strong text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
           >
             {copySuccess ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
             <span>{copySuccess ? '¡Copiado!' : 'WhatsApp'}</span>
@@ -951,7 +951,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
           <button
             type="button"
             onClick={handleDownloadPDF}
-            className="px-3.5 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            className="px-3.5 py-1.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
           >
             <Download className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Descargar PDF</span>
@@ -1142,7 +1142,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             <button
               type="button"
               onClick={() => handleOpenEditModal()}
-              className="px-3 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+              className="px-3 py-1.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>+ Ítem Personalizado</span>
@@ -1575,7 +1575,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                       onClick={() => {
                         handleAddFromCatalog(mat);
                       }}
-                      className="px-3 py-1 rounded-lg bg-accent hover:bg-accent text-accent-fg font-bold text-xs flex items-center gap-1 transition-colors shadow-sm"
+                      className="px-3 py-1 rounded-lg bg-accent hover:brightness-110 text-accent-fg font-bold text-xs flex items-center gap-1 transition-colors shadow-sm"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Agregar</span>
@@ -1826,7 +1826,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               <button
                 type="button"
                 onClick={handleSaveItem}
-                className="px-4 py-2 rounded-xl bg-accent hover:bg-accent text-accent-fg font-bold text-xs transition-colors shadow-sm"
+                className="px-4 py-2 rounded-xl bg-accent hover:brightness-110 text-accent-fg font-bold text-xs transition-colors shadow-sm"
               >
                 Guardar Rubro
               </button>
@@ -2020,7 +2020,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               <button
                 type="button"
                 onClick={handleCreateNewBudget}
-                className="px-4 py-2 rounded-xl bg-accent hover:bg-accent text-accent-fg font-bold text-xs transition-colors shadow-sm"
+                className="px-4 py-2 rounded-xl bg-accent hover:brightness-110 text-accent-fg font-bold text-xs transition-colors shadow-sm"
               >
                 Crear Presupuesto
               </button>
@@ -2073,7 +2073,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               <button
                 type="button"
                 onClick={handleSaveRename}
-                className="px-4 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg font-bold text-xs shadow-sm"
+                className="px-4 py-1.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg font-bold text-xs shadow-sm"
               >
                 Guardar Nombre
               </button>

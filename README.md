@@ -22,6 +22,7 @@ Verificado en este repositorio:
 | Sistema de diseño (tokens, tamaños, fuentes) | `node check-ui.mjs` | ✅ 24 archivos revisados, sin incumplimientos |
 | Contraste WCAG AA en tema claro y oscuro | `node contrast.mjs` | ✅ 52 pares en verde |
 | Lógica del recorrido (progreso y siguiente paso) | `npx tsx check-workflow.ts` | ✅ 6 escenarios |
+| Render de las 11 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
 | Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
 | Pruebas automatizadas del proyecto | — | ❌ No existen todavía |
 
@@ -200,9 +201,11 @@ Ahora el recorrido tiene cuatro etapas y la aplicación dice siempre **qué falt
 
 ```bash
 cd .devtools
-node check-ui.mjs      # sin clases de color crudas, sin fuentes a mano, sin texto < 12 px
-node contrast.mjs      # contraste WCAG AA de los tokens en ambos temas
-npx tsx check-workflow.ts   # progreso y siguiente paso del recorrido
+node check-ui.mjs            # sin clases de color crudas, sin fuentes a mano, sin texto < 12 px
+node contrast.mjs            # contraste WCAG AA de los tokens en ambos temas
+npx tsx check-workflow.ts    # progreso y siguiente paso del recorrido
+npx tsx render-views.tsx     # renderiza las 11 pantallas con datos reales y detecta errores
+npx tsx render-check.tsx     # renderiza la aplicación completa (marca, navegación, estado inicial)
 ```
 
 ---

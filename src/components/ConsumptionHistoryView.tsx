@@ -268,7 +268,7 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
           <button
             type="button"
             onClick={handleOpenEdit}
-            className="px-3.5 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            className="px-3.5 py-1.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
           >
             <Edit3 className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Registrar / Editar Recibos</span>
@@ -838,7 +838,7 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveEdit}
-                  className="px-4 py-1.5 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs font-bold transition-colors shadow-md"
+                  className="px-4 py-1.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs font-bold transition-colors shadow-md"
                 >
                   Guardar Historial
                 </button>

@@ -251,7 +251,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-lg bg-accent hover:bg-accent text-accent-fg font-bold shadow-md shadow-accent/20"
+                className="px-5 py-2 rounded-lg bg-accent hover:brightness-110 text-accent-fg font-bold shadow-md shadow-accent/20"
               >
                 Guardar Configuración
               </button>

@@ -311,7 +311,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                       else if (client.serviceType === 'Bifásico (2F+N)') setWsPhase('2F');
                       else setWsPhase('1F');
                     }}
-                    className="px-2.5 py-1 rounded-lg bg-accent-soft hover:bg-accent-soft text-accent-text text-xs font-bold border border-accent-line whitespace-nowrap transition-colors"
+                    className="px-2.5 py-1 rounded-lg bg-accent-soft hover:brightness-110 text-accent-text text-xs font-bold border border-accent-line whitespace-nowrap transition-colors"
                   >
                     Cargar datos del cliente
                   </button>
@@ -689,7 +689,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                   else if (client.serviceType === 'Bifásico (2F+N)') setVdPhase('2F');
                   else setVdPhase('1F');
                 }}
-                className="flex-shrink-0 px-3 py-1.5 rounded-xl bg-accent-soft hover:bg-accent-soft text-accent-text border border-accent-line text-xs font-bold flex items-center gap-1.5 transition-colors"
+                className="flex-shrink-0 px-3 py-1.5 rounded-xl bg-accent-soft hover:brightness-110 text-accent-text border border-accent-line text-xs font-bold flex items-center gap-1.5 transition-colors"
                 title="Cargar corriente y tensión del cliente activo"
               >
                 <Sparkles className="w-3.5 h-3.5 text-accent-text" />

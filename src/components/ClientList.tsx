@@ -130,7 +130,7 @@ export const ClientList: React.FC<ClientListProps> = ({
           {/* New Client Button */}
           <button
             onClick={onOpenNewClientModal}
-            className="px-4 py-2 rounded-xl bg-accent hover:bg-accent text-accent-fg font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-md shadow-accent/20 transition-all"
+            className="px-4 py-2 rounded-xl bg-accent hover:brightness-110 text-accent-fg font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-md shadow-accent/20 transition-all"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>Nuevo Cliente</span>
@@ -246,7 +246,7 @@ export const ClientList: React.FC<ClientListProps> = ({
                 {!isActive ? (
                   <button
                     onClick={() => onSelectClient(client)}
-                    className="flex-1 py-1.5 px-3 rounded-lg bg-raised hover:bg-accent hover:text-accent-fg text-strong text-xs font-bold transition-colors flex items-center justify-center gap-1"
+                    className="flex-1 py-1.5 px-3 rounded-lg bg-raised hover:brightness-110 hover:text-accent-fg text-strong text-xs font-bold transition-colors flex items-center justify-center gap-1"
                   >
                     <Zap className="w-3.5 h-3.5" />
                     <span>Seleccionar</span>

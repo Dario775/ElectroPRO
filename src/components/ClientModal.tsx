@@ -620,7 +620,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                     <button
                       type="button"
                       onClick={handleAddRecommendation}
-                      className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent text-accent-fg font-bold text-xs flex items-center gap-1"
+                      className="px-3 py-1.5 rounded-lg bg-accent hover:brightness-110 text-accent-fg font-bold text-xs flex items-center gap-1"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Agregar</span>
@@ -684,7 +684,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-accent hover:bg-accent text-accent-fg text-xs sm:text-sm font-bold shadow-md shadow-accent/20 flex items-center gap-1.5 transition-all"
+                className="px-5 py-2 rounded-xl bg-accent hover:brightness-110 text-accent-fg text-xs sm:text-sm font-bold shadow-md shadow-accent/20 flex items-center gap-1.5 transition-all"
               >
                 <Check className="w-4 h-4 stroke-[2.5]" />
                 <span>Guardar Cliente Completo</span>

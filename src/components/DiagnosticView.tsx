@@ -136,7 +136,7 @@ export const DiagnosticView: React.FC<DiagnosticViewProps> = ({
 
         <button
           onClick={handleTransferToReport}
-          className="flex-shrink-0 px-4 py-2.5 rounded-xl bg-accent hover:bg-accent text-accent-fg font-bold text-xs sm:text-sm flex items-center gap-2 shadow-md shadow-accent/20 transition-all active:scale-95"
+          className="flex-shrink-0 px-4 py-2.5 rounded-xl bg-accent hover:brightness-110 text-accent-fg font-bold text-xs sm:text-sm flex items-center gap-2 shadow-md shadow-accent/20 transition-all active:scale-95"
         >
           <Send className="w-4 h-4 stroke-[2.5]" />
           <span>Vincular al Reporte PDF</span>
