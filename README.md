@@ -314,6 +314,21 @@ el guardado es la fuente de verdad (`electropro_materials_catalog_v1`). Desde el
 
 Los productos propios se distinguen con el distintivo «propio» y el contador «N cargados por vos».
 
+#### Marcas gestionables
+
+La segunda pestaña del catálogo (**Marcas**) administra la lista de marcas, que también se guarda en el equipo
+(`electropro_catalog_brands_v1`) y se siembra desde las marcas del catálogo de fábrica:
+
+| Acción | Cómo se comporta |
+|---|---|
+| **Agregar una marca** | «Nueva marca». No admite repetidas (compara sin distinguir mayúsculas) |
+| **Renombrar** | Actualiza **todos los productos** que la usaban, así el nombre nuevo sale en los próximos presupuestos |
+| **Borrar** | Los productos que la usaban **se conservan con su precio, sin marca**; la confirmación avisa cuántos son |
+
+Cada fila muestra cuántos productos tiene la marca. Además, si cargás un producto con una marca que no estaba en la
+lista, se incorpora sola (`ensureBrand`), de modo que ninguna marca quede fuera del filtro. El campo «Marca» del
+formulario de producto es una lista desplegable de las marcas cargadas.
+
 > **Los precios de fábrica son de referencia en pesos.** El catálogo se guarda en ARS (`CATALOG_CURRENCY`), que es como
 > se maneja la lista del proveedor; si el cliente o la vista están en dólares, los importes se convierten con la
 > cotización cargada. Conviene corregir los precios con la lista real: cambian con el tiempo y según la zona y el

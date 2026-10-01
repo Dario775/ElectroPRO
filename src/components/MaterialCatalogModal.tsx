@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { Package, Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
-import { CATALOG_CURRENCY, CatalogMaterial, getCatalogBrands } from '../services/budgetGeneratorService';
-import { CatalogItemInput, CatalogService } from '../services/catalogService';
+import { Package, Pencil, Plus, RotateCcw, Search, Tag, Trash2 } from 'lucide-react';
+import { CATALOG_CURRENCY, CatalogMaterial } from '../services/budgetGeneratorService';
+import { CatalogBrand, CatalogItemInput, CatalogService } from '../services/catalogService';
 import { Badge } from './ui/Card';
 import { Button, IconButton } from './ui/Button';
-import { NumberField, SelectField, TextAreaField, TextField } from './ui/Form';
+import { NumberField, SegmentedControl, SelectField, TextField } from './ui/Form';
 import { Modal } from './ui/Modal';
 
 /**
@@ -69,6 +69,8 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
   formatPrice,
 }) => {
   const [items, setItems] = useState<CatalogMaterial[]>(() => CatalogService.getItems());
+  const [brands, setBrands] = useState<CatalogBrand[]>(() => CatalogService.getBrands());
+  const [section, setSection] = useState<'productos' | 'marcas'>('productos');
   const [search, setSearch] = useState('');
   const [brandFilter, setBrandFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -80,7 +82,12 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
   const [confirmDelete, setConfirmDelete] = useState<CatalogMaterial | null>(null);
   const [lastAdded, setLastAdded] = useState<string>('');
 
-  const brands = useMemo(() => getCatalogBrands(items), [items]);
+  /** Marca en edición o `'new'` para el alta. */
+  const [editingBrand, setEditingBrand] = useState<'new' | CatalogBrand | null>(null);
+  const [brandName, setBrandName] = useState('');
+  const [brandError, setBrandError] = useState('');
+  const [confirmDeleteBrand, setConfirmDeleteBrand] = useState<CatalogBrand | null>(null);
+  const [lastBrandAction, setLastBrandAction] = useState('');
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -95,6 +102,59 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
       return matchSearch && matchBrand && matchCategory;
     });
   }, [items, search, brandFilter, categoryFilter]);
+
+  /** Marcas con la cantidad de productos de cada una, para la pestaña de marcas. */
+  const brandRows = useMemo(
+    () =>
+      brands
+        .map((brand) => ({ brand, count: CatalogService.countByBrand(items, brand.name) }))
+        .sort((a, b) => b.count - a.count || a.brand.name.localeCompare(b.brand.name, 'es')),
+    [brands, items]
+  );
+
+  const saveBrand = (): void => {
+    const clean = brandName.trim();
+    if (!clean) {
+      setBrandError('Escribí el nombre de la marca.');
+      return;
+    }
+
+    if (editingBrand === 'new') {
+      const result = CatalogService.createBrand(clean);
+      setBrands(result.brands);
+      if (!result.created) {
+        setBrandError(`La marca «${clean}» ya está en la lista.`);
+        return;
+      }
+      setLastBrandAction(`Se agregó la marca «${clean}».`);
+    } else if (editingBrand) {
+      const result = CatalogService.renameBrand(editingBrand.id, clean, items);
+      setBrands(result.brands);
+      setItems(result.items);
+      const affected = CatalogService.countByBrand(result.items, clean);
+      setLastBrandAction(
+        `Se renombró «${editingBrand.name}» a «${clean}»${affected > 0 ? ` y se actualizaron ${affected} productos` : ''}.`
+      );
+    }
+
+    setEditingBrand(null);
+    setBrandName('');
+    setBrandError('');
+  };
+
+  const handleDeleteBrand = (): void => {
+    if (!confirmDeleteBrand) return;
+    const result = CatalogService.deleteBrand(confirmDeleteBrand.id, items);
+    setBrands(result.brands);
+    setItems(result.items);
+    const affected = CatalogService.countByBrand(items, confirmDeleteBrand.name);
+    setLastBrandAction(
+      affected > 0
+        ? `Se borró la marca «${confirmDeleteBrand.name}». ${affected} productos quedaron sin marca (se conservan con su precio).`
+        : `Se borró la marca «${confirmDeleteBrand.name}».`
+    );
+    setConfirmDeleteBrand(null);
+  };
 
   const openNew = (): void => {
     setForm(EMPTY_INPUT);
@@ -170,39 +230,66 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
             <Button variant="secondary" onClick={onClose}>
               Cerrar
             </Button>
-            <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={openNew}>
-              Nuevo producto
-            </Button>
+            {section === 'productos' ? (
+              <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={openNew}>
+                Nuevo producto
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                icon={<Plus className="h-4 w-4" />}
+                onClick={() => {
+                  setBrandName('');
+                  setBrandError('');
+                  setEditingBrand('new');
+                }}
+              >
+                Nueva marca
+              </Button>
+            )}
           </>
         }
       >
         <div className="space-y-4">
-          {/* Filtros */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-              <input
-                type="search"
-                aria-label="Buscar en el catálogo"
-                placeholder="Buscar por producto o marca (térmica, jabalina, cable 4 mm, Schneider…)"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="h-10 w-full rounded-xl border border-field-line bg-sunken pl-9 pr-3 text-sm text-strong placeholder:text-faint focus:border-accent focus:outline-none"
-              />
-            </div>
+          {/* Secciones: productos y marcas */}
+          <SegmentedControl
+            ariaLabel="Secciones del catálogo"
+            value={section}
+            onChange={setSection}
+            options={[
+              { value: 'productos', label: `Productos (${items.length})`, icon: <Package className="h-3.5 w-3.5" /> },
+              { value: 'marcas', label: `Marcas (${brands.length})`, icon: <Tag className="h-3.5 w-3.5" /> },
+            ]}
+          />
 
-            <select
-              aria-label="Filtrar por marca"
-              value={brandFilter}
-              onChange={(event) => setBrandFilter(event.target.value)}
-              className="h-10 rounded-xl border border-field-line bg-sunken px-3 text-sm font-semibold text-strong focus:border-accent focus:outline-none"
-            >
-              <option value="all">Todas las marcas ({brands.length})</option>
-              {brands.map((brand) => (
-                <option key={brand} value={brand}>
-                  {brand}
-                </option>
-              ))}
+          {section === 'productos' ? (
+            <>
+              {/* Filtros */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                  <input
+                    type="search"
+                    aria-label="Buscar en el catálogo"
+                    placeholder="Buscar por producto o marca (térmica, jabalina, cable 4 mm, Schneider…)"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    className="h-10 w-full rounded-xl border border-field-line bg-sunken pl-9 pr-3 text-sm text-strong placeholder:text-faint focus:border-accent focus:outline-none"
+                  />
+                </div>
+
+                <select
+                  aria-label="Filtrar por marca"
+                  value={brandFilter}
+                  onChange={(event) => setBrandFilter(event.target.value)}
+                  className="h-10 rounded-xl border border-field-line bg-sunken px-3 text-sm font-semibold text-strong focus:border-accent focus:outline-none"
+                >
+                  <option value="all">Todas las marcas ({brands.length})</option>
+                  {brands.map((brand) => (
+                    <option key={brand.id} value={brand.name}>
+                      {brand.name}
+                    </option>
+                  ))}
             </select>
 
             <select
@@ -284,7 +371,69 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
                 </div>
               </div>
             ))}
-          </div>
+              </div>
+            </>
+          ) : (
+            /* Sección de marcas */
+            <>
+              <p className="text-xs text-muted">
+                Las marcas se usan para el filtro del catálogo y para el distintivo que aparece en el presupuesto. Al
+                renombrar una marca se actualizan todos sus productos; al borrarla, esos productos se conservan sin marca.
+              </p>
+
+              {lastBrandAction && (
+                <p className="rounded-xl border border-success-line bg-success-soft px-3 py-2 text-sm font-semibold text-success-text">
+                  {lastBrandAction}
+                </p>
+              )}
+
+              <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">
+                {brandRows.map(({ brand, count }) => (
+                  <div
+                    key={brand.id}
+                    className="flex flex-col gap-3 rounded-xl border border-hairline bg-sunken p-3 transition-colors hover:border-edge sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                      <strong className="text-sm text-strong">{brand.name}</strong>
+                      {brand.custom && <Badge tone="info">propia</Badge>}
+                      <span className="text-xs text-muted">
+                        {count === 0 ? 'sin productos' : `${count} ${count === 1 ? 'producto' : 'productos'}`}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-shrink-0 items-center gap-1 self-end sm:self-center">
+                      <IconButton
+                        label={`Renombrar ${brand.name}`}
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setBrandName(brand.name);
+                          setBrandError('');
+                          setEditingBrand(brand);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </IconButton>
+                      <IconButton
+                        label={`Borrar la marca ${brand.name}`}
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setConfirmDeleteBrand(brand)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </IconButton>
+                    </div>
+                  </div>
+                ))}
+
+                {brandRows.length === 0 && (
+                  <p className="py-8 text-center text-sm text-muted">
+                    No hay marcas cargadas. Podés agregar una con «Nueva marca».
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </Modal>
 
@@ -326,19 +475,16 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
           />
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
+            <SelectField
               label="Marca"
               value={form.brand || ''}
               onChange={(value) => setForm((previous) => ({ ...previous, brand: value }))}
-              placeholder="Schneider Electric"
-              list="catalogo-marcas"
-              hint="Dejala vacía en mano de obra y trámites."
+              options={[
+                { value: '', label: 'Sin marca (mano de obra y trámites)' },
+                ...brands.map((brand) => ({ value: brand.name, label: brand.name })),
+              ]}
+              hint="Dejala vacía en mano de obra y trámites. Para una marca nueva, use «Nueva marca» en la sección Marcas."
             />
-            <datalist id="catalogo-marcas">
-              {brands.map((brand) => (
-                <option key={brand} value={brand} />
-              ))}
-            </datalist>
 
             <NumberField
               label="Precio unitario"
@@ -404,6 +550,89 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
           Se va a borrar <strong className="text-strong">{confirmDelete?.description}</strong> del catálogo. Los
           presupuestos que ya lo incluyen no cambian: solo deja de ofrecerse para los próximos.
         </p>
+      </Modal>
+
+      {/* Alta y edición de una marca */}
+      <Modal
+        isOpen={editingBrand !== null}
+        onClose={() => setEditingBrand(null)}
+        title={editingBrand === 'new' ? 'Nueva marca' : 'Renombrar marca'}
+        description={
+          editingBrand === 'new'
+            ? 'La marca queda disponible para asignar a cualquier producto.'
+            : 'Al renombrarla se actualizan todos los productos que la usan.'
+        }
+        icon={<Tag className="h-4 w-4" />}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditingBrand(null)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={saveBrand}>
+              {editingBrand === 'new' ? 'Agregar marca' : 'Guardar nombre'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <TextField
+            label="Nombre de la marca"
+            required
+            value={brandName}
+            onChange={setBrandName}
+            placeholder="Ej. Genrod, Sica, Prysmian…"
+            hint="Escribilo como aparece en la lista del proveedor."
+          />
+          {editingBrand !== 'new' && editingBrand && (
+            <p className="text-xs text-muted">
+              {CatalogService.countByBrand(items, editingBrand.name)} productos usan esta marca y se van a actualizar.
+            </p>
+          )}
+          {brandError && (
+            <p className="rounded-xl border border-danger-line bg-danger-soft px-3 py-2 text-sm font-semibold text-danger-text">
+              {brandError}
+            </p>
+          )}
+        </div>
+      </Modal>
+
+      {/* Confirmación de borrado de una marca */}
+      <Modal
+        isOpen={confirmDeleteBrand !== null}
+        onClose={() => setConfirmDeleteBrand(null)}
+        title="Borrar marca"
+        icon={<Tag className="h-4 w-4" />}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmDeleteBrand(null)}>
+              Cancelar
+            </Button>
+            <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={handleDeleteBrand}>
+              Borrar la marca
+            </Button>
+          </>
+        }
+      >
+        {confirmDeleteBrand && (
+          <div className="space-y-2 text-sm text-soft">
+            <p>
+              Se va a borrar la marca <strong className="text-strong">{confirmDeleteBrand.name}</strong> de la lista.
+            </p>
+            {CatalogService.countByBrand(items, confirmDeleteBrand.name) > 0 ? (
+              <p>
+                <strong className="text-strong">
+                  {CatalogService.countByBrand(items, confirmDeleteBrand.name)} productos
+                </strong>{' '}
+                usan esta marca: se van a conservar con su precio, pero sin marca. Después podés asignarles otra desde la
+                edición de cada producto.
+              </p>
+            ) : (
+              <p>Ningún producto usa esta marca.</p>
+            )}
+          </div>
+        )}
       </Modal>
     </>
   );
