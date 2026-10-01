@@ -44,9 +44,9 @@ import {
   TechnicianProfile,
   SupportedCurrency,
 } from '../types/electrical';
-import { formatCurrency } from '../utils/electricalMath';
+import { convertCurrency, formatCurrency } from '../utils/electricalMath';
 import { useCurrency } from '../context/CurrencyContext';
-import { BudgetGeneratorService, CatalogMaterial } from '../services/budgetGeneratorService';
+import { BudgetGeneratorService, CatalogMaterial, CATALOG_CURRENCY } from '../services/budgetGeneratorService';
 import { generateBudgetPDF } from '../services/budgetPdfService';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Card';
@@ -437,9 +437,10 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
     setActiveCurrency(targetCurrency);
   };
 
-  // Add material from default catalog
+  // Agrega un producto del catálogo al presupuesto, convirtiendo su precio a la
+  // moneda del cliente (el catálogo está cargado en pesos).
   const handleAddFromCatalog = (mat: CatalogMaterial) => {
-    const effectiveUnitPrice = client.currency === 'ARS' ? mat.unitPrice * usdToArsRate : mat.unitPrice;
+    const effectiveUnitPrice = convertCurrency(mat.unitPrice, CATALOG_CURRENCY, client.currency, usdToArsRate);
     const newItem: BudgetItem = {
       id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       type: mat.type,
@@ -1521,7 +1522,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
         isOpen={isCatalogModalOpen}
         onClose={() => setIsCatalogModalOpen(false)}
         onAddToBudget={handleAddFromCatalog}
-        formatUsd={(amount) => format(amount, 'USD')}
+        formatPrice={(amount) => format(amount, CATALOG_CURRENCY)}
       />
 
       {/* 7. MODAL: EDIT / CREATE DETAILED ITEM */}

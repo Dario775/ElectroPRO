@@ -55,7 +55,8 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [activeCurrency, setActiveCurrencyState] = useState<SupportedCurrency>(() => {
     const saved = readStored(STORAGE_KEY_CURRENCY);
     if (saved === 'ARS' || saved === 'USD') return saved;
-    return 'USD';
+    // Por defecto se trabaja en pesos argentinos; el dolar se elige a mano.
+    return 'ARS';
   });
 
   const [usdToArsRate, setUsdToArsRateState] = useState<number>(() => {

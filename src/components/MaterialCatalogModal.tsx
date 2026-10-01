@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Package, Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
-import { CatalogMaterial, getCatalogBrands } from '../services/budgetGeneratorService';
+import { CATALOG_CURRENCY, CatalogMaterial, getCatalogBrands } from '../services/budgetGeneratorService';
 import { CatalogItemInput, CatalogService } from '../services/catalogService';
 import { Badge } from './ui/Card';
 import { Button, IconButton } from './ui/Button';
@@ -20,8 +20,8 @@ export interface MaterialCatalogModalProps {
   onClose: () => void;
   /** Inserta el producto en el presupuesto activo. */
   onAddToBudget: (material: CatalogMaterial) => void;
-  /** Formatea un importe en dólares para mostrar el precio de referencia. */
-  formatUsd: (amount: number) => string;
+  /** Formatea el precio del catálogo en la moneda que esté seleccionada. */
+  formatPrice: (amount: number) => string;
 }
 
 const CATEGORY_OPTIONS: Array<{ value: CatalogItemInput['category']; label: string }> = [
@@ -66,7 +66,7 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
   isOpen,
   onClose,
   onAddToBudget,
-  formatUsd,
+  formatPrice,
 }) => {
   const [items, setItems] = useState<CatalogMaterial[]>(() => CatalogService.getItems());
   const [search, setSearch] = useState('');
@@ -225,7 +225,7 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
               <strong className="font-mono text-strong">{filtered.length}</strong> de {items.length} productos
               {customCount > 0 && ` · ${customCount} cargados por vos`}
             </span>
-            <span className="text-faint">Los precios de fábrica son de referencia en dólares: corregilos con tu lista.</span>
+            <span className="text-faint">Los precios de fábrica son de referencia en pesos: corregilos con tu lista.</span>
           </p>
 
           {lastAdded && (
@@ -258,7 +258,7 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
 
                 <div className="flex flex-shrink-0 items-center gap-2 self-end sm:self-center">
                   <div className="text-right font-mono">
-                    <span className="block text-sm font-bold text-success-text">{formatUsd(item.unitPrice)}</span>
+                    <span className="block text-sm font-bold text-success-text">{formatPrice(item.unitPrice)}</span>
                     <span className="text-xs text-faint">por {item.unit}</span>
                   </div>
 
@@ -344,11 +344,11 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
               label="Precio unitario"
               value={form.unitPrice}
               onChange={(value) => setForm((previous) => ({ ...previous, unitPrice: value === '' ? 0 : value }))}
-              unit="USD"
+              unit={CATALOG_CURRENCY}
               min={0}
               max={1000000}
               step={0.5}
-              hint="Precio de lista del proveedor, sin tu margen."
+              hint={`Precio de lista del proveedor, sin tu margen. El catálogo se guarda en ${CATALOG_CURRENCY}.`}
             />
           </div>
 

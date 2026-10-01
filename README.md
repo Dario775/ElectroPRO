@@ -185,6 +185,8 @@ pinza y el telurómetro, después se recorre el inmueble cargando los artefactos
 
 - Los colores ya no se escriben crudos (`bg-slate-900`), sino a través de **tokens semánticos**
   (`bg-surface`, `text-muted`, `border-hairline`) definidos en `src/index.css`.
+- **Moneda: pesos argentinos por defecto.** La app arranca en ARS (tanto la vista como los clientes nuevos) y el dólar
+  se elige a mano desde la barra superior, con la cotización cargada para convertir todos los importes.
 - El tema se aplica con `data-theme` en `<html>`, se guarda en `localStorage`, respeta la preferencia del sistema y
   se fija antes del primer pintado (script en `index.html`) para que no haya destello.
 - Los valores del tema oscuro son **idénticos** a los colores que ya usaba la aplicación, así que la migración de
@@ -312,9 +314,10 @@ el guardado es la fuente de verdad (`electropro_materials_catalog_v1`). Desde el
 
 Los productos propios se distinguen con el distintivo «propio» y el contador «N cargados por vos».
 
-> **Los precios de fábrica son de referencia en dólares.** Sirven para armar el presupuesto rápido, pero conviene
-> corregirlos con la lista del proveedor: cambian con el tiempo y según la zona y el volumen de compra. Se editan
-> desde la app, producto por producto, sin tocar código.
+> **Los precios de fábrica son de referencia en pesos.** El catálogo se guarda en ARS (`CATALOG_CURRENCY`), que es como
+> se maneja la lista del proveedor; si el cliente o la vista están en dólares, los importes se convierten con la
+> cotización cargada. Conviene corregir los precios con la lista real: cambian con el tiempo y según la zona y el
+> volumen de compra. Se editan desde la app, producto por producto, sin tocar código.
 
 ---
 

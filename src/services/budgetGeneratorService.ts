@@ -4,6 +4,7 @@ import {
   BudgetItem,
   BudgetItemType,
   BudgetCategory,
+  SupportedCurrency,
 } from '../types/electrical';
 
 export interface CatalogMaterial {
@@ -18,7 +19,7 @@ export interface CatalogMaterial {
    */
   brand?: string;
   unit: 'ud' | 'm' | 'rollo' | 'kit' | 'gl' | 'hora' | 'dia' | 'servicio';
-  /** Precio de referencia en dólares: actualizalo con la lista del proveedor. */
+  /** Precio de referencia en pesos argentinos: actualizalo con la lista del proveedor. */
   unitPrice: number;
   /**
    * Producto cargado por el usuario (no viene del catálogo de fábrica). Se usa
@@ -37,6 +38,13 @@ export function getCatalogBrands(catalog: CatalogMaterial[] = DEFAULT_MATERIALS_
 }
 
 /**
+ * Moneda en la que están cargados los precios del catálogo: pesos argentinos,
+ * que es como se maneja la lista del proveedor. Si el cliente o la vista están
+ * en dólares, los importes se convierten con la cotización cargada.
+ */
+export const CATALOG_CURRENCY: SupportedCurrency = 'ARS';
+
+/**
  * Catálogo de materiales y mano de obra, organizado por marca.
  *
  * Cada ítem tiene UNA marca real (no listas de marcas alternativas), para poder
@@ -50,8 +58,8 @@ export function getCatalogBrands(catalog: CatalogMaterial[] = DEFAULT_MATERIALS_
  * Jeluz, Roker, Daisa y Tenax en iluminación y tomas; Cambre y Jeluz en módulos
  * y cajas; 3M y Finder en accesorios.
  *
- * Los precios son REFERENCIA en dólares y hay que actualizarlos con la lista del
- * proveedor: cambian con el tiempo y según la zona y el volumen de compra.
+ * Los precios son REFERENCIA en pesos argentinos y hay que actualizarlos con la lista
+ * del proveedor: cambian con el tiempo y según la zona y el volumen de compra.
  */
 export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
   // ------------------------------------------------------------------
@@ -65,7 +73,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos de iluminación y tomas de uso general',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 9.5,
+    unitPrice: 12000,
   },
   {
     id: 'sch_term_2p_20',
@@ -75,7 +83,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tomas especiales y equipos de aire acondicionado',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 18.5,
+    unitPrice: 23000,
   },
   {
     id: 'sch_term_2p_32',
@@ -85,7 +93,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Calentador de agua, cocina o alimentación de subpanel',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 22.0,
+    unitPrice: 27500,
   },
   {
     id: 'sch_term_2p_40_easy9',
@@ -95,7 +103,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Cabecera de tablero monofásico o bifásico residencial',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 24.5,
+    unitPrice: 30500,
   },
   {
     id: 'sch_term_3p_40',
@@ -105,7 +113,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Cabecera de suministro trifásico',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 46.0,
+    unitPrice: 57500,
   },
   {
     id: 'sch_dif_2p_40_30',
@@ -115,7 +123,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Protección de personas: obligatoria en circuitos de tomas',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 41.0,
+    unitPrice: 51000,
   },
   {
     id: 'sch_dif_4p_40_30',
@@ -125,7 +133,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Protección de personas en tablero trifásico',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 78.0,
+    unitPrice: 97500,
   },
   {
     id: 'sch_dps_2p_40ka',
@@ -135,7 +143,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Protege los equipos contra picos de tensión y descargas atmosféricas',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 96.0,
+    unitPrice: 120000,
   },
   {
     id: 'sch_cont_2p_25',
@@ -145,7 +153,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Mando de cargas por comando, temporizador o domótica',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 34.0,
+    unitPrice: 42500,
   },
   {
     id: 'sch_bornera_tierra',
@@ -155,7 +163,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Barra de conexión de conductores de protección',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 11.0,
+    unitPrice: 14000,
   },
 
   // ------------------------------------------------------------------
@@ -169,7 +177,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos de iluminación y tomas de uso general',
     brand: 'Siemens',
     unit: 'ud',
-    unitPrice: 10.5,
+    unitPrice: 13000,
   },
   {
     id: 'sie_term_2p_25',
@@ -179,7 +187,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos bipolares de tomas y equipos',
     brand: 'Siemens',
     unit: 'ud',
-    unitPrice: 20.0,
+    unitPrice: 25000,
   },
   {
     id: 'sie_dif_2p_40_30',
@@ -189,7 +197,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Protección de personas contra contactos indirectos',
     brand: 'Siemens',
     unit: 'ud',
-    unitPrice: 44.0,
+    unitPrice: 55000,
   },
   {
     id: 'sie_cont_3p_25',
@@ -199,7 +207,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Mando de motores y cargas trifásicas',
     brand: 'Siemens',
     unit: 'ud',
-    unitPrice: 52.0,
+    unitPrice: 65000,
   },
 
   // ------------------------------------------------------------------
@@ -213,7 +221,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos de iluminación y tomas',
     brand: 'ABB',
     unit: 'ud',
-    unitPrice: 11.0,
+    unitPrice: 14000,
   },
   {
     id: 'abb_term_2p_20',
@@ -223,7 +231,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tomas especiales y aire acondicionado',
     brand: 'ABB',
     unit: 'ud',
-    unitPrice: 21.0,
+    unitPrice: 26000,
   },
   {
     id: 'abb_term_3p_40',
@@ -233,7 +241,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Cabecera de tablero trifásico y motores',
     brand: 'ABB',
     unit: 'ud',
-    unitPrice: 48.0,
+    unitPrice: 60000,
   },
   {
     id: 'abb_dif_2p_25_30',
@@ -243,7 +251,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Protección de personas, apta para cargas con electrónica',
     brand: 'ABB',
     unit: 'ud',
-    unitPrice: 52.0,
+    unitPrice: 65000,
   },
 
   // ------------------------------------------------------------------
@@ -257,7 +265,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos de iluminación y tomas',
     brand: 'Legrand',
     unit: 'ud',
-    unitPrice: 10.0,
+    unitPrice: 12500,
   },
   {
     id: 'leg_term_2p_25',
@@ -267,7 +275,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos bipolares de tomas y equipos',
     brand: 'Legrand',
     unit: 'ud',
-    unitPrice: 19.5,
+    unitPrice: 24500,
   },
   {
     id: 'leg_dif_2p_25_30',
@@ -277,7 +285,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Protección de personas contra contactos indirectos',
     brand: 'Legrand',
     unit: 'ud',
-    unitPrice: 43.0,
+    unitPrice: 54000,
   },
   {
     id: 'btc_term_1p_16',
@@ -287,7 +295,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos de iluminación y tomas de uso general',
     brand: 'Bticino',
     unit: 'ud',
-    unitPrice: 8.5,
+    unitPrice: 10500,
   },
   {
     id: 'btc_dif_2p_25_30',
@@ -297,7 +305,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Protección de personas contra contactos indirectos',
     brand: 'Bticino',
     unit: 'ud',
-    unitPrice: 38.0,
+    unitPrice: 47500,
   },
 
   // ------------------------------------------------------------------
@@ -311,7 +319,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos de iluminación y tomas de uso general',
     brand: 'Sica',
     unit: 'ud',
-    unitPrice: 7.5,
+    unitPrice: 9400,
   },
   {
     id: 'sic_term_2p_25',
@@ -321,7 +329,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos bipolares de tomas y equipos',
     brand: 'Sica',
     unit: 'ud',
-    unitPrice: 14.5,
+    unitPrice: 18000,
   },
   {
     id: 'sic_dif_2p_25_30',
@@ -331,7 +339,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Protección de personas contra contactos indirectos',
     brand: 'Sica',
     unit: 'ud',
-    unitPrice: 32.0,
+    unitPrice: 40000,
   },
   {
     id: 'gen_term_2p_25',
@@ -341,7 +349,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos bipolares de tomas y equipos',
     brand: 'Genrod',
     unit: 'ud',
-    unitPrice: 13.0,
+    unitPrice: 16000,
   },
   {
     id: 'gen_dif_2p_40_30',
@@ -351,7 +359,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Protección de personas contra contactos indirectos',
     brand: 'Genrod',
     unit: 'ud',
-    unitPrice: 29.0,
+    unitPrice: 36000,
   },
   {
     id: 'chi_term_2p_25',
@@ -361,7 +369,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Alternativa económica para circuitos bipolares',
     brand: 'Chint',
     unit: 'ud',
-    unitPrice: 11.5,
+    unitPrice: 14500,
   },
   {
     id: 'chi_dif_2p_32_30',
@@ -371,7 +379,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Protección de personas, alternativa económica',
     brand: 'Chint',
     unit: 'ud',
-    unitPrice: 26.0,
+    unitPrice: 32500,
   },
   {
     id: 'chi_dps_2p_40ka',
@@ -381,7 +389,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Protección de equipos contra picos de tensión',
     brand: 'Chint',
     unit: 'ud',
-    unitPrice: 58.0,
+    unitPrice: 72500,
   },
 
   // ------------------------------------------------------------------
@@ -395,7 +403,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Encendido y apagado programado de iluminación o bombas',
     brand: 'Finder',
     unit: 'ud',
-    unitPrice: 27.0,
+    unitPrice: 34000,
   },
   {
     id: 'fin_fotocelula',
@@ -405,7 +413,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Encendido automático de iluminación exterior al caer la noche',
     brand: 'Finder',
     unit: 'ud',
-    unitPrice: 16.0,
+    unitPrice: 20000,
   },
 
   // ------------------------------------------------------------------
@@ -419,7 +427,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tablero seccional de vivienda, embutir o sobreponer',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 52.0,
+    unitPrice: 65000,
   },
   {
     id: 'sch_gab_kaedra_24',
@@ -429,7 +437,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tablero principal o seccional de mayor capacidad',
     brand: 'Schneider Electric',
     unit: 'ud',
-    unitPrice: 92.0,
+    unitPrice: 115000,
   },
   {
     id: 'gen_tab_12',
@@ -439,7 +447,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tablero seccional chico, buena relación precio-capacidad',
     brand: 'Genrod',
     unit: 'ud',
-    unitPrice: 34.0,
+    unitPrice: 42500,
   },
   {
     id: 'gen_tab_24',
@@ -449,7 +457,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tablero principal de vivienda o local',
     brand: 'Genrod',
     unit: 'ud',
-    unitPrice: 58.0,
+    unitPrice: 72500,
   },
   {
     id: 'sic_tab_18',
@@ -459,7 +467,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tablero seccional de capacidad media',
     brand: 'Sica',
     unit: 'ud',
-    unitPrice: 46.0,
+    unitPrice: 57500,
   },
   {
     id: 'cam_tab_12',
@@ -469,7 +477,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tablero seccional de vivienda',
     brand: 'Cambre',
     unit: 'ud',
-    unitPrice: 38.0,
+    unitPrice: 47500,
   },
   {
     id: 'gra_gab_24',
@@ -479,7 +487,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tablero principal de vivienda o taller',
     brand: 'Gralf',
     unit: 'ud',
-    unitPrice: 62.0,
+    unitPrice: 77500,
   },
   {
     id: 'gra_caja_paso_10',
@@ -489,7 +497,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Empalmes y derivaciones en canalizaciones',
     brand: 'Gralf',
     unit: 'ud',
-    unitPrice: 6.5,
+    unitPrice: 8100,
   },
   {
     id: 'rok_tab_12',
@@ -499,7 +507,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tablero seccional de vivienda',
     brand: 'Roker',
     unit: 'ud',
-    unitPrice: 36.0,
+    unitPrice: 45000,
   },
   {
     id: 'ind_tab_medicion_1f',
@@ -509,7 +517,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Gabinete de acometida para el medidor de la distribuidora',
     brand: 'Indelma',
     unit: 'ud',
-    unitPrice: 74.0,
+    unitPrice: 92500,
   },
   {
     id: 'ind_tab_acometida_3f',
@@ -519,7 +527,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Gabinete de acometida trifásica con espacio para protecciones',
     brand: 'Indelma',
     unit: 'ud',
-    unitPrice: 148.0,
+    unitPrice: 185000,
   },
 
   // ------------------------------------------------------------------
@@ -533,7 +541,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos de tomas de uso general, certificado IRAM',
     brand: 'Prysmian',
     unit: 'rollo',
-    unitPrice: 68.0,
+    unitPrice: 85000,
   },
   {
     id: 'pry_cable_4',
@@ -543,7 +551,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos de tomas especiales y equipos de mayor consumo',
     brand: 'Prysmian',
     unit: 'rollo',
-    unitPrice: 104.0,
+    unitPrice: 130000,
   },
   {
     id: 'pry_cable_6',
@@ -553,7 +561,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Alimentadores de subpanel y circuitos de cocina',
     brand: 'Prysmian',
     unit: 'rollo',
-    unitPrice: 152.0,
+    unitPrice: 190000,
   },
   {
     id: 'pry_sintenax_3x6',
@@ -563,7 +571,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Acometida enterrada desde el pilar hasta el tablero principal',
     brand: 'Prysmian',
     unit: 'm',
-    unitPrice: 11.5,
+    unitPrice: 14500,
   },
   {
     id: 'cim_cable_25',
@@ -573,7 +581,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos de tomas de uso general',
     brand: 'Cimet',
     unit: 'rollo',
-    unitPrice: 58.0,
+    unitPrice: 72500,
   },
   {
     id: 'cim_cable_4',
@@ -583,7 +591,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Circuitos de tomas especiales',
     brand: 'Cimet',
     unit: 'rollo',
-    unitPrice: 92.0,
+    unitPrice: 115000,
   },
   {
     id: 'kal_cable_25',
@@ -593,7 +601,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Alternativa económica para circuitos de tomas',
     brand: 'Kalop',
     unit: 'rollo',
-    unitPrice: 54.0,
+    unitPrice: 67500,
   },
 
   // ------------------------------------------------------------------
@@ -607,7 +615,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Canalización embutida de circuitos de iluminación y tomas',
     brand: 'Tigre',
     unit: 'rollo',
-    unitPrice: 32.0,
+    unitPrice: 40000,
   },
   {
     id: 'tig_corrugado_25',
@@ -617,7 +625,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Canalización de alimentadores y circuitos de mayor sección',
     brand: 'Tigre',
     unit: 'rollo',
-    unitPrice: 44.0,
+    unitPrice: 55000,
   },
   {
     id: 'tig_rigido_20',
@@ -627,7 +635,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Canalización a la vista en garajes, talleres y locales',
     brand: 'Tigre',
     unit: 'ud',
-    unitPrice: 5.5,
+    unitPrice: 6900,
   },
   {
     id: 'tig_cablecanal_20x12',
@@ -637,7 +645,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Canalización a la vista sobre pared, prolija y accesible',
     brand: 'Tigre',
     unit: 'ud',
-    unitPrice: 8.5,
+    unitPrice: 10500,
   },
   {
     id: 'kal_corrugado_20',
@@ -647,7 +655,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Alternativa económica para canalización embutida',
     brand: 'Kalop',
     unit: 'rollo',
-    unitPrice: 26.0,
+    unitPrice: 32500,
   },
   {
     id: 'tig_caja_embutir',
@@ -657,7 +665,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Caja para tomas e interruptores de embutir',
     brand: 'Tigre',
     unit: 'ud',
-    unitPrice: 1.4,
+    unitPrice: 1800,
   },
   {
     id: 'mm_terminales',
@@ -667,7 +675,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Terminales de compresión y fichas para empalmes seguros',
     brand: '3M',
     unit: 'kit',
-    unitPrice: 14.0,
+    unitPrice: 17500,
   },
 
   // ------------------------------------------------------------------
@@ -681,7 +689,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Puesta a tierra del tablero principal',
     brand: 'Fulgur',
     unit: 'ud',
-    unitPrice: 44.0,
+    unitPrice: 55000,
   },
   {
     id: 'ful_kit_pat',
@@ -691,7 +699,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Jabalina, caja de inspección, conector de bronce y grampa',
     brand: 'Fulgur',
     unit: 'kit',
-    unitPrice: 78.0,
+    unitPrice: 97500,
   },
   {
     id: 'cop_jabalina_58_3m',
@@ -701,7 +709,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Puesta a tierra con menor resistencia de contacto',
     brand: 'Copperweld',
     unit: 'ud',
-    unitPrice: 58.0,
+    unitPrice: 72500,
   },
   {
     id: 'gen_jabalina_12_15',
@@ -711,7 +719,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Puesta a tierra de tableros seccionales o ampliaciones',
     brand: 'Genrod',
     unit: 'ud',
-    unitPrice: 22.0,
+    unitPrice: 27500,
   },
   {
     id: 'pry_cable_pe_6',
@@ -721,7 +729,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Conductores de protección (PE) desde tablero hasta jabalina',
     brand: 'Prysmian',
     unit: 'rollo',
-    unitPrice: 118.0,
+    unitPrice: 147500,
   },
   {
     id: 'cim_cable_pe_4',
@@ -731,7 +739,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Conductores de protección en circuitos de tomas',
     brand: 'Cimet',
     unit: 'rollo',
-    unitPrice: 86.0,
+    unitPrice: 107500,
   },
 
   // ------------------------------------------------------------------
@@ -745,7 +753,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Iluminación general de ambientes, driver incluido',
     brand: 'Philips',
     unit: 'ud',
-    unitPrice: 13.5,
+    unitPrice: 17000,
   },
   {
     id: 'phi_lampara_9',
@@ -755,7 +763,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Reemplazo directo de lámparas incandescentes de 60W',
     brand: 'Philips',
     unit: 'ud',
-    unitPrice: 4.2,
+    unitPrice: 5200,
   },
   {
     id: 'osr_tubo_18',
@@ -765,7 +773,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Reemplazo de tubos fluorescentes en talleres y garajes',
     brand: 'Osram',
     unit: 'ud',
-    unitPrice: 8.5,
+    unitPrice: 10500,
   },
   {
     id: 'kal_panel_18',
@@ -775,7 +783,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Alternativa económica de iluminación general',
     brand: 'Kalop',
     unit: 'ud',
-    unitPrice: 10.5,
+    unitPrice: 13000,
   },
 
   // ------------------------------------------------------------------
@@ -789,7 +797,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tomas de uso general en vivienda',
     brand: 'Jeluz',
     unit: 'ud',
-    unitPrice: 5.8,
+    unitPrice: 7200,
   },
   {
     id: 'jel_interruptor_1p',
@@ -799,7 +807,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Mando de iluminación de un punto',
     brand: 'Jeluz',
     unit: 'ud',
-    unitPrice: 4.5,
+    unitPrice: 5600,
   },
   {
     id: 'jel_lampara_9',
@@ -809,7 +817,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Alternativa económica de bajo consumo',
     brand: 'Jeluz',
     unit: 'ud',
-    unitPrice: 3.4,
+    unitPrice: 4200,
   },
   {
     id: 'rok_toma_doble',
@@ -819,7 +827,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tomas de uso general en vivienda',
     brand: 'Roker',
     unit: 'ud',
-    unitPrice: 5.2,
+    unitPrice: 6500,
   },
   {
     id: 'rok_combinacion',
@@ -829,7 +837,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Punto mixto para ambientes chicos',
     brand: 'Roker',
     unit: 'ud',
-    unitPrice: 6.4,
+    unitPrice: 8000,
   },
   {
     id: 'dai_panel_24',
@@ -839,7 +847,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Iluminación de ambientes grandes o locales',
     brand: 'Daisa',
     unit: 'ud',
-    unitPrice: 16.5,
+    unitPrice: 20500,
   },
   {
     id: 'dai_toma_doble',
@@ -849,7 +857,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tomas de uso general en vivienda',
     brand: 'Daisa',
     unit: 'ud',
-    unitPrice: 5.5,
+    unitPrice: 6900,
   },
   {
     id: 'cam_toma_doble',
@@ -859,7 +867,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Tomas de uso general, marca nacional',
     brand: 'Cambre',
     unit: 'ud',
-    unitPrice: 5.0,
+    unitPrice: 6200,
   },
   {
     id: 'cam_caja_toma',
@@ -869,7 +877,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Caja plástica para módulos de embutir',
     brand: 'Cambre',
     unit: 'ud',
-    unitPrice: 1.6,
+    unitPrice: 2000,
   },
   {
     id: 'btc_toma_doble',
@@ -879,7 +887,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Línea de diseño, para instalaciones de mayor terminación',
     brand: 'Bticino',
     unit: 'ud',
-    unitPrice: 9.8,
+    unitPrice: 12000,
   },
   {
     id: 'btc_interruptor_1p',
@@ -889,7 +897,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Línea de diseño, para instalaciones de mayor terminación',
     brand: 'Bticino',
     unit: 'ud',
-    unitPrice: 8.2,
+    unitPrice: 10000,
   },
   {
     id: 'ten_reflector_50',
@@ -899,7 +907,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     detail: 'Iluminación exterior: patios, frentes y galpones',
     brand: 'Tenax',
     unit: 'ud',
-    unitPrice: 19.5,
+    unitPrice: 24500,
   },
 
   // ------------------------------------------------------------------
@@ -912,7 +920,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     description: 'Retiro e instalación completa de tablero',
     detail: 'Incluye desconexión, traslado de circuitos, conexionado y rotulado',
     unit: 'servicio',
-    unitPrice: 240.0,
+    unitPrice: 300000,
   },
   {
     id: 'mo_tendido_canalizacion',
@@ -921,7 +929,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     description: 'Tendido de canalizaciones y cableado de circuitos',
     detail: 'Mano de obra por hora de oficial electricista',
     unit: 'hora',
-    unitPrice: 22.0,
+    unitPrice: 27500,
   },
   {
     id: 'mo_puesta_a_tierra',
@@ -930,7 +938,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     description: 'Puesta a tierra: excavación, jabalina y medición',
     detail: 'Incluye medición con telurómetro y protocolo de valores obtenidos',
     unit: 'servicio',
-    unitPrice: 180.0,
+    unitPrice: 225000,
   },
   {
     id: 'mo_instalacion_tomas',
@@ -939,7 +947,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     description: 'Instalación de tomas, bocas y artefactos de iluminación',
     detail: 'Mano de obra por hora de oficial electricista',
     unit: 'hora',
-    unitPrice: 22.0,
+    unitPrice: 27500,
   },
   {
     id: 'mo_ampliacion_circuito',
@@ -948,7 +956,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     description: 'Ampliación de circuito existente',
     detail: 'Derivación desde tablero y tendido de nuevo circuito',
     unit: 'hora',
-    unitPrice: 22.0,
+    unitPrice: 27500,
   },
   {
     id: 'mo_retiro_instalacion',
@@ -957,7 +965,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     description: 'Desmontaje de instalación existente',
     detail: 'Retiro de tableros, cableado y artefactos fuera de uso',
     unit: 'servicio',
-    unitPrice: 120.0,
+    unitPrice: 150000,
   },
   {
     id: 'mo_medicion_pat',
@@ -966,7 +974,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     description: 'Medición de puesta a tierra con telurómetro',
     detail: 'Informe de valores medidos y verificación de continuidad de PE',
     unit: 'servicio',
-    unitPrice: 95.0,
+    unitPrice: 119000,
   },
   {
     id: 'mo_revision_general',
@@ -975,7 +983,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     description: 'Revisión y ajuste general de tablero',
     detail: 'Apriete de bornes, termografía básica y rotulado de circuitos',
     unit: 'servicio',
-    unitPrice: 110.0,
+    unitPrice: 137500,
   },
 
   // ------------------------------------------------------------------
@@ -988,7 +996,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     description: 'Certificado de instalación eléctrica',
     detail: 'Incluye plano, memoria de cálculo y firma de profesional matriculado',
     unit: 'servicio',
-    unitPrice: 240.0,
+    unitPrice: 300000,
   },
   {
     id: 'cert_aumento_potencia',
@@ -997,7 +1005,7 @@ export const DEFAULT_MATERIALS_CATALOG: CatalogMaterial[] = [
     description: 'Gestión de aumento de potencia ante la distribuidora',
     detail: 'Presentación de documentación y seguimiento del trámite',
     unit: 'servicio',
-    unitPrice: 320.0,
+    unitPrice: 400000,
   },
 ];
 
@@ -1030,8 +1038,8 @@ export const BudgetGeneratorService = {
           brand: 'Schneider Electric / ABB',
           unit: 'ud',
           quantity: 1,
-          unitPrice: panel.mainBreakerPoles === '3P+N' || panel.mainBreakerPoles === '4P' ? 68.0 : 39.0,
-          subtotal: panel.mainBreakerPoles === '3P+N' || panel.mainBreakerPoles === '4P' ? 68.0 : 39.0,
+          unitPrice: panel.mainBreakerPoles === '3P+N' || panel.mainBreakerPoles === '4P' ? 85000 : 49000,
+          subtotal: panel.mainBreakerPoles === '3P+N' || panel.mainBreakerPoles === '4P' ? 85000 : 49000,
           suggestedFromSource: 'tablero',
           notes: `Detectado en ${panel.name} (${panel.location}) sin protección de choque eléctrico.`,
         });
@@ -1045,8 +1053,8 @@ export const BudgetGeneratorService = {
           brand: 'Schneider Electric / ABB',
           unit: 'ud',
           quantity: 1,
-          unitPrice: 42.0,
-          subtotal: 42.0,
+          unitPrice: 52500,
+          subtotal: 52500,
           suggestedFromSource: 'tablero',
         });
       }
@@ -1062,8 +1070,8 @@ export const BudgetGeneratorService = {
           brand: 'Finder / Dehn / Schneider',
           unit: 'kit',
           quantity: 1,
-          unitPrice: panel.mainBreakerPoles === '3P+N' || panel.mainBreakerPoles === '4P' ? 78.0 : 45.0,
-          subtotal: panel.mainBreakerPoles === '3P+N' || panel.mainBreakerPoles === '4P' ? 78.0 : 45.0,
+          unitPrice: panel.mainBreakerPoles === '3P+N' || panel.mainBreakerPoles === '4P' ? 97500 : 56000,
+          subtotal: panel.mainBreakerPoles === '3P+N' || panel.mainBreakerPoles === '4P' ? 97500 : 56000,
           suggestedFromSource: 'tablero',
           notes: `Recomendado para evitar daños en aires acondicionados y televisores.`,
         });
@@ -1080,8 +1088,8 @@ export const BudgetGeneratorService = {
           brand: 'Genérico Certificado',
           unit: 'ud',
           quantity: 1,
-          unitPrice: 9.5,
-          subtotal: 9.5,
+          unitPrice: 12000,
+          subtotal: 12000,
           suggestedFromSource: 'tablero',
         });
       }
@@ -1097,8 +1105,8 @@ export const BudgetGeneratorService = {
           brand: 'Schneider Electric',
           unit: 'kit',
           quantity: 1,
-          unitPrice: 28.0,
-          subtotal: 28.0,
+          unitPrice: 35000,
+          subtotal: 35000,
           suggestedFromSource: 'tablero',
         });
       }
@@ -1114,8 +1122,8 @@ export const BudgetGeneratorService = {
           brand: 'Schneider Pragma / Roker',
           unit: 'ud',
           quantity: 1,
-          unitPrice: 46.0,
-          subtotal: 46.0,
+          unitPrice: 57500,
+          subtotal: 57500,
           suggestedFromSource: 'tablero',
         });
       }
@@ -1138,8 +1146,8 @@ export const BudgetGeneratorService = {
         brand: 'Schneider / ABB',
         unit: 'ud',
         quantity: heavyBreakersCount,
-        unitPrice: 17.5,
-        subtotal: parseFloat((heavyBreakersCount * 17.5).toFixed(2)),
+        unitPrice: 22000,
+        subtotal: parseFloat((heavyBreakersCount * 22000).toFixed(2)),
         suggestedFromSource: 'carga',
       });
 
@@ -1154,8 +1162,8 @@ export const BudgetGeneratorService = {
         brand: 'Prysmian / Condumex / Centelsa',
         unit: 'm',
         quantity: estimatedMeters,
-        unitPrice: 1.55,
-        subtotal: parseFloat((estimatedMeters * 1.55).toFixed(2)),
+        unitPrice: 1900,
+        subtotal: parseFloat((estimatedMeters * 1900).toFixed(2)),
         suggestedFromSource: 'carga',
       });
     }
@@ -1174,8 +1182,8 @@ export const BudgetGeneratorService = {
           brand: 'Facal / Copperweld',
           unit: 'kit',
           quantity: 1,
-          unitPrice: 48.0,
-          subtotal: 48.0,
+          unitPrice: 60000,
+          subtotal: 60000,
           suggestedFromSource: 'diagnostico',
         });
 
@@ -1188,8 +1196,8 @@ export const BudgetGeneratorService = {
           brand: 'Prysmian / IRAM',
           unit: 'm',
           quantity: 12,
-          unitPrice: 3.2,
-          subtotal: 38.4,
+          unitPrice: 4000,
+          subtotal: 48000,
           suggestedFromSource: 'diagnostico',
         });
 
@@ -1202,8 +1210,8 @@ export const BudgetGeneratorService = {
           brand: 'Servicio Técnico Profesional',
           unit: 'servicio',
           quantity: 1,
-          unitPrice: 85.0,
-          subtotal: 85.0,
+          unitPrice: 106000,
+          subtotal: 106000,
           suggestedFromSource: 'diagnostico',
         });
       }
@@ -1220,8 +1228,8 @@ export const BudgetGeneratorService = {
           brand: 'Prysmian / Condumex',
           unit: 'rollo',
           quantity: isCritical ? 3 : 2,
-          unitPrice: 78.0,
-          subtotal: (isCritical ? 3 : 2) * 78.0,
+          unitPrice: 97500,
+          subtotal: (isCritical ? 3 : 2) * 97500,
           suggestedFromSource: 'diagnostico',
         });
 
@@ -1234,8 +1242,8 @@ export const BudgetGeneratorService = {
           brand: 'Servicio Técnico Profesional',
           unit: 'servicio',
           quantity: 1,
-          unitPrice: isCritical ? 240.0 : 150.0,
-          subtotal: isCritical ? 240.0 : 150.0,
+          unitPrice: isCritical ? 300000 : 187500,
+          subtotal: isCritical ? 300000 : 187500,
           suggestedFromSource: 'diagnostico',
         });
       }
@@ -1253,8 +1261,8 @@ export const BudgetGeneratorService = {
       brand: 'Servicio Eléctrico Certificado',
       unit: 'servicio',
       quantity: panelCount,
-      unitPrice: 110.0,
-      subtotal: panelCount * 110.0,
+      unitPrice: 137500,
+      subtotal: panelCount * 137500,
       suggestedFromSource: 'tablero',
     });
 
@@ -1269,8 +1277,8 @@ export const BudgetGeneratorService = {
         brand: 'Servicio Técnico Especializado',
         unit: 'servicio',
         quantity: 1,
-        unitPrice: 75.0,
-        subtotal: 75.0,
+        unitPrice: 94000,
+        subtotal: 94000,
         suggestedFromSource: 'diagnostico',
       });
     }
@@ -1285,8 +1293,8 @@ export const BudgetGeneratorService = {
       brand: 'Técnico Instalador Electricista',
       unit: 'servicio',
       quantity: 1,
-      unitPrice: 80.0,
-      subtotal: 80.0,
+      unitPrice: 100000,
+      subtotal: 100000,
       suggestedFromSource: 'diagnostico',
     });
 
