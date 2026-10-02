@@ -23,7 +23,7 @@ Verificado en este repositorio:
 | Contraste WCAG AA en tema claro y oscuro | `node contrast.mjs` | ✅ 52 pares en verde |
 | Lógica del recorrido (progreso y siguiente paso) | `npx tsx check-workflow.ts` | ✅ 11 escenarios (incluye dos acometidas) |
 | Catálogo de productos y marcas | `npx tsx check-catalog.ts` | ✅ integridad + alta, edición y borrado |
-| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 68 comprobaciones |
+| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 79 comprobaciones |
 | Render de las 14 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
 | Render de la aplicación completa | `npx tsx render-check.tsx` | ✅ marca, navegación y estado inicial |
 | Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
@@ -356,11 +356,12 @@ así se escalan y se giran sin perder nitidez. Se eligen de una paleta agrupada 
 
 ### Verificación
 
-`.devtools/check-plan.ts` comprueba 68 casos: que exista una plantilla por cada tipo de símbolo, la geometría de la
+`.devtools/check-plan.ts` comprueba 79 casos: que exista una plantilla por cada tipo de símbolo, la geometría de la
 hoja (A4 horizontal por omisión, 1000 × 707 unidades), el ajuste a la rejilla y el recorte dentro del lienzo, el
 vínculo tablero/carga → elemento (incluida la deduplicación: un tablero ya ubicado no se ofrece otra vez), el resumen
-del plano, que el módulo no altere el recorrido de 7 pasos y que los planos del cliente de demostración apunten a
-tableros y cargas existentes y de la acometida correcta.
+del plano, que el módulo no altere el recorrido de 7 pasos, que el lienzo se dibuje de verdad (SVG de 1000 × 707, una
+posición por elemento, las 14 plantillas en la paleta y sin franja de etapa) y que los planos del cliente de
+demostración apunten a tableros y cargas existentes y de la acometida correcta.
 
 ---
 
