@@ -732,7 +732,12 @@ export const PlanView: React.FC<PlanViewProps> = ({
         handleRedo();
         return;
       }
-      if (escribiendo) return;
+      if (escribiendo) {
+        // Escribiendo, el teclado es para escribir: no se dispara nada del plano
+        // y tampoco se deja pasar el diálogo de guardar del navegador.
+        if (letra === 'd' || letra === 's') event.preventDefault();
+        return;
+      }
       if (letra === 'd') {
         event.preventDefault();
         handleDuplicateElement();
