@@ -412,6 +412,53 @@ export function elementTypeLabel(element: PlanElement): string {
 }
 
 /**
+ * Nombre corto, para el riel angosto.
+ *
+ * En dos columnas de menos de 80 px, «Toma especial / fuerza» se partía en tres
+ * líneas y el botón quedaba desprolijo. El nombre completo sigue estando en la
+ * ayuda del botón y en el panel de propiedades.
+ */
+const SHORT_LABELS: Partial<Record<PlanSymbolType | PlanElementKind, string>> = {
+  tablero: 'Tablero',
+  tablero_seccional: 'Seccional',
+  medidor: 'Medidor',
+  toma: 'Toma',
+  toma_especial: 'Toma especial',
+  luminaria: 'Luz',
+  llave: 'Llave',
+  combinacion: 'Combinada',
+  puesta_tierra: 'Jabalina',
+  caja_derivacion: 'Caja de paso',
+  aire: 'Aire',
+  termotanque: 'Termotanque',
+  bomba: 'Bomba',
+  motor: 'Motor',
+  pared: 'Pared',
+  puerta: 'Puerta',
+  ventana: 'Ventana',
+  abertura: 'Abertura',
+  cota: 'Cota',
+  texto: 'Texto',
+};
+
+export function shortLabel(type: PlanSymbolType | PlanElementKind): string {
+  return SHORT_LABELS[type] ?? '';
+}
+
+/**
+ * ¿El elemento tiene un nombre propio?
+ *
+ * Los que se llaman igual que su tipo («Pared», «Tomacorriente») no llevan
+ * rótulo en el plano: el dibujo ya dice lo que son. El campo del panel arranca
+ * vacío con el nombre del tipo como ejemplo, y solo guarda algo cuando el
+ * técnico escribe un nombre distinto.
+ */
+export function hasCustomLabel(element: PlanElement): boolean {
+  const label = (element.label ?? '').trim();
+  return label.length > 0 && label !== elementTypeLabel(element);
+}
+
+/**
  * Dibuja una cota en coordenadas locales (el primer punto en el origen).
  *
  * Se dibuja como en un plano: las líneas de referencia salen de cada punta, la

@@ -23,7 +23,8 @@ Verificado en este repositorio:
 | Contraste WCAG AA en tema claro y oscuro | `node contrast.mjs` | ✅ 52 pares en verde |
 | Lógica del recorrido (progreso y siguiente paso) | `npx tsx check-workflow.ts` | ✅ 11 escenarios (incluye dos acometidas) |
 | Catálogo de productos y marcas | `npx tsx check-catalog.ts` | ✅ integridad + alta, edición y borrado |
-| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 246 comprobaciones |
+| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 258 comprobaciones |
+| Interfaz real en un navegador | `node capturas.mjs` | ✅ capturas + 0 errores de consola |
 | Render de las 14 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
 | Render de la aplicación completa | `npx tsx render-check.tsx` | ✅ marca, navegación y estado inicial |
 | Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
@@ -392,17 +393,29 @@ se mueve, y las herramientas van a los costados.
   proporción (`preserveAspectRatio="xMidYMid meet"`), como en cualquier editor. La zona libre alrededor es la «mesa»
   (`bg-sunken`), y sobre el blanco de la hoja se ve el plano. Todo lo que traduce clics a coordenadas del plano
   descuenta ese centrado, y los clics fuera de la hoja se ignoran.
-- **Tres columnas**: riel de herramientas a la izquierda (178 px, con su propio desplazamiento), lienzo en el medio
-  (todo el espacio restante) y panel de propiedades a la derecha (252 px). En el teléfono se apilan: primero el lienzo,
-  después las herramientas y por último las propiedades.
-- **Barra compacta arriba** (una sola fila): herramienta activa, los planos del cliente, contador de elementos, rejilla,
-  pantalla completa, imprimir y descargar. La explicación de cada herramienta vive en el pie del lienzo y en la ayuda de
-  la barra, para no gastar alto.
+- **Tres columnas**: riel de herramientas a la izquierda (176 px, con su propio desplazamiento), lienzo en el medio
+  (todo el espacio restante) y panel de datos a la derecha (300 px). En el teléfono se apilan: primero el lienzo,
+  después las herramientas y por último el panel.
+- **El plano se abre con el menú del programa retirado**: es un espacio de trabajo, y así el lienzo gana los 280 px de
+  la navegación lateral. El botón del riel (o la tecla `F`) lo vuelve a mostrar, y en la barra queda «Volver al
+  recorrido» para seguir con el relevamiento.
+- **El panel derecho usa pestañas**, no bloques plegables apilados: *Elemento* (datos de lo seleccionado, lista de lo
+  dibujado y lo que falta ubicar del relevamiento), *Plano* (nombre, acometida, hoja, escala, fondo y resumen) y *Capas*
+  (qué se ve). En una columna angosta, cinco acordeones apretados y un formulario a dos columnas —que era lo que había—
+  dejaban los campos aplastados y los controles desbordados.
+- **El formulario del elemento es a una sola columna**, agrupado por tema (Identificación · Medidas · Ubicación ·
+  Presentación · Notas) con un título y una línea por grupo, campos a todo el ancho y los datos que se leen —largo de
+  una pared, medida de una cota— en su propio recuadro. Los botones de duplicar y borrar van como íconos en el
+  encabezado, con su atajo en la ayuda.
+- **El nombre por omisión no se repite**: el campo arranca vacío con el nombre del tipo como ejemplo («Pared (por
+  omisión)»), porque un elemento llamado como su tipo no lleva rótulo en el plano. Solo guarda un nombre propio.
+- **Las medidas salen en metros** cuando el plano tiene escala: el largo de una pared se muestra como «7,80 m» con las
+  unidades de la hoja y el ángulo como aclaración.
+- **Barra compacta arriba** (una sola fila): volver al recorrido, herramienta activa, planos del cliente, deshacer y
+  rehacer, contador de elementos, rejilla, orto, ayuda de atajos, mostrar u ocultar el menú, imprimir y descargar. La
+  explicación de cada herramienta vive en el pie del lienzo y en la ayuda de la barra, para no gastar alto.
 - **Los avisos son flotantes**: aparecen superpuestos abajo del lienzo y se cierran con la cruz, en lugar de empujar el
   dibujo hacia abajo cada vez que se coloca una puerta.
-- **Pantalla completa** (el botón de las flechas, o `Escape`): se retiran la navegación lateral, el riel de móvil, el pie
-  de la aplicación y el ancho máximo, y el lienzo se queda con toda la ventana. Se sale con el mismo botón o con
-  `Escape`. El módulo también usa el **ancho completo** de la pantalla cuando no está en pantalla completa.
 - El pie de la aplicación **se retira en el plano**: su alto entraría en la cuenta del lienzo y haría que la página se
   pueda desplazar.
 
@@ -545,6 +558,23 @@ Como el plano es una función visual, `.devtools/render-plan.tsx` lo dibuja a `p
 reproduciendo exactamente lo que hace «Descargar PNG» (quitando los elementos que son solo de pantalla y devolviendo el
 zoom a cero), para poder mirarlo y compararlo sin abrir la aplicación. Así se encontraron, por ejemplo, los rótulos
 girados de las aberturas y las etiquetas cortadas contra el borde de la hoja.
+
+### Capturas de la interfaz real
+
+La interfaz **no se diseña a ciegas**: `.devtools/capturas.mjs` levanta el build con `vite preview`, abre la aplicación
+en un Chromium headless (Playwright), elige el cliente de ejemplo con planos cargados, entra al módulo y guarda
+capturas en `pdf-out/capturas/` —la pantalla completa, la barra, el riel y el panel con cada pestaña— además de
+reportar cualquier error de la consola del navegador.
+
+```bash
+cd .devtools
+node capturas.mjs            # 1440 × 900
+node capturas.mjs 1280 800   # otra medida de pantalla
+```
+
+Así se corrigieron cosas que el render de servidor no muestra: la barra que cortaba el botón «Nuevo plano», los campos
+del panel aplastados por una grilla de dos columnas, los nombres de tres líneas en el riel y la falta de espacio del
+lienzo con el menú del programa abierto.
 
 ---
 

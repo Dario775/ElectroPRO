@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   ClipboardCopy,
   Copy,
   Download,
@@ -11,10 +12,10 @@ import {
   Keyboard,
   Layers,
   Map as MapIcon,
-  Maximize2,
-  Minimize2,
   Minus,
   MousePointer2,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Printer,
   Redo2,
@@ -37,16 +38,18 @@ import {
   findStructure,
   findTool,
   findSymbol,
+  hasCustomLabel,
   isStructure,
   layerOf,
   renderStructure,
   renderSymbolShapes,
   renderTool,
+  shortLabel,
   structureIcon,
   toolIcon,
-} from './planSymbols';import { Button, IconButton } from './ui/Button';
+} from './planSymbols';
+import { Button, IconButton } from './ui/Button';
 import { Badge, EmptyState, SectionHeader } from './ui/Card';
-import { Collapsible } from './ui/Collapsible';
 import { Modal } from './ui/Modal';
 import { Field, HelpTip, NumberField, SegmentedControl, SelectField, TextAreaField, TextField } from './ui/Form';
 import { getPrimarySupply, getSupplies } from '../utils/supplies';
@@ -731,6 +734,56 @@ const DraftOverlay: React.FC<{
 };
 
 /* ------------------------------------------------------------------ */
+/* Panel derecho                                                       */
+/* ------------------------------------------------------------------ */
+
+/** Pestañas del panel derecho. */
+const PANEL_TABS: Array<{ id: 'elemento' | 'plano' | 'capas'; label: string; hint: string }> = [
+  { id: 'elemento', label: 'Elemento', hint: 'Datos del elemento seleccionado y lista de lo dibujado' },
+  { id: 'plano', label: 'Plano', hint: 'Nombre, hoja, escala, fondo y resumen del plano' },
+  { id: 'capas', label: 'Capas', hint: 'Qué se ve en el lienzo' },
+];
+
+/**
+ * Sección del panel derecho: título con su línea, contador y acciones.
+ *
+ * El formulario se lee por temas en vez de ser una lista larga de campos, que es
+ * lo que lo hacía difícil de seguir en una columna angosta.
+ */
+const PanelSection: React.FC<{
+  title: string;
+  count?: number;
+  hint?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ title, count, hint, action, children }) => (
+  <section className="space-y-2.5">
+    <div className="flex items-center justify-between gap-2 border-b border-hairline pb-1.5">
+      <span className="flex min-w-0 items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
+        <span className="truncate">{title}</span>
+        {typeof count === 'number' && (
+          <span className="flex-shrink-0 rounded-md border border-edge bg-raised px-1.5 font-mono text-xs font-bold text-soft">
+            {count}
+          </span>
+        )}
+      </span>
+      {action && <span className="flex-shrink-0">{action}</span>}
+    </div>
+    {hint && <p className="text-xs leading-snug text-muted">{hint}</p>}
+    <div className="space-y-2.5">{children}</div>
+  </section>
+);
+
+/** Un dato que se lee, no se edita: el largo de una pared, la medida de una cota. */
+const PanelValue: React.FC<{ label: string; value: string; hint?: string }> = ({ label, value, hint }) => (
+  <div className="rounded-xl border border-hairline bg-sunken px-3 py-2">
+    <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+    <p className="mt-0.5 font-mono text-base font-bold text-strong">{value}</p>
+    {hint && <p className="mt-0.5 text-xs leading-snug text-muted">{hint}</p>}
+  </div>
+);
+
+/* ------------------------------------------------------------------ */
 /* Vista                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -791,6 +844,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
   const [message, setMessage] = useState<{ tone: 'info' | 'danger' | 'success'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  /** Pestaña del panel derecho. */
+  const [panelTab, setPanelTab] = useState<'elemento' | 'plano' | 'capas'>('elemento');
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   /** Última versión de los planos: las escrituras y el arrastre la necesitan al día. */
@@ -855,6 +910,11 @@ export const PlanView: React.FC<PlanViewProps> = ({
     setMeasurement(null);
     setView({ zoom: 1, panX: 0, panY: 0 });
   }, [activePlanId]);
+
+  /** Al elegir algo en el plano, el panel vuelve a la pestaña del elemento. */
+  useEffect(() => {
+    if (selectedIds.length > 0) setPanelTab('elemento');
+  }, [selectedIds]);
 
   const activePlan = plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? null;
   const height = activePlan ? planHeight(activePlan) : 707;
@@ -2349,6 +2409,17 @@ export const PlanView: React.FC<PlanViewProps> = ({
     <div className="flex flex-col gap-2 lg:h-[calc(100dvh-var(--app-header-h)-1.75rem)]">
       {/* ---------------- Barra del plano ---------------- */}
       <div className="flex flex-shrink-0 flex-wrap items-center gap-2 rounded-2xl border border-hairline bg-surface px-2 py-1.5">
+        {focus && onGoToSurvey && (
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<ArrowLeft className="h-3.5 w-3.5" />}
+            onClick={onGoToSurvey}
+            title="Volver al recorrido del relevamiento"
+          >
+            <span className="hidden sm:inline">Volver al recorrido</span>
+          </Button>
+        )}
         <span
           className={cx(
             'inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold',
@@ -2367,30 +2438,33 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
         <span className="h-6 w-px flex-shrink-0 bg-hairline" />
 
-        {/* Planos del cliente */}
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none">
-          {plans.map((plan) => (
-            <button
-              key={plan.id}
-              type="button"
-              onClick={() => {
-                setActivePlanId(plan.id);
-                setSelectedIds([]);
-                setTool('select');
-              }}
-              aria-current={plan.id === activePlan.id ? 'true' : undefined}
-              title={describePlan(plan)}
-              className={cx(
-                'flex flex-shrink-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors',
-                plan.id === activePlan.id
-                  ? 'border-accent-line bg-accent-soft text-strong'
-                  : 'border-hairline bg-raised text-soft hover:border-accent-line'
-              )}
-            >
-              {plan.name}
-              <span className="font-mono text-muted">{plan.elements.length}</span>
-            </button>
-          ))}
+        {/* Planos del cliente: los chips se desplazan, «Nuevo plano» queda fijo
+            (antes se cortaba al quedar adentro de la fila con desplazamiento). */}
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto scrollbar-none">
+            {plans.map((plan) => (
+              <button
+                key={plan.id}
+                type="button"
+                onClick={() => {
+                  setActivePlanId(plan.id);
+                  setSelectedIds([]);
+                  setTool('select');
+                }}
+                aria-current={plan.id === activePlan.id ? 'true' : undefined}
+                title={describePlan(plan)}
+                className={cx(
+                  'flex flex-shrink-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors',
+                  plan.id === activePlan.id
+                    ? 'border-accent-line bg-accent-soft text-strong'
+                    : 'border-hairline bg-raised text-soft hover:border-accent-line'
+                )}
+              >
+                {plan.name}
+                <span className="font-mono text-muted">{plan.elements.length}</span>
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={openNewPlanModal}
@@ -2461,12 +2535,12 @@ export const PlanView: React.FC<PlanViewProps> = ({
           </IconButton>
           {onToggleFocus && (
             <IconButton
-              label={focus ? 'Salir de pantalla completa (Esc)' : 'Pantalla completa: el lienzo ocupa toda la ventana (F)'}
-              variant={focus ? 'primary' : 'secondary'}
+              label={focus ? 'Mostrar el menú del programa (F)' : 'Ocultar el menú y quedarse con el plano (F)'}
+              variant="secondary"
               size="sm"
               onClick={onToggleFocus}
             >
-              {focus ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              {focus ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
             </IconButton>
           )}
           <IconButton
@@ -2495,7 +2569,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       {/* La fila se limita al alto disponible: sin esto, la grilla se estiraría
           hasta el alto del riel completo y el módulo haría desplazar la página,
           que es justamente lo que no tiene que pasar. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-3 lg:grid lg:grid-cols-[178px_minmax(0,1fr)_252px] lg:grid-rows-[minmax(0,1fr)] lg:items-stretch">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 lg:grid lg:grid-cols-[176px_minmax(0,1fr)_300px] lg:grid-rows-[minmax(0,1fr)] lg:items-stretch">
         {/* ---------------- Lienzo ---------------- */}
         <div className="order-1 flex min-h-0 flex-col gap-1.5 lg:order-2">
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline bg-sunken">
@@ -2738,589 +2812,673 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
         {/* ---------------- Panel de propiedades ---------------- */}
         <div className="order-3 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-hairline bg-surface">
-          <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-hairline px-3 py-2">
-            <span className="text-xs font-bold uppercase tracking-wide text-muted">
-              {selectedIds.length > 1 ? 'Selección' : 'Propiedades del elemento'}
-            </span>
+          {/* Pestañas: en una columna angosta conviene una cosa por vez. Antes
+              eran cinco bloques plegables apilados y el formulario, armado en
+              dos columnas, quedaba aplastado y con los controles desbordados. */}
+          <div
+            role="tablist"
+            aria-label="Paneles del plano"
+            className="flex flex-shrink-0 items-center gap-1 border-b border-hairline p-1.5"
+          >
+            {PANEL_TABS.map((tab) => {
+              const activo = panelTab === tab.id;
+              /* Solo se muestra un número cuando dice algo: cuántos elementos
+                 hay elegidos. Un contador en cada pestaña confundía. */
+              const cuenta = tab.id === 'elemento' && selectedIds.length > 1 ? selectedIds.length : 0;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activo}
+                  title={tab.hint}
+                  onClick={() => setPanelTab(tab.id)}
+                  className={cx(
+                    'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors',
+                    activo ? 'bg-accent-soft text-accent-text' : 'text-muted hover:bg-raised hover:text-strong'
+                  )}
+                >
+                  <span className="truncate">{tab.label}</span>
+                  {cuenta > 0 && <span className="flex-shrink-0 font-mono opacity-70">{cuenta}</span>}
+                </button>
+              );
+            })}
           </div>
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2.5">
-          {/* Varios elementos: se mueven y se editan juntos */}
-          {selectedElements.length > 1 ? (
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-bold text-strong">
-                  {selectedIds.length} elementos
-                </span>
-                <Badge tone="accent">{describeSelection(activePlan.elements, selectedIds)}</Badge>
-              </div>
-              <p className="text-xs leading-snug text-muted">
-                Se mueven juntos: arrastrá cualquiera de ellos, o usá las flechas (con Mayús, una rejilla). Mayús+clic
-                suma o saca elementos de la selección.
-              </p>
-              <div className="grid grid-cols-2 gap-1.5">
-                <Button size="sm" variant="ghost" icon={<Copy className="h-3.5 w-3.5" />} onClick={handleDuplicateElement}>
-                  Duplicar
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<ClipboardCopy className="h-3.5 w-3.5" />}
-                  onClick={handleCopy}
-                >
-                  Copiar
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<FlipHorizontal2 className="h-3.5 w-3.5" />}
-                  onClick={() => handleMirror('vertical')}
-                >
-                  Espejar ↔
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<FlipVertical2 className="h-3.5 w-3.5" />}
-                  onClick={() => handleMirror('horizontal')}
-                >
-                  Espejar ↕
-                </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  icon={<Trash2 className="h-3.5 w-3.5" />}
-                  onClick={handleRemoveSelection}
-                  className="col-span-2"
-                >
-                  Borrar los {selectedIds.length}
-                </Button>
-              </div>
-            </div>
-          ) : selected ? (
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-strong">
-                  {elementTypeLabel(selected)}
-                  <Badge tone="neutral">{isStructure(selected) ? 'estructura' : 'plantilla'}</Badge>
-                </h3>
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="ghost" icon={<Copy className="h-3.5 w-3.5" />} onClick={handleDuplicateElement}>
-                    Duplicar
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    icon={<Trash2 className="h-3.5 w-3.5" />}
-                    onClick={() => handleRemoveElement(selected.id)}
-                  >
-                    Borrar
-                  </Button>
-                </div>
-              </div>
 
-              {(selected.panelId || selected.loadId) && (
-                <p className="flex items-center gap-1.5 text-xs text-muted">
-                  <Info className="h-3.5 w-3.5 flex-shrink-0" />
-                  Viene del relevamiento: se queda con este nombre del plano, pero sigue tomando los datos del{' '}
-                  {selected.panelId ? 'tablero' : 'artefacto'} cargado.
-                </p>
-              )}
-
-              {selectedIsWall && (
-                <p className="flex items-center gap-1.5 text-xs text-muted">
-                  <Info className="h-3.5 w-3.5 flex-shrink-0" />
-                  Arrastrá los círculos de las puntas en el plano para estirar la pared, o escribí las coordenadas acá.
-                  Las aberturas que tenga se acomodan solas.
-                </p>
-              )}
-
-              {selectedIsOpening && (
-                <p className="flex items-center gap-1.5 text-xs text-muted">
-                  <Info className="h-3.5 w-3.5 flex-shrink-0" />
-                  {selected.wallId
-                    ? 'Está apoyada sobre una pared: al arrastrarla se corre a lo largo de ella y el hueco se mantiene.'
-                    : 'Está suelta, sin pared. Dibujá una pared debajo y arrastrala encima para que se apoye.'}
-                </p>
-              )}
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <TextField
-                  label="Nombre en el plano"
-                  value={selected.label}
-                  onChange={(value) => handleUpdateElement({ label: value })}
-                  hint="Se escribe en el plano. Dejalo como está para los tipos comunes."
-                />
-
-                {!isStructure(selected) && (
-                  <SelectField
-                    label="Plantilla"
-                    value={selected.symbol ?? 'toma'}
-                    onChange={(value) => handleUpdateElement({ symbol: value as PlanSymbolType })}
-                    options={PLAN_SYMBOLS.map((symbol) => ({ value: symbol.type, label: symbol.label }))}
-                  />
-                )}
-
-                {selectedIsWall && (
-                  <>
-                    <NumberField
-                      label="Espesor de la pared"
-                      unit="u"
-                      value={selected.thickness ?? 14}
-                      onChange={(value) => {
-                        if (typeof value === 'number') handleUpdateElement({ thickness: value });
-                      }}
-                      min={2}
-                      max={60}
-                      presets={[8, 14, 20, 30]}
-                      presetsLabel="Frecuentes"
-                      hint="Tabique, mampostería de 15, muro doble…"
-                    />
-                    <div className="flex items-end">
-                      <div className="w-full rounded-xl border border-hairline bg-sunken px-3 py-2.5">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Largo</p>
-                        <p className="mt-1 font-mono text-lg font-bold text-strong">
-                          {wallLength(selected)} <span className="text-sm font-semibold text-muted">u</span>
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted">Ángulo {wallAngle(selected)}°</p>
-                      </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
+            {panelTab === 'elemento' && (
+              <>
+                {/* --- Varios elementos: se editan juntos --- */}
+                {selectedElements.length > 1 ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-strong">{selectedIds.length} elementos</span>
+                      <Badge tone="accent" className="min-w-0 truncate">
+                        {describeSelection(activePlan.elements, selectedIds)}
+                      </Badge>
                     </div>
-                  </>
-                )}
-
-                {selectedIsOpening && (
-                  <>
-                    <NumberField
-                      label="Ancho de la abertura"
-                      unit="u"
-                      value={selected.length ?? 90}
-                      onChange={(value) => {
-                        if (typeof value === 'number') handleUpdateElement({ length: value });
-                      }}
-                      min={10}
-                      max={600}
-                      presets={elementKind(selected) === 'ventana' ? [80, 110, 160, 220] : [70, 90, 110, 160]}
-                      presetsLabel="Frecuentes"
-                      hint="Puerta de 80 a 90, ventana según el ambiente, paso libre lo que pida el uso."
-                    />
-                    <NumberField
-                      label="Espesor de la pared que corta"
-                      unit="u"
-                      value={selected.thickness ?? 14}
-                      onChange={(value) => {
-                        if (typeof value === 'number') handleUpdateElement({ thickness: value });
-                      }}
-                      min={2}
-                      max={60}
-                      hint="Tiene que coincidir con la pared para que el hueco calce."
-                    />
-                  </>
-                )}
-
-                <NumberField
-                  label="Posición horizontal"
-                  unit="u"
-                  value={selected.x}
-                  onChange={(value) => {
-                    if (typeof value === 'number') handleUpdateElement({ x: value });
-                  }}
-                  min={0}
-                  max={PLAN_WIDTH}
-                  hint="En unidades de la hoja, de izquierda a derecha."
-                />
-                <NumberField
-                  label="Posición vertical"
-                  unit="u"
-                  value={selected.y}
-                  onChange={(value) => {
-                    if (typeof value === 'number') handleUpdateElement({ y: value });
-                  }}
-                  min={0}
-                  max={height}
-                  hint="En unidades de la hoja, de arriba hacia abajo."
-                />
-
-                {selectedIsWall && (
-                  <>
-                    <NumberField
-                      label="Extremo: horizontal"
-                      unit="u"
-                      value={selected.x2 ?? selected.x}
-                      onChange={(value) => {
-                        if (typeof value === 'number') handleUpdateElement({ x2: value });
-                      }}
-                      min={0}
-                      max={PLAN_WIDTH}
-                    />
-                    <NumberField
-                      label="Extremo: vertical"
-                      unit="u"
-                      value={selected.y2 ?? selected.y}
-                      onChange={(value) => {
-                        if (typeof value === 'number') handleUpdateElement({ y2: value });
-                      }}
-                      min={0}
-                      max={height}
-                    />
-                  </>
-                )}
-
-                {selectedIsCota && (
-                  <>
-                    <NumberField
-                      label="Corrimiento de la línea"
-                      unit="u"
-                      value={selected.offset ?? DEFAULT_COTA_OFFSET}
-                      onChange={(value) => {
-                        if (typeof value === 'number') handleUpdateElement({ offset: value });
-                      }}
-                      min={-400}
-                      max={400}
-                      presets={[0, 40, 70, 110]}
-                      presetsLabel="Frecuentes"
-                      hint="Cuánto se separa la línea de cota de lo que mide. Sirve para esquivar el dibujo."
-                    />
-                    <div className="flex items-end">
-                      <div className="w-full rounded-xl border border-hairline bg-sunken px-3 py-2.5">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Mide</p>
-                        <p className="mt-1 font-mono text-lg font-bold text-strong">
-                          {formatLength(activePlan, cotaLength(selected))}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted">
-                          {hasScale(activePlan) ? 'Con la escala cargada' : 'Cargá la escala para verlo en metros'}
-                        </p>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {selectedIsText && (
-                  <NumberField
-                    label="Alto de la letra"
-                    unit="u"
-                    value={selected.size ?? DEFAULT_TEXT_SIZE}
-                    onChange={(value) => {
-                      if (typeof value === 'number') handleUpdateElement({ size: value });
-                    }}
-                    min={8}
-                    max={90}
-                    presets={[16, 22, 30, 44]}
-                    presetsLabel="Frecuentes"
-                  />
-                )}
-              </div>
-
-              {selectedIsCota && (
-                <p className="flex items-start gap-1.5 text-xs leading-snug text-muted">
-                  <Info className="h-3.5 w-3.5 flex-shrink-0" />
-                  <span>
-                    Mientras el nombre esté vacío, la cota escribe sola la medida. Si le escribís un nombre, lo muestra a
-                    él (por ejemplo «ancho del portón»).
-                  </span>
-                </p>
-              )}
-
-              {selectedIsText && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() =>
-                    handleUpdateElement(
-                      selected.x2 === undefined
-                        ? { x2: selected.x + 60, y2: selected.y + 50 }
-                        : { x2: undefined, y2: undefined }
-                    )
-                  }
-                >
-                  {selected.x2 === undefined ? 'Agregar una directriz' : 'Quitar la directriz'}
-                </Button>
-              )}
-
-              {!selectedIsWall &&
-                (selectedIsOpening ? (
-                  <NumberField
-                    label="Giro del elemento"
-                    unit="°"
-                    value={selected.rotation ?? 0}
-                    onChange={(value) => {
-                      if (typeof value === 'number') handleUpdateElement({ rotation: value });
-                    }}
-                    min={0}
-                    max={359}
-                    step={15}
-                    hint="Las puertas y ventanas apoyadas en una pared toman el giro de la pared: no hace falta tocarlo."
-                  />
-                ) : (
-                  <Field label="Giro del elemento">
-                    <SegmentedControl
-                      size="sm"
-                      ariaLabel="Giro del elemento"
-                      value={String(selected.rotation ?? 0)}
-                      onChange={(value) => handleUpdateElement({ rotation: Number(value) })}
-                      options={[
-                        { value: '0', label: '0°' },
-                        { value: '90', label: '90°' },
-                        { value: '180', label: '180°' },
-                        { value: '270', label: '270°' },
-                      ]}
-                    />
-                  </Field>
-                ))}
-
-              {elementKind(selected) === 'puerta' && (
-                <Field label="Abre hacia" help="Indica de qué lado queda la hoja de la puerta. Sirve para saber si la puerta tapa un tablero.">
-                  <SegmentedControl
-                    size="sm"
-                    ariaLabel="Lado hacia el que abre la puerta"
-                    value={selected.hand ?? 'derecha'}
-                    onChange={(value) => handleUpdateElement({ hand: value as 'izquierda' | 'derecha' })}
-                    options={[
-                      { value: 'izquierda', label: 'Izquierda' },
-                      { value: 'derecha', label: 'Derecha' },
-                    ]}
-                  />
-                </Field>
-              )}
-
-              {supplies.length > 1 && !isStructure(selected) && (
-                <SelectField
-                  label="Acometida"
-                  value={selected.supplyId ?? ''}
-                  onChange={(value) => handleUpdateElement({ supplyId: value || undefined })}
-                  options={[
-                    { value: '', label: 'Sin especificar' },
-                    ...supplies.map((supply) => ({ value: supply.id, label: supply.name })),
-                  ]}
-                />
-              )}
-
-              <TextAreaField
-                label="Notas"
-                rows={2}
-                value={selected.notes ?? ''}
-                onChange={(value) => handleUpdateElement({ notes: value })}
-                placeholder="Altura de montaje, circuito, observaciones para el electricista…"
-              />
-            </div>
-          ) : (
-            elementCount > 0 && (
-              <p className="rounded-2xl border border-hairline bg-surface px-4 py-3 text-sm text-muted">
-                Elegí <strong className="text-soft">Seleccionar</strong> en la paleta y hacé clic en cualquier elemento del
-                plano para cambiarle el nombre, girarlo, estirarlo o borrarlo.
-              </p>
-            )
-          )}
-            <div className="border-t border-hairline" />
-          <Collapsible
-            id="plan-elements"
-            title="Elementos del plano"
-            summary="La lista de lo que ya está dibujado y ubicado"
-            description="Sirve para encontrar y borrar un elemento sin buscarlo en el dibujo."
-            icon={<Grid3x3 className="h-4 w-4" />}
-            badge={
-              <Badge tone={elementCount > 0 ? 'accent' : 'neutral'} className="font-mono">
-                {elementCount}
-              </Badge>
-            }
-          >
-            {elementCount === 0 ? (
-              <p className="text-sm text-muted">
-                Todavía no hay nada en el plano. Empezá dibujando una pared con la herramienta «Pared», o cargá una foto
-                del lugar como fondo.
-              </p>
-            ) : (
-              <ul className="max-h-80 space-y-1 overflow-y-auto">
-                {orderedElements.map((element) => (
-                  <li key={element.id}>
-                    <div
-                      className={cx(
-                        'flex items-center gap-2 rounded-xl border px-2 py-1.5',
-                        selectedIds.includes(element.id)
-                          ? 'border-accent-line bg-accent-soft'
-                          : 'border-hairline bg-sunken'
-                      )}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedIds([element.id]);
-                          setTool('select');
-                        }}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      >
-                        {isStructure(element) ? (
-                          <svg viewBox="-20 -20 40 40" className="h-6 w-6 flex-shrink-0 text-strong" aria-hidden="true">
-                            <g stroke="currentColor">{toolIcon(elementKind(element) as Exclude<PlanElementKind, 'symbol'>)}</g>
-                          </svg>
-                        ) : (
-                          <svg viewBox="-20 -20 40 40" className="h-6 w-6 flex-shrink-0 text-strong" aria-hidden="true">
-                            <g stroke="currentColor">{renderSymbolShapes(element.symbol ?? 'toma', 28)}</g>
-                          </svg>
-                        )}
-                        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-soft">{element.label}</span>
-                        {element.wallId && <Badge tone="neutral">en pared</Badge>}
-                        {(element.panelId || element.loadId) && <Badge tone="info">relevado</Badge>}
-                      </button>
-                      <IconButton
-                        label={`Borrar ${element.label}`}
-                        variant="ghost"
+                    <p className="text-xs leading-snug text-muted">
+                      Se mueven juntos: arrastrá cualquiera, o usá las flechas (con Mayús, una rejilla). Mayús+clic suma o
+                      saca elementos.
+                    </p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <Button
                         size="sm"
-                        onClick={() => handleRemoveElement(element.id)}
+                        variant="secondary"
+                        icon={<Copy className="h-3.5 w-3.5" />}
+                        onClick={handleDuplicateElement}
+                        fullWidth
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </IconButton>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Collapsible>
-
-          <Collapsible
-            id="plan-bring"
-            title="Traer del relevamiento"
-            summary="Tableros y cargas que todavía no están en el plano"
-            description="Ubica en el plano los tableros y los artefactos que ya cargaste, sin volver a escribirlos."
-            icon={<Copy className="h-4 w-4" />}
-            badge={
-              <Badge tone={pendingPanels.length + pendingLoads.length > 0 ? 'warning' : 'success'} className="font-mono">
-                {pendingPanels.length + pendingLoads.length}
-              </Badge>
-            }
-            actions={
-              pendingPanels.length + pendingLoads.length > 0 ? (
-                <Button size="sm" variant="secondary" onClick={handleBringFromSurvey}>
-                  Ubicar todo
-                </Button>
-              ) : undefined
-            }
-          >
-            {pendingPanels.length + pendingLoads.length === 0 ? (
-              <p className="text-sm text-muted">
-                Todos los tableros y las cargas del relevamiento ya están ubicados en algún plano. Si cargás algo nuevo,
-                aparecerá acá.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {pendingPanels.length > 0 && (
-                  <div>
-                    <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-muted">Tableros</p>
-                    <ul className="space-y-1">
-                      {pendingPanels.map((panel) => (
-                        <li key={panel.id} className="flex items-center gap-2 rounded-xl border border-hairline bg-sunken px-2.5 py-1.5">
-                          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-soft">{panel.name}</span>
-                          <Button size="sm" variant="ghost" onClick={() => handleBringOne('panel', panel.id)}>
-                            Ubicar
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {pendingLoads.length > 0 && (
-                  <div>
-                    <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-muted">Cargas y artefactos</p>
-                    <ul className="max-h-60 space-y-1 overflow-y-auto">
-                      {pendingLoads.map((load) => (
-                        <li key={load.id} className="flex items-center gap-2 rounded-xl border border-hairline bg-sunken px-2.5 py-1.5">
-                          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-soft">{load.name}</span>
-                          <Button size="sm" variant="ghost" onClick={() => handleBringOne('load', load.id)}>
-                            Ubicar
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-          </Collapsible>
-
-          <Collapsible
-            id="plan-sheet"
-            title="Hoja y datos del plano"
-            summary={`${PLAN_SHEETS.find((sheet) => sheet.id === sheetOf(activePlan.aspect))?.label ?? 'A4 horizontal'} · ${
-              activePlan.imageDataUrl ? 'con fondo' : 'sin fondo'
-            }`}
-            description="Nombre, proporción de la hoja y notas del plano."
-            icon={<RotateCw className="h-4 w-4" />}
-          >
-            <div className="space-y-3">
-              <TextField
-                label="Nombre del plano"
-                value={activePlan.name}
-                onChange={(value) => patchPlan(activePlan.id, { name: value })}
-              />
-              <SelectField
-                label="Proporción de la hoja"
-                value={sheetOf(activePlan.aspect)}
-                onChange={(value) => {
-                  const sheet = PLAN_SHEETS.find((candidate) => candidate.id === value) ?? PLAN_SHEETS[0];
-                  patchPlan(activePlan.id, {
-                    aspect: sheet.aspect,
-                    elements: clampElements(activePlan.elements, Math.round(PLAN_WIDTH / sheet.aspect)),
-                  });
-                }}
-                options={PLAN_SHEETS.map((sheet) => ({ value: sheet.id, label: sheet.label }))}
-                hint="Si cargás una foto de fondo, la hoja toma la proporción de esa imagen."
-              />
-              {supplies.length > 1 && (
-                <SelectField
-                  label="Acometida del plano"
-                  value={activePlan.supplyId ?? ''}
-                  onChange={(value) => patchPlan(activePlan.id, { supplyId: value || undefined })}
-                  options={[
-                    { value: '', label: 'Todo el inmueble' },
-                    ...supplies.map((supply) => ({ value: supply.id, label: supply.name })),
-                  ]}
-                />
-              )}
-              <TextAreaField
-                label="Notas del plano"
-                rows={2}
-                value={activePlan.notes ?? ''}
-                onChange={(value) => patchPlan(activePlan.id, { notes: value })}
-                placeholder="Referencias, escala, aclaraciones para el cliente…"
-              />
-
-              {/* Escala: es lo que convierte el dibujo en medidas de verdad. */}
-              <div className="rounded-xl border border-hairline bg-sunken p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wide text-muted">Escala</span>
-                  {printScaleLabel(activePlan) && <Badge tone="info">{printScaleLabel(activePlan)}</Badge>}
-                </div>
-                {hasScale(activePlan) ? (
-                  <>
-                    <p className="mt-1.5 font-mono text-sm font-bold text-strong">
-                      {sheetSizeMeters(activePlan).width.toFixed(2).replace('.', ',')} ×{' '}
-                      {sheetSizeMeters(activePlan).height.toFixed(2).replace('.', ',')} m
-                    </p>
-                    <p className="mt-0.5 text-xs leading-snug text-muted">
-                      1 unidad = {(metersPerUnit(activePlan) * 100).toFixed(1).replace('.', ',')} cm. Los largos, las
-                      cotas y las mediciones salen en metros.
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      <Button size="sm" variant="secondary" onClick={() => setTool('escala')}>
-                        Calibrar de nuevo
+                        Duplicar
                       </Button>
                       <Button
                         size="sm"
-                        variant="ghost"
-                        onClick={() => patchPlan(activePlan.id, { metersPerUnit: undefined })}
+                        variant="secondary"
+                        icon={<ClipboardCopy className="h-3.5 w-3.5" />}
+                        onClick={handleCopy}
+                        fullWidth
                       >
-                        Quitar la escala
+                        Copiar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={<FlipHorizontal2 className="h-3.5 w-3.5" />}
+                        onClick={() => handleMirror('vertical')}
+                        fullWidth
+                      >
+                        Espejar ↔
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={<FlipVertical2 className="h-3.5 w-3.5" />}
+                        onClick={() => handleMirror('horizontal')}
+                        fullWidth
+                      >
+                        Espejar ↕
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        icon={<Trash2 className="h-3.5 w-3.5" />}
+                        onClick={handleRemoveSelection}
+                        className="col-span-2"
+                        fullWidth
+                      >
+                        Borrar los {selectedIds.length}
                       </Button>
                     </div>
-                  </>
+                  </div>
+                ) : selected ? (
+                  /* --- Un elemento: el formulario, agrupado por tema --- */
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-accent-line bg-accent-soft text-accent-text">
+                          <svg viewBox="-20 -20 40 40" className="h-5 w-5 text-strong" aria-hidden="true">
+                            <g stroke="currentColor">
+                              {isStructure(selected)
+                                ? toolIcon(elementKind(selected) as Exclude<PlanElementKind, 'symbol'>)
+                                : renderSymbolShapes(selected.symbol ?? 'toma', 26)}
+                            </g>
+                          </svg>
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-bold text-strong">
+                            {elementTypeLabel(selected)}
+                          </span>
+                          <span className="block text-xs text-muted">
+                            {isStructure(selected) ? 'Elemento de la planta' : 'Plantilla eléctrica'}
+                          </span>
+                        </span>
+                      </div>
+                      <span className="flex flex-shrink-0 items-center gap-1">
+                        <IconButton
+                          label="Duplicar el elemento (Ctrl+D)"
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleDuplicateElement}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </IconButton>
+                        <IconButton
+                          label="Borrar el elemento (Supr)"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveElement(selected.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-danger-text" />
+                        </IconButton>
+                      </span>
+                    </div>
+
+                    {(selected.panelId || selected.loadId) && (
+                      <p className="flex items-start gap-1.5 rounded-xl border border-info-line bg-info-soft px-2.5 py-2 text-xs leading-snug text-info-text">
+                        <Info className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span>
+                          Viene del relevamiento: conserva este nombre en el plano, pero sigue tomando los datos del{' '}
+                          {selected.panelId ? 'tablero' : 'artefacto'} cargado.
+                        </span>
+                      </p>
+                    )}
+
+                    <PanelSection title="Identificación">
+                      <TextField
+                        label="Nombre en el plano"
+                        value={hasCustomLabel(selected) ? selected.label : ''}
+                        onChange={(value) => handleUpdateElement({ label: value })}
+                        placeholder={`${elementTypeLabel(selected)} (por omisión)`}
+                        hint="Vacío, el plano no escribe ningún nombre: el dibujo ya dice lo que es."
+                      />
+                      {!isStructure(selected) && (
+                        <SelectField
+                          label="Plantilla"
+                          value={selected.symbol ?? 'toma'}
+                          onChange={(value) => handleUpdateElement({ symbol: value as PlanSymbolType })}
+                          options={PLAN_SYMBOLS.map((symbol) => ({ value: symbol.type, label: symbol.label }))}
+                        />
+                      )}
+                      {supplies.length > 1 && !isStructure(selected) && (
+                        <SelectField
+                          label="Acometida"
+                          value={selected.supplyId ?? ''}
+                          onChange={(value) => handleUpdateElement({ supplyId: value || undefined })}
+                          options={[
+                            { value: '', label: 'Sin especificar' },
+                            ...supplies.map((supply) => ({ value: supply.id, label: supply.name })),
+                          ]}
+                        />
+                      )}
+                    </PanelSection>
+
+                    {(selectedIsWall || selectedIsOpening || selectedIsCota || selectedIsText) && (
+                      <PanelSection
+                        title="Medidas"
+                        hint={
+                          selectedIsWall
+                            ? 'Arrastrá los círculos de las puntas en el plano para estirar la pared; sus aberturas se acomodan solas.'
+                            : selectedIsOpening
+                            ? selected.wallId
+                              ? 'Está apoyada sobre una pared: al arrastrarla se corre a lo largo de ella.'
+                              : 'Está suelta, sin pared: dibujá una pared debajo y arrastrala encima.'
+                            : undefined
+                        }
+                      >
+                        {selectedIsWall && (
+                          <>
+                            <NumberField
+                              label="Espesor de la pared"
+                              unit="u"
+                              value={selected.thickness ?? 14}
+                              onChange={(value) => {
+                                if (typeof value === 'number') handleUpdateElement({ thickness: value });
+                              }}
+                              min={2}
+                              max={60}
+                              presets={[8, 14, 20, 30]}
+                              presetsLabel="Frecuentes"
+                              hint="Tabique, mampostería de 15, muro doble…"
+                            />
+                            <PanelValue
+                              label="Largo"
+                              value={
+                                hasScale(activePlan)
+                                  ? formatLength(activePlan, wallLength(selected))
+                                  : `${wallLength(selected)} u`
+                              }
+                              hint={
+                                hasScale(activePlan)
+                                  ? `${wallLength(selected)} unidades de la hoja · ángulo ${wallAngle(selected)}°`
+                                  : `Ángulo ${wallAngle(selected)}° · cargá la escala para verlo en metros`
+                              }
+                            />
+                          </>
+                        )}
+
+                        {selectedIsOpening && (
+                          <>
+                            <NumberField
+                              label="Ancho de la abertura"
+                              unit="u"
+                              value={selected.length ?? 90}
+                              onChange={(value) => {
+                                if (typeof value === 'number') handleUpdateElement({ length: value });
+                              }}
+                              min={10}
+                              max={600}
+                              presets={elementKind(selected) === 'ventana' ? [80, 110, 160, 220] : [70, 90, 110, 160]}
+                              presetsLabel="Frecuentes"
+                              hint={
+                                hasScale(activePlan)
+                                  ? `Son ${formatLength(activePlan, selected.length ?? 90)} de hueco`
+                                  : 'Puerta de 80 a 90, ventana según el ambiente.'
+                              }
+                            />
+                            <NumberField
+                              label="Espesor de la pared que corta"
+                              unit="u"
+                              value={selected.thickness ?? 14}
+                              onChange={(value) => {
+                                if (typeof value === 'number') handleUpdateElement({ thickness: value });
+                              }}
+                              min={2}
+                              max={60}
+                              hint="Tiene que coincidir con la pared para que el hueco calce."
+                            />
+                          </>
+                        )}
+
+                        {selectedIsCota && (
+                          <>
+                            <PanelValue
+                              label="Mide"
+                              value={formatLength(activePlan, cotaLength(selected))}
+                              hint={
+                                hasScale(activePlan)
+                                  ? 'Con la escala cargada'
+                                  : 'Cargá la escala en la pestaña «Plano» para verlo en metros'
+                              }
+                            />
+                            <NumberField
+                              label="Corrimiento de la línea"
+                              unit="u"
+                              value={selected.offset ?? DEFAULT_COTA_OFFSET}
+                              onChange={(value) => {
+                                if (typeof value === 'number') handleUpdateElement({ offset: value });
+                              }}
+                              min={-400}
+                              max={400}
+                              presets={[0, 40, 70, 110]}
+                              presetsLabel="Frecuentes"
+                              hint="Cuánto se separa la línea de cota de lo que mide."
+                            />
+                          </>
+                        )}
+
+                        {selectedIsText && (
+                          <NumberField
+                            label="Alto de la letra"
+                            unit="u"
+                            value={selected.size ?? DEFAULT_TEXT_SIZE}
+                            onChange={(value) => {
+                              if (typeof value === 'number') handleUpdateElement({ size: value });
+                            }}
+                            min={8}
+                            max={90}
+                            presets={[16, 22, 30, 44]}
+                            presetsLabel="Frecuentes"
+                          />
+                        )}
+                      </PanelSection>
+                    )}
+
+                    <PanelSection title="Ubicación" hint="En unidades de la hoja, con el cero arriba a la izquierda.">
+                      <NumberField
+                        label="Horizontal"
+                        unit="u"
+                        value={selected.x}
+                        onChange={(value) => {
+                          if (typeof value === 'number') handleUpdateElement({ x: value });
+                        }}
+                        min={0}
+                        max={PLAN_WIDTH}
+                      />
+                      <NumberField
+                        label="Vertical"
+                        unit="u"
+                        value={selected.y}
+                        onChange={(value) => {
+                          if (typeof value === 'number') handleUpdateElement({ y: value });
+                        }}
+                        min={0}
+                        max={height}
+                      />
+                      {selectedIsWall && (
+                        <>
+                          <NumberField
+                            label="Punta: horizontal"
+                            unit="u"
+                            value={selected.x2 ?? selected.x}
+                            onChange={(value) => {
+                              if (typeof value === 'number') handleUpdateElement({ x2: value });
+                            }}
+                            min={0}
+                            max={PLAN_WIDTH}
+                          />
+                          <NumberField
+                            label="Punta: vertical"
+                            unit="u"
+                            value={selected.y2 ?? selected.y}
+                            onChange={(value) => {
+                              if (typeof value === 'number') handleUpdateElement({ y2: value });
+                            }}
+                            min={0}
+                            max={height}
+                          />
+                        </>
+                      )}
+                    </PanelSection>
+
+                    <PanelSection title="Presentación">
+                      {selectedIsOpening ? (
+                        <NumberField
+                          label="Giro"
+                          unit="°"
+                          value={selected.rotation ?? 0}
+                          onChange={(value) => {
+                            if (typeof value === 'number') handleUpdateElement({ rotation: value });
+                          }}
+                          min={0}
+                          max={359}
+                          step={15}
+                          hint="Apoyada en una pared toma el giro de la pared."
+                        />
+                      ) : (
+                        !selectedIsWall &&
+                        !selectedIsText && (
+                          <Field label="Giro">
+                            <SegmentedControl
+                              size="sm"
+                              ariaLabel="Giro del elemento"
+                              value={String(selected.rotation ?? 0)}
+                              onChange={(value) => handleUpdateElement({ rotation: Number(value) })}
+                              options={[
+                                { value: '0', label: '0°' },
+                                { value: '90', label: '90°' },
+                                { value: '180', label: '180°' },
+                                { value: '270', label: '270°' },
+                              ]}
+                            />
+                          </Field>
+                        )
+                      )}
+
+                      {elementKind(selected) === 'puerta' && (
+                        <Field
+                          label="Abre hacia"
+                          help="Indica de qué lado queda la hoja de la puerta. Sirve para saber si tapa un tablero."
+                        >
+                          <SegmentedControl
+                            size="sm"
+                            ariaLabel="Lado hacia el que abre la puerta"
+                            value={selected.hand ?? 'derecha'}
+                            onChange={(value) => handleUpdateElement({ hand: value as 'izquierda' | 'derecha' })}
+                            options={[
+                              { value: 'izquierda', label: 'Izquierda' },
+                              { value: 'derecha', label: 'Derecha' },
+                            ]}
+                          />
+                        </Field>
+                      )}
+
+                      {selectedIsText && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          fullWidth
+                          onClick={() =>
+                            handleUpdateElement(
+                              selected.x2 === undefined
+                                ? { x2: selected.x + 60, y2: selected.y + 50 }
+                                : { x2: undefined, y2: undefined }
+                            )
+                          }
+                        >
+                          {selected.x2 === undefined ? 'Agregar una directriz' : 'Quitar la directriz'}
+                        </Button>
+                      )}
+
+                      {selectedIsCota && (
+                        <p className="flex items-start gap-1.5 text-xs leading-snug text-muted">
+                          <Info className="h-3.5 w-3.5 flex-shrink-0" />
+                          <span>
+                            Mientras el nombre esté vacío, la cota escribe sola la medida. Si le escribís un nombre, muestra
+                            ese texto.
+                          </span>
+                        </p>
+                      )}
+
+                      {selectedIsWall && (
+                        <p className="text-xs leading-snug text-muted">
+                          El giro de una pared es el de sus dos puntas: se cambia moviéndolas.
+                        </p>
+                      )}
+                    </PanelSection>
+
+                    <PanelSection title="Notas">
+                      <TextAreaField
+                        label="Para el electricista"
+                        rows={3}
+                        value={selected.notes ?? ''}
+                        onChange={(value) => handleUpdateElement({ notes: value })}
+                        placeholder="Altura de montaje, circuito, observaciones…"
+                      />
+                    </PanelSection>
+                  </div>
                 ) : (
-                  <>
-                    <p className="mt-1.5 text-xs leading-snug text-muted">
-                      Todavía no tiene escala: los largos se muestran en unidades del lienzo. Cargala para que las cotas,
-                      las mediciones y los largos de pared salgan en metros.
+                  /* --- Nada seleccionado --- */
+                  <div className="rounded-xl border border-hairline bg-sunken px-3 py-3">
+                    <p className="text-sm font-semibold text-soft">Nada seleccionado</p>
+                    <p className="mt-1 text-xs leading-snug text-muted">
+                      {elementCount > 0
+                        ? 'Elegí «Seleccionar» en el riel y hacé clic en cualquier elemento del plano para ver y cambiar sus datos. Con Mayús sumás más de uno.'
+                        : 'Empezá dibujando una pared con la herramienta «Pared», o cargá una foto del lugar como fondo desde la pestaña «Plano».'}
                     </p>
-                    <div className="mt-2">
+                  </div>
+                )}
+
+                {/* --- Lista de lo que hay en el plano --- */}
+                <PanelSection
+                  title="Elementos del plano"
+                  count={elementCount}
+                  hint="Sirve para encontrar y borrar algo sin buscarlo en el dibujo."
+                >
+                  {elementCount === 0 ? (
+                    <p className="text-xs leading-snug text-muted">Todavía no hay nada dibujado.</p>
+                  ) : (
+                    <ul className="max-h-64 space-y-1 overflow-y-auto pr-0.5">
+                      {orderedElements.map((element) => (
+                        <li key={element.id}>
+                          <div
+                            className={cx(
+                              'flex items-center gap-1.5 rounded-lg border px-1.5 py-1',
+                              selectedIds.includes(element.id)
+                                ? 'border-accent-line bg-accent-soft'
+                                : 'border-hairline bg-sunken'
+                            )}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedIds([element.id]);
+                                setTool('select');
+                              }}
+                              className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                            >
+                              <svg viewBox="-20 -20 40 40" className="h-5 w-5 flex-shrink-0 text-strong" aria-hidden="true">
+                                <g stroke="currentColor">
+                                  {isStructure(element)
+                                    ? toolIcon(elementKind(element) as Exclude<PlanElementKind, 'symbol'>)
+                                    : renderSymbolShapes(element.symbol ?? 'toma', 28)}
+                                </g>
+                              </svg>
+                              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-soft">
+                                {element.label || elementTypeLabel(element)}
+                              </span>
+                              {(element.panelId || element.loadId) && (
+                                <span className="flex-shrink-0 text-xs text-info-text">relevado</span>
+                              )}
+                            </button>
+                            <IconButton
+                              label={`Borrar ${element.label}`}
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveElement(element.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </IconButton>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </PanelSection>
+
+                {/* --- Lo que falta ubicar del relevamiento --- */}
+                <PanelSection
+                  title="Relevamiento"
+                  count={pendingPanels.length + pendingLoads.length}
+                  hint={
+                    pendingPanels.length + pendingLoads.length === 0
+                      ? 'Todos los tableros y las cargas ya están ubicados. Si cargás algo nuevo, aparece acá.'
+                      : 'Estos tableros y artefactos todavía no están en el plano: se ubican con un clic, sin volver a escribirlos.'
+                  }
+                >
+                  {pendingPanels.length + pendingLoads.length > 0 && (
+                    <>
+                      <Button size="sm" variant="secondary" fullWidth onClick={handleBringFromSurvey}>
+                        Ubicar todo de una vez
+                      </Button>
+                      <div className="space-y-2.5">
+                        {pendingPanels.length > 0 && (
+                          <div>
+                            <p className="mb-1 text-xs font-bold uppercase tracking-wide text-muted">Tableros</p>
+                            <ul className="space-y-1">
+                              {pendingPanels.map((panel) => (
+                                <li
+                                  key={panel.id}
+                                  className="flex items-center gap-1.5 rounded-lg border border-hairline bg-sunken px-2 py-1"
+                                >
+                                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-soft">
+                                    {panel.name}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBringOne('panel', panel.id)}
+                                    className="flex-shrink-0 rounded-md border border-edge bg-raised px-2 py-0.5 text-xs font-bold text-soft transition-colors hover:text-strong"
+                                  >
+                                    Ubicar
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {pendingLoads.length > 0 && (
+                          <div>
+                            <p className="mb-1 text-xs font-bold uppercase tracking-wide text-muted">Cargas y artefactos</p>
+                            <ul className="max-h-48 space-y-1 overflow-y-auto pr-0.5">
+                              {pendingLoads.map((load) => (
+                                <li
+                                  key={load.id}
+                                  className="flex items-center gap-1.5 rounded-lg border border-hairline bg-sunken px-2 py-1"
+                                >
+                                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-soft">
+                                    {load.name}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBringOne('load', load.id)}
+                                    className="flex-shrink-0 rounded-md border border-edge bg-raised px-2 py-0.5 text-xs font-bold text-soft transition-colors hover:text-strong"
+                                  >
+                                    Ubicar
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </PanelSection>
+              </>
+            )}
+
+            {panelTab === 'plano' && (
+              <>
+                <PanelSection title="Datos del plano">
+                  <TextField
+                    label="Nombre"
+                    value={activePlan.name}
+                    onChange={(value) => patchPlan(activePlan.id, { name: value })}
+                  />
+                  <SelectField
+                    label="Acometida"
+                    value={activePlan.supplyId ?? ''}
+                    onChange={(value) => patchPlan(activePlan.id, { supplyId: value || undefined })}
+                    options={[
+                      { value: '', label: 'Todo el inmueble' },
+                      ...supplies.map((supply) => ({ value: supply.id, label: supply.name })),
+                    ]}
+                    hint={
+                      supplies.length > 1
+                        ? 'Con varias acometidas conviene un plano por sector.'
+                        : undefined
+                    }
+                  />
+                  <TextAreaField
+                    label="Notas del plano"
+                    rows={2}
+                    value={activePlan.notes ?? ''}
+                    onChange={(value) => patchPlan(activePlan.id, { notes: value })}
+                    placeholder="Referencias, aclaraciones para el cliente…"
+                  />
+                </PanelSection>
+
+                <PanelSection title="Hoja y escala">
+                  <SelectField
+                    label="Proporción de la hoja"
+                    value={sheetOf(activePlan.aspect)}
+                    onChange={(value) => {
+                      const sheet = PLAN_SHEETS.find((candidate) => candidate.id === value) ?? PLAN_SHEETS[0];
+                      patchPlan(activePlan.id, {
+                        aspect: sheet.aspect,
+                        elements: clampElements(activePlan.elements, Math.round(PLAN_WIDTH / sheet.aspect)),
+                      });
+                    }}
+                    options={PLAN_SHEETS.map((sheet) => ({ value: sheet.id, label: sheet.label }))}
+                    hint="Con una foto de fondo, la hoja toma la proporción de esa imagen."
+                  />
+
+                  {hasScale(activePlan) ? (
+                    <>
+                      <PanelValue
+                        label="Tamaño real de la hoja"
+                        value={`${sheetSizeMeters(activePlan).width.toFixed(2).replace('.', ',')} × ${sheetSizeMeters(
+                          activePlan
+                        ).height.toFixed(2).replace('.', ',')} m`}
+                        hint={`Una unidad = ${(metersPerUnit(activePlan) * 100)
+                          .toFixed(1)
+                          .replace('.', ',')} cm${
+                          printScaleLabel(activePlan) ? ` · escala de impresión ${printScaleLabel(activePlan)}` : ''
+                        }`}
+                      />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <Button size="sm" variant="secondary" fullWidth onClick={() => setTool('escala')}>
+                          Calibrar de nuevo
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          fullWidth
+                          onClick={() => patchPlan(activePlan.id, { metersPerUnit: undefined })}
+                        >
+                          Quitar escala
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs leading-snug text-muted">
+                        Sin escala, los largos se miden en unidades del lienzo. Calibrala para que las cotas, las mediciones
+                        y los largos salgan en metros.
+                      </p>
                       <Button
                         size="sm"
                         variant="primary"
+                        fullWidth
                         onClick={() => {
                           setTool('escala');
                           setMessage({
@@ -3331,123 +3489,111 @@ export const PlanView: React.FC<PlanViewProps> = ({
                       >
                         Calibrar la escala
                       </Button>
-                    </div>
-                  </>
+                    </>
+                  )}
+                </PanelSection>
+
+                <PanelSection
+                  title="Fondo del plano"
+                  hint="Una foto bien perpendicular de la planta, o el plano del arquitecto. La imagen se achica sola."
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => handleImageSelected(event.target.files?.[0])}
+                    className="block w-full rounded-xl border border-hairline bg-sunken p-2 text-xs text-muted file:mr-2 file:rounded-lg file:border file:border-edge file:bg-raised file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-soft"
+                  />
+                  {activePlan.imageDataUrl && (
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      fullWidth
+                      icon={<Trash2 className="h-3.5 w-3.5" />}
+                      onClick={() => {
+                        const sheet = PLAN_SHEETS[0];
+                        patchPlan(activePlan.id, {
+                          imageDataUrl: undefined,
+                          backgroundOpacity: undefined,
+                          aspect: sheet.aspect,
+                          elements: clampElements(activePlan.elements, Math.round(PLAN_WIDTH / sheet.aspect)),
+                        });
+                      }}
+                    >
+                      Quitar la imagen de fondo
+                    </Button>
+                  )}
+                </PanelSection>
+
+                {activePlan.imageDataUrl && (
+                  <PanelSection title="Opacidad del fondo">
+                    <label className="flex items-center justify-between gap-2 text-xs font-semibold text-soft">
+                      Cuánto se ve
+                      <span className="font-mono text-muted">
+                        {Math.round((activePlan.backgroundOpacity ?? 1) * 100)}%
+                      </span>
+                    </label>
+                    <input
+                      type="range"
+                      min={10}
+                      max={100}
+                      step={5}
+                      value={Math.round((activePlan.backgroundOpacity ?? 1) * 100)}
+                      onChange={(event) =>
+                        patchPlan(activePlan.id, { backgroundOpacity: Number(event.target.value) / 100 })
+                      }
+                      className="w-full accent-current text-accent-text"
+                    />
+                  </PanelSection>
                 )}
-              </div>
 
-              <p className="text-xs leading-snug text-muted">
-                El plano tiene {wallCount} {wallCount === 1 ? 'pared' : 'paredes'} y {structureCount - wallCount}{' '}
-                {structureCount - wallCount === 1 ? 'abertura' : 'aberturas'} dibujadas, más{' '}
-                {elementCount - structureCount} {elementCount - structureCount === 1 ? 'símbolo' : 'símbolos'}. Hay{' '}
-                {PLAN_SYMBOLS.length} plantillas eléctricas disponibles en la paleta.
-              </p>
-              <Button
-                variant="danger"
-                size="sm"
-                icon={<Trash2 className="h-3.5 w-3.5" />}
-                onClick={() => handleDeletePlan(activePlan)}
-              >
-                Borrar este plano
-              </Button>
-            </div>
-          </Collapsible>
+                <PanelSection title="Resumen">
+                  <p className="text-xs leading-snug text-muted">
+                    {wallCount} {wallCount === 1 ? 'pared' : 'paredes'},{' '}
+                    {structureCount - wallCount}{' '}
+                    {structureCount - wallCount === 1 ? 'abertura' : 'aberturas'} y {elementCount - structureCount}{' '}
+                    {elementCount - structureCount === 1 ? 'símbolo o anotación' : 'símbolos o anotaciones'}.
+                  </p>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    fullWidth
+                    icon={<Trash2 className="h-3.5 w-3.5" />}
+                    onClick={() => handleDeletePlan(activePlan)}
+                  >
+                    Borrar este plano
+                  </Button>
+                </PanelSection>
+              </>
+            )}
 
-          {/* Capas: sirven para trabajar sobre una foto sin ruido encima. */}
-          <Collapsible
-            id="plan-layers"
-            title="Qué se ve"
-            summary={`${[visible.estructura && 'planta', visible.simbolos && 'símbolos', visible.anotaciones && 'cotas y textos']
-              .filter(Boolean)
-              .join(' · ') || 'todo apagado'}`}
-            description="Apagá lo que no necesitás ver: sirve para dibujar sobre una foto o para revisar solo la planta."
-            icon={<Layers className="h-4 w-4" />}
-          >
-            <div className="space-y-1.5">
-              {(
-                [
-                  ['estructura', 'Planta: paredes y aberturas'],
-                  ['simbolos', 'Símbolos eléctricos'],
-                  ['anotaciones', 'Cotas y textos'],
-                  ['fondo', 'Imagen de fondo'],
-                ] as Array<[keyof typeof visible, string]>
-              ).map(([clave, etiqueta]) => (
-                <label
-                  key={clave}
-                  className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-hairline bg-sunken px-2.5 py-1.5"
-                >
-                  <span className="text-xs font-semibold text-soft">{etiqueta}</span>
-                  <input
-                    type="checkbox"
-                    checked={visible[clave]}
-                    onChange={(event) => setVisible((current) => ({ ...current, [clave]: event.target.checked }))}
-                    className="h-4 w-4 accent-current text-accent-text"
-                  />
-                </label>
-              ))}
-              {activePlan.imageDataUrl && (
-                <div className="rounded-lg border border-hairline bg-sunken px-2.5 py-2">
-                  <label className="flex items-center justify-between gap-2 text-xs font-semibold text-soft">
-                    Opacidad del fondo
-                    <span className="font-mono text-muted">
-                      {Math.round((activePlan.backgroundOpacity ?? 1) * 100)}%
-                    </span>
+            {panelTab === 'capas' && (
+              <PanelSection title="Qué se ve" hint="Apagar una capa no borra nada: sirve para trabajar sobre una foto sin ruido encima.">
+                {(
+                  [
+                    ['estructura', 'Planta: paredes y aberturas'],
+                    ['simbolos', 'Símbolos eléctricos'],
+                    ['anotaciones', 'Cotas y textos'],
+                    ['fondo', 'Imagen de fondo'],
+                    ['rejilla', 'Rejilla de apoyo'],
+                  ] as Array<[keyof typeof visible, string]>
+                ).map(([clave, etiqueta]) => (
+                  <label
+                    key={clave}
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-hairline bg-sunken px-2.5 py-2"
+                  >
+                    <span className="min-w-0 text-xs font-semibold text-soft">{etiqueta}</span>
+                    <input
+                      type="checkbox"
+                      checked={visible[clave]}
+                      onChange={(event) => setVisible((current) => ({ ...current, [clave]: event.target.checked }))}
+                      className="h-4 w-4 flex-shrink-0 accent-current text-accent-text"
+                    />
                   </label>
-                  <input
-                    type="range"
-                    min={10}
-                    max={100}
-                    step={5}
-                    value={Math.round((activePlan.backgroundOpacity ?? 1) * 100)}
-                    onChange={(event) =>
-                      patchPlan(activePlan.id, { backgroundOpacity: Number(event.target.value) / 100 })
-                    }
-                    className="mt-1.5 w-full accent-current text-accent-text"
-                  />
-                </div>
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible
-            id="plan-background"
-            title="Fondo del plano"
-            summary={activePlan.imageDataUrl ? 'Con imagen de fondo' : 'Sin imagen: hoja en blanco'}
-            description="Cargá una foto del lugar o el plano real, y dibujá o ubicá los símbolos encima."
-            icon={<ImagePlus className="h-4 w-4" />}
-          >
-            <div className="space-y-3">
-              <p className="text-xs leading-snug text-muted">
-                Lo más cómodo es una foto bien perpendicular de la planta, o el plano del arquitecto. La imagen se achica
-                sola para ocupar poco lugar en el equipo, y las paredes que dibujes quedan encima.
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={(event) => handleImageSelected(event.target.files?.[0])}
-                className="block w-full text-xs text-muted file:mr-2 file:rounded-lg file:border file:border-edge file:bg-raised file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-soft"
-              />
-              {activePlan.imageDataUrl && (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  icon={<Trash2 className="h-3.5 w-3.5" />}
-                  onClick={() => {
-                    const sheet = PLAN_SHEETS[0];
-                    patchPlan(activePlan.id, {
-                      imageDataUrl: undefined,
-                      aspect: sheet.aspect,
-                      elements: clampElements(activePlan.elements, Math.round(PLAN_WIDTH / sheet.aspect)),
-                    });
-                  }}
-                >
-                  Quitar la imagen de fondo
-                </Button>
-              )}
-            </div>
-          </Collapsible>
-        </div>
+                ))}
+              </PanelSection>
+            )}
+          </div>
         </div>
 
         {/* ---------------- Riel de herramientas ---------------- */}
@@ -3510,7 +3656,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
                           <g stroke="currentColor">{structureIcon(structure.type)}</g>
                         </svg>
                         <span className={cx('text-xs leading-tight', active ? 'font-bold text-strong' : 'font-semibold text-soft')}>
-                          {structure.label}
+                          {shortLabel(structure.type)}
                         </span>
                       </button>
                     );
@@ -3554,7 +3700,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
                           <g stroke="currentColor">{toolIcon(annotation.type)}</g>
                         </svg>
                         <span className={cx('text-xs leading-tight', active ? 'font-bold text-strong' : 'font-semibold text-soft')}>
-                          {annotation.label}
+                          {shortLabel(annotation.type)}
                         </span>
                       </button>
                     );
@@ -3627,7 +3773,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
                             <g stroke="currentColor">{renderSymbolShapes(symbol.type, 26)}</g>
                           </svg>
                           <span className={cx('text-xs leading-tight', active ? 'font-bold text-strong' : 'font-semibold text-soft')}>
-                            {symbol.label}
+                            {shortLabel(symbol.type)}
                           </span>
                         </button>
                       );

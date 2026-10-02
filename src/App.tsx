@@ -40,11 +40,13 @@ function AppContent() {
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<ClientRecord | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  /** Pantalla completa del módulo del plano: se sale al cambiar de vista. */
+  /** El menú del programa se retira en el plano: es un espacio de trabajo. */
   const [planFocus, setPlanFocus] = useState(false);
 
   const handleNavigate = (view: ViewId): void => {
-    if (view !== 'plan') setPlanFocus(false);
+    // Entrar al plano lo abre con el menú retirado (el lienzo gana 280 px); con
+    // el botón del menú, o la tecla F, se vuelve a mostrar.
+    setPlanFocus(view === 'plan');
     setActiveView(view);
   };
 
