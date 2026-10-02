@@ -23,7 +23,7 @@ Verificado en este repositorio:
 | Contraste WCAG AA en tema claro y oscuro | `node contrast.mjs` | ✅ 52 pares en verde |
 | Lógica del recorrido (progreso y siguiente paso) | `npx tsx check-workflow.ts` | ✅ 11 escenarios (incluye dos acometidas) |
 | Catálogo de productos y marcas | `npx tsx check-catalog.ts` | ✅ integridad + alta, edición y borrado |
-| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 182 comprobaciones |
+| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 246 comprobaciones |
 | Render de las 14 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
 | Render de la aplicación completa | `npx tsx render-check.tsx` | ✅ marca, navegación y estado inicial |
 | Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
@@ -406,6 +406,36 @@ se mueve, y las herramientas van a los costados.
 - El pie de la aplicación **se retira en el plano**: su alto entraría en la cuenta del lienzo y haría que la página se
   pueda desplazar.
 
+### Escala real: de dibujo a medidas
+
+Sin escala, un plano se mide «en unidades del lienzo» y no sirve para presupuestar un cableado. El plano guarda
+`metersPerUnit` (cuántos metros mide una unidad) y **con eso todo lo demás sale en metros**:
+
+| Herramienta | Cómo |
+|---|---|
+| **Calibrar** | Herramienta «Escala» (tecla `9`): se marcan dos puntos cuya distancia real se conoce —una pared, el ancho de un local— y se escriben los metros. Es el camino cuando el fondo es la **foto del lugar**. |
+| **Ver la escala** | «Hoja y datos del plano» muestra el tamaño real de la hoja (por ejemplo 10,00 × 7,07 m), cuánto mide una unidad y la **escala de impresión** aproximada (1:30), que es lo que se anota en un plano. |
+| **Medir** | Tecla `8`: se arrastra entre dos puntos y aparece un cartel con la distancia, el ángulo y Δx/Δy. **No deja nada dibujado**: es la cinta métrica del programa, y sirve para medir un tramo de cañería antes de presupuestarlo. |
+| **Acotar** | Tecla `6`: la cota queda en el plano, con sus líneas de referencia, la línea corrida y el valor escrito en metros. Es la que permite leer un largo sobre el papel, sin instrumentos. |
+| **Anotar** | Tecla `7`: una nota suelta, con **directriz** opcional hacia el lugar al que se refiere (`TD-01`, «PAT 41 Ω: rehacer»). |
+
+Los planos de ejemplo ya vienen a escala (1 unidad = 1 cm): el salón mide 7,80 × 5,30 m y el depósito 7,80 m de ancho,
+con sus cotas escritas en metros.
+
+### Trazado y edición, como en un programa de dibujo
+
+| Herramienta | Qué aporta |
+|---|---|
+| **Pared encadenada** | La pared sigue desde donde terminó la anterior: se hace clic en cada punta y la planta se arma de corrido. `Enter` o `Esc` cierran la cadena. El enganche hace lo demás: **esquinas**, **puntos medios**, **cualquier punto de una pared** y por último la rejilla (25 unidades) |
+| **Orto** (tecla `O`) | Traba el trazo y el movimiento en horizontal y vertical, para no depender del pulso |
+| **Zoom y desplazamiento** | La rueda acerca y aleja **donde está el puntero**; con `Mayús` desplaza; la barra espaciadora o el botón del medio del mouse arrastran el plano. El pie del lienzo tiene `−`, el porcentaje (que se toca para ajustar) y `+`, y `Z` ajusta a la ventana |
+| **Selección múltiple** | Se arrastra un **recuadro** sobre el fondo y se selecciona todo lo que cruza; `Mayús`+clic suma o saca. La selección se mueve entera, y las paredes se llevan sus aberturas |
+| **Portapapeles** | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` y `Ctrl+D`, con las aberturas apuntando a la pared copiada y no a la original |
+| **Simetría** | «Espejar ↔ / ↕» refleja la selección respecto de su centro, y la hoja de las puertas queda abriendo para el lado correcto |
+| **Capas** | «Qué se ve» apaga la planta, los símbolos, las cotas o el fondo por separado: sirve para dibujar sobre una foto sin nada encima. El fondo admite **opacidad** (arranca al 65 % al cargarlo) |
+
+La exportación **siempre sale con la hoja entera**: el zoom y el desplazamiento son para trabajar, no para el PNG.
+
 ### Atajos de teclado y deshacer
 
 Se trabaja como en un programa de dibujo: el teclado hace el trabajo fino y **todo se puede deshacer**. La ayuda
@@ -413,17 +443,19 @@ completa está en el botón del teclado de la barra, o con la tecla `?`.
 
 | Teclas | Qué hace |
 |---|---|
-| `Supr` / `Retroceso` | Borrar el elemento seleccionado (si es una pared, se lleva sus aberturas) |
+| `Supr` / `Retroceso` | Borrar lo seleccionado (si es una pared, se lleva sus aberturas) |
 | `Ctrl+Z` | Deshacer |
 | `Ctrl+Mayús+Z` · `Ctrl+Y` | Rehacer |
-| `Ctrl+D` | Duplicar lo seleccionado |
+| `Ctrl+C` · `Ctrl+X` · `Ctrl+V` | Copiar · cortar · pegar |
+| `Ctrl+D` | Duplicar |
 | `Flechas` | Mover 1 unidad · con `Mayús`, una rejilla (25 unidades) |
 | `Ctrl+S` | Descargar el plano en PNG |
-| `1` … `5` | Seleccionar · Pared · Puerta · Ventana · Abertura |
+| `1` … `9` | Seleccionar · Pared · Puerta · Ventana · Abertura · Cota · Texto · Medir · Escala |
 | `V` | Volver a seleccionar |
-| `G` | Encender o apagar la rejilla |
+| `G` · `O` | Rejilla · Orto |
 | `F` | Pantalla completa |
-| `Esc` | Terminar la herramienta, deseleccionar o salir de pantalla completa |
+| `Rueda` · `Espacio`+arrastrar · `Z` · `+`/`-` | Zoom · desplazar · ajustar · acercar y alejar |
+| `Esc` | Terminar la herramienta, cerrar la cadena, deseleccionar o salir de pantalla completa |
 | `?` | Mostrar la ayuda de atajos |
 
 - Las **teclas de herramienta y las flechas no intervienen mientras se escribe** en un campo: ahí el teclado se usa
@@ -452,14 +484,17 @@ del plano muestra la herramienta activa, y con «Terminar» (o **Escape**) se vu
 | Acción | Cómo |
 |---|---|
 | **Crear un plano** | «Nuevo plano»: nombre, proporción de hoja (A4 horizontal, A4 vertical o cuadrada), acometida y, si querés, ubicar de una vez los tableros y las cargas ya relevados |
-| **Dibujar la planta** | Herramienta «Pared»: mantener presionado y arrastrar. El largo se ve mientras se dibuja y el trazo se engancha con las esquinas y se endereza en horizontales, verticales y diagonales |
+| **Dibujar la planta** | Herramienta «Pared»: un clic en cada punta, encadenada; se engancha con las esquinas y los puntos medios, y se endereza sola. `Enter` o `Esc` terminan |
 | **Abrir un hueco** | Herramientas «Puerta», «Ventana» o «Abertura»: un clic sobre la pared. Queda alineada, con el hueco hecho y su ancho según el tipo; se arrastra a lo largo de la pared para correrla |
 | **Ubicar un símbolo** | Un clic en la plantilla del riel y después un clic en el plano, dónde va. Se pueden ubicar varios seguidos sin volver a elegir |
-| **Moverlo** | Se arrastra con el dedo o el mouse. Con la rejilla activada los elementos se alinean cada 25 unidades; las paredes mueven sus aberturas y las aberturas se corren por su pared |
+| **Medir y acotar** | «Medir» para una consulta sin dejar rastro, «Cota» para dejarla en el plano. Con la escala cargada, todo sale en metros |
+| **Anotar** | «Texto»: se escribe en el panel y se le puede agregar una directriz hacia el lugar al que se refiere |
+| **Mover** | Se arrastra con el dedo o el mouse. Con la rejilla activada el desplazamiento va en pasos de 25; con Orto se traba en un eje. Las paredes mueven sus aberturas y las aberturas se corren por su pared |
 | **Estirar una pared** | Se la selecciona y se arrastran los círculos de las puntas; las aberturas se acomodan solas |
-| **Editarlo** | Al seleccionarlo se abre su panel a la derecha: nombre en el plano, plantilla (símbolos) o espesor y extremos (paredes), ancho y lado de apertura (puertas y ventanas), posición, giro, acometida y notas |
+| **Elegir varios** | Un recuadro sobre el fondo, o `Mayús`+clic. Se mueven, se copian, se espejan y se borran juntos |
+| **Editarlo** | Al seleccionarlo se abre su panel a la derecha: nombre, plantilla o espesor y extremos, ancho y lado de apertura, corrimiento de la cota, alto de letra, posición, giro, acometida y notas |
 | **Traer del relevamiento** | La lista muestra los tableros y las cargas que todavía no están en ningún plano, con «Ubicar» por ítem o «Ubicar todo». Cada elemento queda vinculado a su tablero (`panelId`) o a su artefacto (`loadId`) |
-| **Fondo real** | Se carga una foto o el plano del arquitecto: la imagen se reduce sola (1400 px de ancho, JPEG) para ocupar poco lugar, la hoja toma su proporción y las paredes que dibujes quedan encima |
+| **Fondo real** | Se carga una foto o el plano del arquitecto (queda al 65 % de opacidad, ajustable), se **calibra la escala** sobre una distancia conocida y se dibuja encima |
 | **Entregarlo** | «Descargar PNG» (al doble de resolución, con encabezado de plano, cliente, acometida y fecha) o «Imprimir» (A4 apaisado) |
 
 ### Decisiones de diseño
@@ -486,23 +521,30 @@ del plano muestra la herramienta activa, y con «Terminar» (o **Escape**) se vu
 
 ### Verificación
 
-`.devtools/check-plan.ts` comprueba 182 casos: que exista una plantilla por cada tipo de símbolo y una herramienta por
-cada tipo de estructura, la geometría de la hoja (A4 horizontal por omisión, 1000 × 707 unidades), el ajuste a la
-rejilla y el recorte dentro del lienzo, la geometría de las paredes (largo, ángulo, distancia y proyección sobre el
-segmento), el apoyado de una abertura sobre una pared (alineación, espesor heredado, deslizamiento sin salirse de las
-puntas y seguimiento al mover o estirar la pared), el borrado en cascada de las aberturas, el enganche de esquinas y el
-enderezado de trazos, el orden de pintado, el vínculo tablero/carga → elemento (incluida la deduplicación: un tablero
-ya ubicado no se ofrece otra vez), el resumen del plano, que el módulo no altere el recorrido de 7 pasos, que el lienzo
-se dibuje de verdad (SVG de 1000 × 707, el espesor de las paredes, el arco de la puerta, los rótulos con su halo en una
-capa sin girar, las 14 plantillas en la paleta y sin franja de etapa), el armado de programa de dibujo (alto calculado
-sobre `--app-header-h`, las tres columnas, el riel de herramientas, el panel de propiedades, el ajuste del lienzo sin
-deformarse y la barra compacta), el historial de deshacer y rehacer (agrupado de cambios seguidos, tope de pasos,
-descarte del rehacer al seguir trabajando y las teclas que anuncia la ayuda) y que los planos del cliente de
-demostración tengan la planta dibujada, con cada abertura apoyada y alineada con una pared existente del mismo plano.
+`.devtools/check-plan.ts` comprueba 246 casos, en tres bloques:
+
+1. **Dibujo y estructura**: una plantilla por tipo de símbolo y una herramienta por tipo de estructura, la geometría
+   de la hoja (A4 horizontal por omisión, 1000 × 707 unidades), el ajuste a la rejilla y el recorte dentro del lienzo,
+   la geometría de las paredes (largo, ángulo, distancia y proyección sobre el segmento), el apoyado de una abertura
+   sobre una pared (alineación, espesor heredado, deslizamiento sin salirse de las puntas y seguimiento al mover o
+   estirar la pared), el borrado en cascada de las aberturas, el enganche de esquinas y el enderezado de trazos, el
+   orden de pintado y el vínculo tablero/carga → elemento (con la deduplicación incluida).
+2. **Medidas y edición**: la escala (calibración con dos puntos, largos en metros y centímetros, superficies en m²,
+   tamaño real de la hoja y escala de impresión), la medición (distancia, ángulo, Δx/Δy y su resumen escrito), las
+   cotas (valor, corrimiento y posición del texto), los textos con y sin directriz, y la edición en conjunto
+   (selección por recuadro —incluida la pared larga que el recuadro cruza por el medio—, movimiento de la selección sin
+   mover dos veces las aberturas ni salirse de la hoja, copia con la abertura apuntando a la pared copiada, simetría con
+   el lado de apertura invertido y descripción de la selección).
+3. **Interfaz y datos de ejemplo**: que el módulo no altere el recorrido de 7 pasos, que el armado de programa de
+   dibujo esté completo (alto calculado sobre `--app-header-h`, las tres columnas, el riel, el panel, el ajuste del
+   lienzo y la barra compacta), que el historial agrupe los cambios seguidos y respete su tope, que la ayuda anuncie las
+   teclas que existen, y que los planos de ejemplo tengan la planta dibujada, la escala cargada y sus cotas y notas
+   escritas en metros al renderizarse.
 
 Como el plano es una función visual, `.devtools/render-plan.tsx` lo dibuja a `pdf-out/plano-N-<sector>.svg` y `.png`
-reproduciendo exactamente lo que hace «Descargar PNG» (quitando los elementos que son solo de pantalla), para poder
-mirarlo y compararlo sin abrir la aplicación.
+reproduciendo exactamente lo que hace «Descargar PNG» (quitando los elementos que son solo de pantalla y devolviendo el
+zoom a cero), para poder mirarlo y compararlo sin abrir la aplicación. Así se encontraron, por ejemplo, los rótulos
+girados de las aberturas y las etiquetas cortadas contra el borde de la hoja.
 
 ---
 
@@ -669,11 +711,11 @@ Todo se guarda en `localStorage` del navegador:
 11. **El plano no llega todavía al informe PDF**: el módulo exporta el PNG y lo imprime, pero `pdfReportService.ts`
     no lo inserta en el informe técnico del cliente. Es el paso natural siguiente: agregar el PNG del plano (o de
     cada acometida) como anexo del informe, ya que el archivo se guarda como data URL dentro del propio cliente.
-12. **El plano no traza canalizaciones ni circuitos**: dibuja la planta (paredes, puertas, ventanas y aberturas) y
-    ubica los símbolos, pero falta el recorrido de cada circuito desde el tablero (polilíneas con su rótulo `C-1`,
-    `C-2`…) para que sirva también como esquema de cañerías, vinculado al circuito del relevamiento.
-13. **El plano no tiene escala real**: los largos de pared se muestran en unidades del lienzo. Falta poder declarar el
-    ancho real de la hoja (en metros) para que los largos y las distancias salgan en metros o centímetros y el PNG
-    impreso sirva para medir sobre el papel.
+12. **El plano no traza canalizaciones ni circuitos**: dibuja la planta, las aberturas, las cotas y los símbolos, pero
+    falta el recorrido de cada circuito desde el tablero (polilíneas con su rótulo `C-1`, `C-2`…) para que sirva también
+    como esquema de cañerías, vinculado al circuito del relevamiento y con su largo calculado para el cómputo de cable.
+13. **El plano no calcula ambientes ni luminarias**: con las paredes cerradas se podría detectar el recinto, calcular su
+    superficie y proponer los puntos de luz por el método de los lúmenes (o los W/m²), que es una cuenta que hoy se hace
+    aparte.
 14. **El plano no entra todavía en el informe PDF**: el módulo exporta el PNG y lo imprime, pero `pdfReportService.ts`
     no inserta el plano ni sus anexos en el informe técnico del cliente.

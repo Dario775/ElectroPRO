@@ -1,5 +1,5 @@
 import React from 'react';
-import { PlanElement, PlanElementKind, PlanStructureType, PlanSymbolType } from '../types/electrical';
+import { PlanAnnotationType, PlanElement, PlanElementKind, PlanStructureType, PlanSymbolType } from '../types/electrical';
 
 /**
  * Plantillas y estructuras del plano de ubicación.
@@ -327,11 +327,129 @@ export function isStructure(element: PlanElement): boolean {
   return elementKind(element) !== 'symbol';
 }
 
+/* ------------------------------------------------------------------ */
+/* Anotaciones: cotas y textos                                         */
+/* ------------------------------------------------------------------ */
+
+/** Corrimiento por omisión de la línea de cota respecto de la medida. */
+export const DEFAULT_COTA_OFFSET = 55;
+/** Alto de letra por omisión de una nota. */
+export const DEFAULT_TEXT_SIZE = 22;
+
+export interface PlanAnnotationDef {
+  type: PlanAnnotationType;
+  label: string;
+  hint: string;
+  icon: React.ReactNode;
+}
+
+export const ANNOTATION_TOOLS: PlanAnnotationDef[] = [
+  {
+    type: 'cota',
+    label: 'Cota',
+    hint: 'Arrastrá de una punta a la otra: la cota queda acotada y muestra el largo real. Es la que se lee sobre el papel.',
+    icon: (
+      <>
+        <line x1={-15} y1={4} x2={15} y2={4} strokeWidth={1.5} />
+        <line x1={-15} y1={0} x2={-15} y2={8} strokeWidth={1.5} />
+        <line x1={15} y1={0} x2={15} y2={8} strokeWidth={1.5} />
+        <line x1={-13} y1={-8} x2={0} y2={-8} strokeWidth={2} />
+        <line x1={13} y1={-8} x2={0} y2={-8} strokeWidth={2} />
+      </>
+    ),
+  },
+  {
+    type: 'texto',
+    label: 'Texto',
+    hint: 'Un clic y escribís la nota en el panel de propiedades. Con el tirador se le agrega una directriz.',
+    icon: (
+      <>
+        <path d="M -12 -8 L 12 -8 L 12 -3 L -12 -3 Z" fill="none" strokeWidth={2} />
+        <line x1={-12} y1={4} x2={12} y2={4} strokeWidth={1.5} />
+        <line x1={-12} y1={11} x2={4} y2={11} strokeWidth={1.5} />
+      </>
+    ),
+  },
+];
+
+/** Todas las herramientas que no son plantillas eléctricas, en el orden del riel. */
+export const PLAN_TOOLS: Array<{ type: Exclude<PlanElementKind, 'symbol'>; label: string; hint: string }> = [
+  ...STRUCTURE_TOOLS.map((structure) => ({
+    type: structure.type as Exclude<PlanElementKind, 'symbol'>,
+    label: structure.label,
+    hint: structure.hint,
+  })),
+  ...ANNOTATION_TOOLS.map((annotation) => ({
+    type: annotation.type as Exclude<PlanElementKind, 'symbol'>,
+    label: annotation.label,
+    hint: annotation.hint,
+  })),
+];
+
+/** Definición de una herramienta, sea estructura o anotación. */
+export function findTool(type: Exclude<PlanElementKind, 'symbol'>): PlanStructureDef | PlanAnnotationDef | undefined {
+  return (
+    STRUCTURE_TOOLS.find((structure) => structure.type === type) ??
+    ANNOTATION_TOOLS.find((annotation) => annotation.type === type)
+  );
+}
+
+export function annotationIcon(type: PlanAnnotationType): React.ReactNode {
+  return ANNOTATION_TOOLS.find((annotation) => annotation.type === type)?.icon ?? ANNOTATION_TOOLS[0].icon;
+}
+
+/** Ícono de cualquier herramienta que no sea plantilla, para la paleta y los listados. */
+export function toolIcon(type: Exclude<PlanElementKind, 'symbol'>): React.ReactNode {
+  if (type === 'cota' || type === 'texto') return annotationIcon(type);
+  return structureIcon(type);
+}
+
 /** Nombre del tipo de elemento, para listados y resúmenes. */
 export function elementTypeLabel(element: PlanElement): string {
   const kind = elementKind(element);
   if (kind === 'symbol') return findSymbol(element.symbol ?? 'toma').label;
-  return findStructure(kind)?.label ?? 'Estructura';
+  return findTool(kind)?.label ?? 'Estructura';
+}
+
+/**
+ * Dibuja una cota en coordenadas locales (el primer punto en el origen).
+ *
+ * Se dibuja como en un plano: las líneas de referencia salen de cada punta, la
+ * línea de cota va corrida `offset` en perpendicular y los extremos llevan
+ * marcas inclinadas. El valor lo escribe la capa de rótulos, que es la que sabe
+ * la escala del plano.
+ */
+export function renderCota(element: PlanElement, colors: StructureColors): React.ReactNode {
+  const dx = (element.x2 ?? element.x) - element.x;
+  const dy = (element.y2 ?? element.y) - element.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1) return null;
+
+  const offset = element.offset ?? DEFAULT_COTA_OFFSET;
+  // Perpendicular unitaria
+  const nx = (-dy / length) * offset;
+  const ny = (dx / length) * offset;
+  const tick = 7;
+
+  return (
+    <>
+      {/* Líneas de referencia */}
+      <line x1={0} y1={0} x2={nx} y2={ny} stroke={colors.wall} strokeWidth={1} />
+      <line x1={dx} y1={dy} x2={dx + nx} y2={dy + ny} stroke={colors.wall} strokeWidth={1} />
+      {/* Línea de cota */}
+      <line x1={nx} y1={ny} x2={dx + nx} y2={dy + ny} stroke={colors.wall} strokeWidth={1.8} />
+      {/* Marcas de los extremos, inclinadas a 45° */}
+      <line x1={nx - tick / 2} y1={ny + tick / 2} x2={nx + tick / 2} y2={ny - tick / 2} stroke={colors.wall} strokeWidth={1.8} />
+      <line
+        x1={dx + nx - tick / 2}
+        y1={dy + ny + tick / 2}
+        x2={dx + nx + tick / 2}
+        y2={dy + ny - tick / 2}
+        stroke={colors.wall}
+        strokeWidth={1.8}
+      />
+    </>
+  );
 }
 
 /**
@@ -385,6 +503,9 @@ export function renderStructure(element: PlanElement, colors: StructureColors): 
   const half = length / 2;
   const side = element.hand === 'izquierda' ? -1 : 1;
 
+  /* Las cotas y los textos no son aberturas: los dibuja `renderTool`. */
+  if (kind !== 'puerta' && kind !== 'ventana' && kind !== 'abertura') return null;
+
   return (
     <>
       {/* Hueco en la pared */}
@@ -426,11 +547,38 @@ export function renderStructure(element: PlanElement, colors: StructureColors): 
 }
 
 /**
- * Orden de pintado del plano: primero las paredes, después las aberturas que las
- * cortan y al final los símbolos eléctricos. Así el hueco de una puerta se ve
- * aunque la pared se haya dibujado después.
+ * Dibuja cualquier herramienta en coordenadas locales, según su tipo.
+ *
+ * El texto no se dibuja acá: lo escribe la capa de rótulos, que es la que lo
+ * mantiene legible y horizontal. Acá solo va su directriz, si la tiene.
  */
-export const PLAN_LAYERS: PlanElementKind[] = ['pared', 'puerta', 'ventana', 'abertura', 'symbol'];
+export function renderTool(element: PlanElement, colors: StructureColors): React.ReactNode {
+  const kind = elementKind(element);
+
+  if (kind === 'cota') return renderCota(element, colors);
+
+  if (kind === 'texto') {
+    if (element.x2 === undefined || element.y2 === undefined) return null;
+    const dx = element.x2 - element.x;
+    const dy = element.y2 - element.y;
+    return (
+      <>
+        <line x1={0} y1={0} x2={dx} y2={dy} stroke={colors.wall} strokeWidth={1.5} />
+        <circle cx={dx} cy={dy} r={3.5} fill={colors.wall} />
+      </>
+    );
+  }
+
+  return renderStructure(element, colors);
+}
+
+/**
+ * Orden de pintado del plano: primero las paredes, después las aberturas que las
+ * cortan, luego las cotas y los textos, y al final los símbolos eléctricos. Así
+ * el hueco de una puerta se ve aunque la pared se haya dibujado después, y las
+ * cotas no quedan tapadas por los símbolos.
+ */
+export const PLAN_LAYERS: PlanElementKind[] = ['pared', 'puerta', 'ventana', 'abertura', 'cota', 'texto', 'symbol'];
 
 export function layerOf(element: PlanElement): number {
   const index = PLAN_LAYERS.indexOf(elementKind(element));

@@ -10,9 +10,12 @@ import {
 } from '../types/electrical';
 import {
   DEFAULT_WALL_THICKNESS,
+  DEFAULT_COTA_OFFSET,
+  DEFAULT_TEXT_SIZE,
   elementKind,
   elementTypeLabel,
   findStructure,
+  findTool,
   findSymbol,
 } from '../components/planSymbols';
 
@@ -220,11 +223,41 @@ export function wallCorners(elements: PlanElement[]): Array<{ x: number; y: numb
   return corners;
 }
 
+/** Puntos medios de las paredes: para colgar de ahí una abertura o un símbolo. */
+export function wallMidpoints(elements: PlanElement[]): Array<{ x: number; y: number }> {
+  return wallsOf(elements).map((wall) => ({
+    x: Math.round((wall.x + (wall.x2 ?? wall.x)) / 2),
+    y: Math.round((wall.y + (wall.y2 ?? wall.y)) / 2),
+  }));
+}
+
+/** Punto de una pared más cercano a otro punto, si está dentro del radio. */
+export function nearestPointOnWalls(
+  elements: PlanElement[],
+  x: number,
+  y: number,
+  radius: number
+): { x: number; y: number; distance: number } | null {
+  let best: { x: number; y: number; distance: number } | null = null;
+  for (const wall of wallsOf(elements)) {
+    const distance = distanceToSegment(x, y, wall.x, wall.y, wall.x2 ?? wall.x, wall.y2 ?? wall.y);
+    if (distance > radius) continue;
+    if (best && distance >= best.distance) continue;
+    const projection = projectOnSegment(x, y, wall.x, wall.y, wall.x2 ?? wall.x, wall.y2 ?? wall.y);
+    best = { x: projection.x, y: projection.y, distance };
+  }
+  return best;
+}
+
 export interface SnapOptions {
   /** Ajustar a la rejilla de 25 unidades. */
   grid: boolean;
   /** Puntos a los que conviene engancharse (extremos de paredes). */
   corners?: Array<{ x: number; y: number }>;
+  /** Puntos medios de las paredes. */
+  midpoints?: Array<{ x: number; y: number }>;
+  /** Paredes, para poder engancharse a cualquier punto de una de ellas. */
+  walls?: PlanElement[];
   /** Radio de enganche. */
   radius?: number;
   /** Alto de la hoja, para no dejar el punto fuera del lienzo. */
@@ -232,25 +265,38 @@ export interface SnapOptions {
 }
 
 /**
- * Ajusta un punto del plano: primero intenta engancharse a la punta de una
- * pared que ya existe (para que las paredes cierren en las esquinas) y, si no
- * hay nada cerca, lo lleva a la rejilla.
+ * Ajusta un punto del plano, como en un programa de dibujo.
+ *
+ * El orden de prioridad es el que espera cualquiera que dibuja: primero la punta
+ * de una pared (para que las paredes cierren en las esquinas), después el punto
+ * medio, después cualquier punto sobre una pared y al final la rejilla.
  */
 export function snapPoint(x: number, y: number, options: SnapOptions): { x: number; y: number } {
   const radius = options.radius ?? 30;
   const height = options.height ?? PLAN_MAX_HEIGHT;
-  let best: { x: number; y: number } | null = null;
-  let bestDistance = radius;
 
-  for (const corner of options.corners ?? []) {
-    const distance = Math.hypot(corner.x - x, corner.y - y);
-    if (distance < bestDistance) {
-      best = corner;
-      bestDistance = distance;
+  const nearestOf = (points: Array<{ x: number; y: number }>, maxDistance: number) => {
+    let best: { x: number; y: number } | null = null;
+    let bestDistance = maxDistance;
+    for (const point of points) {
+      const distance = Math.hypot(point.x - x, point.y - y);
+      if (distance < bestDistance) {
+        best = point;
+        bestDistance = distance;
+      }
     }
-  }
+    return best;
+  };
 
-  if (best) return { x: Math.round(best.x), y: Math.round(best.y) };
+  const corner = nearestOf(options.corners ?? [], radius);
+  if (corner) return { x: Math.round(corner.x), y: Math.round(corner.y) };
+
+  const midpoint = nearestOf(options.midpoints ?? [], radius * 0.6);
+  if (midpoint) return { x: Math.round(midpoint.x), y: Math.round(midpoint.y) };
+
+  const onWall = options.walls ? nearestPointOnWalls(options.walls, x, y, (options.radius ?? 30) * 0.4) : null;
+  if (onWall) return { x: Math.round(onWall.x), y: Math.round(onWall.y) };
+
   return {
     x: snapCoordinate(x, PLAN_WIDTH, options.grid),
     y: snapCoordinate(y, height, options.grid),
@@ -483,6 +529,352 @@ export function describePlan(plan: ClientPlan): string {
 /** Cuántas paredes tiene el plano: sirve para saber si la planta está dibujada. */
 export function countWalls(plan: ClientPlan): number {
   return wallsOf(plan.elements).length;
+}
+
+/* ------------------------------------------------------------------ */
+/* Cotas y textos                                                      */
+/* ------------------------------------------------------------------ */
+
+/** Una cota entre dos puntos, con la línea corrida en perpendicular. */
+export function createCota(a: { x: number; y: number }, b: { x: number; y: number }, offset?: number): PlanElement {
+  const length = Math.hypot(b.x - a.x, b.y - a.y);
+  return {
+    id: newElementId(),
+    kind: 'cota',
+    // Vacío a propósito: mientras no se escriba nada, la cota muestra su medida.
+    label: '',
+    x: Math.round(a.x),
+    y: Math.round(a.y),
+    x2: Math.round(b.x),
+    y2: Math.round(b.y),
+    offset: offset ?? (length < 200 ? 40 : DEFAULT_COTA_OFFSET),
+  };
+}
+
+/** Una nota suelta, con directriz opcional hacia el punto al que se refiere. */
+export function createText(x: number, y: number, text = '', leader?: { x: number; y: number }): PlanElement {
+  return {
+    id: newElementId(),
+    kind: 'texto',
+    label: text,
+    x: Math.round(x),
+    y: Math.round(y),
+    x2: leader ? Math.round(leader.x) : undefined,
+    y2: leader ? Math.round(leader.y) : undefined,
+    size: DEFAULT_TEXT_SIZE,
+  };
+}
+
+export function isCota(element: PlanElement): boolean {
+  return elementKind(element) === 'cota';
+}
+
+export function isText(element: PlanElement): boolean {
+  return elementKind(element) === 'texto';
+}
+
+/** Largo que mide una cota, en unidades del lienzo. */
+export function cotaLength(element: PlanElement): number {
+  return Math.round(Math.hypot((element.x2 ?? element.x) - element.x, (element.y2 ?? element.y) - element.y));
+}
+
+/** Punto medio de la línea de cota, ya corrido, para escribir el valor. */
+export function cotaTextPoint(element: PlanElement): { x: number; y: number } {
+  const dx = (element.x2 ?? element.x) - element.x;
+  const dy = (element.y2 ?? element.y) - element.y;
+  const length = Math.hypot(dx, dy);
+  const offset = element.offset ?? DEFAULT_COTA_OFFSET;
+  if (length < 1) return { x: element.x, y: element.y };
+  return {
+    x: element.x + dx / 2 + (-dy / length) * offset,
+    y: element.y + dy / 2 + (dx / length) * offset,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Escala real                                                         */
+/* ------------------------------------------------------------------ */
+
+/** ¿El plano tiene escala cargada? */
+export function hasScale(plan: ClientPlan): boolean {
+  return typeof plan.metersPerUnit === 'number' && plan.metersPerUnit > 0;
+}
+
+/** Cuántos metros mide una unidad del lienzo (0 si no hay escala). */
+export function metersPerUnit(plan: ClientPlan): number {
+  return hasScale(plan) ? (plan.metersPerUnit as number) : 0;
+}
+
+/**
+ * Escala a partir de una distancia conocida: es lo que se usa cuando el fondo
+ * es una foto y se sabe que entre dos puntos hay, por ejemplo, 6,20 m.
+ */
+export function scaleFromReference(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  realMeters: number
+): number | null {
+  const units = Math.hypot(b.x - a.x, b.y - a.y);
+  if (units < 1 || !(realMeters > 0)) return null;
+  return realMeters / units;
+}
+
+/** Ancho y alto reales de la hoja, en metros (0 si no hay escala). */
+export function sheetSizeMeters(plan: ClientPlan): { width: number; height: number } {
+  const perUnit = metersPerUnit(plan);
+  return { width: PLAN_WIDTH * perUnit, height: planHeight(plan) * perUnit };
+}
+
+/**
+ * Escribe una longitud como se lee en obra: en metros con dos decimales cuando
+ * hay escala, y en unidades del lienzo cuando todavía no se cargó.
+ */
+export function formatLength(plan: ClientPlan, units: number): string {
+  const perUnit = metersPerUnit(plan);
+  if (perUnit <= 0) return `${Math.round(units)} u`;
+  const meters = units * perUnit;
+  if (meters < 1) return `${Math.round(meters * 100)} cm`;
+  return `${meters.toFixed(2).replace('.', ',')} m`;
+}
+
+/** Lo mismo para superficies. */
+export function formatArea(plan: ClientPlan, squareUnits: number): string {
+  const perUnit = metersPerUnit(plan);
+  if (perUnit <= 0) return `${Math.round(squareUnits)} u²`;
+  const squareMeters = squareUnits * perUnit * perUnit;
+  return `${squareMeters.toFixed(2).replace('.', ',')} m²`;
+}
+
+/** Escala de impresión aproximada, como se anota en un plano (1:50, 1:100…). */
+export function printScaleLabel(plan: ClientPlan, sheetWidthMm = 297): string | null {
+  const perUnit = metersPerUnit(plan);
+  if (perUnit <= 0) return null;
+  const realMm = PLAN_WIDTH * perUnit * 1000;
+  const scale = Math.round(realMm / sheetWidthMm / 10) * 10;
+  return scale > 0 ? `1:${scale}` : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Medición                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface Measurement {
+  distance: number;
+  /** Ángulo respecto de la horizontal, de 0 a 360. */
+  angle: number;
+  dx: number;
+  dy: number;
+}
+
+/** Mide entre dos puntos: es lo que muestran la herramienta de medir y las cotas. */
+export function measureBetween(a: { x: number; y: number }, b: { x: number; y: number }): Measurement {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const degrees = (Math.atan2(dy, dx) * 180) / Math.PI;
+  return {
+    distance: Math.hypot(dx, dy),
+    angle: Math.round(((degrees % 360) + 360) % 360),
+    dx: Math.round(dx),
+    dy: Math.round(dy),
+  };
+}
+
+/** Texto de una medición, con la escala del plano aplicada. */
+export function describeMeasurement(plan: ClientPlan, measurement: Measurement): string {
+  return `${formatLength(plan, measurement.distance)} · ${measurement.angle}°`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Selección, copia y simetría                                         */
+/* ------------------------------------------------------------------ */
+
+export interface PlanRect {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+/**
+ * Ids de los elementos que caen dentro (o que cruza) un recuadro de selección.
+ *
+ * Se compara contra la caja de cada elemento y no contra sus puntos: así un
+ * recuadro que cruza una pared larga por la mitad también la selecciona, que es
+ * lo que hace cualquier programa de dibujo.
+ */
+export function elementsInRect(elements: PlanElement[], rect: PlanRect): string[] {
+  const minX = Math.min(rect.x1, rect.x2);
+  const maxX = Math.max(rect.x1, rect.x2);
+  const minY = Math.min(rect.y1, rect.y2);
+  const maxY = Math.max(rect.y1, rect.y2);
+
+  return elements
+    .filter((element) => {
+      const xs = [element.x, element.x2 ?? element.x];
+      const ys = [element.y, element.y2 ?? element.y];
+      const boxMinX = Math.min(...xs);
+      const boxMaxX = Math.max(...xs);
+      const boxMinY = Math.min(...ys);
+      const boxMaxY = Math.max(...ys);
+      return boxMaxX >= minX && boxMinX <= maxX && boxMaxY >= minY && boxMinY <= maxY;
+    })
+    .map((element) => element.id);
+}
+
+/**
+ * Mueve un conjunto de elementos.
+ *
+ * Las paredes se llevan sus aberturas, así que una abertura cuya pared también
+ * se está moviendo no se toca: la acomoda la pared. Sin eso se movería dos veces.
+ */
+export function translateElements(
+  elements: PlanElement[],
+  ids: string[],
+  dx: number,
+  dy: number,
+  height: number
+): PlanElement[] {
+  const moving = new Set(ids);
+  const movedWalls = new Set(
+    elements.filter((element) => moving.has(element.id) && isWall(element)).map((element) => element.id)
+  );
+
+  const clampX = (value: number): number => Math.max(10, Math.min(PLAN_WIDTH - 10, Math.round(value)));
+  const clampY = (value: number): number => Math.max(10, Math.min(height - 10, Math.round(value)));
+
+  let next = elements.map((element) => {
+    if (!moving.has(element.id)) return element;
+
+    if (isOpening(element)) {
+      // Su pared ya la mueve: se deja como está para no correrla dos veces.
+      if (element.wallId && movedWalls.has(element.wallId)) return element;
+      const wall = element.wallId ? elements.find((candidate) => candidate.id === element.wallId) : undefined;
+      return wall
+        ? slideOpeningOnWall(element, wall, element.x + dx, element.y + dy)
+        : { ...element, x: clampX(element.x + dx), y: clampY(element.y + dy) };
+    }
+
+    if (isWall(element)) {
+      const wall: PlanElement = {
+        ...element,
+        x: clampX(element.x + dx),
+        y: clampY(element.y + dy),
+        x2: clampX((element.x2 ?? element.x) + dx),
+        y2: clampY((element.y2 ?? element.y) + dy),
+      };
+      return wall;
+    }
+
+    const other: PlanElement = { ...element, x: clampX(element.x + dx), y: clampY(element.y + dy) };
+    if (element.x2 !== undefined && element.y2 !== undefined) {
+      other.x2 = clampX(element.x2 + dx);
+      other.y2 = clampY(element.y2 + dy);
+    }
+    return other;
+  });
+
+  /* Las aberturas de una pared que se mueve **la acompañan**: se corren el mismo
+     desplazamiento y conservan su lugar relativo. No se reproyectan, porque al
+     proyectar la posición vieja sobre la pared nueva la puerta se quedaría
+     atrás. */
+  for (const wallId of movedWalls) {
+    const wall = next.find((element) => element.id === wallId);
+    if (!wall) continue;
+    for (const opening of next.filter((element) => element.wallId === wallId)) {
+      const movedOpening = slideOpeningOnWall(opening, wall, opening.x + dx, opening.y + dy);
+      next = next.map((element) => (element.id === opening.id ? movedOpening : element));
+    }
+  }
+
+  return next;
+}
+
+/** Copia un conjunto de elementos, corrida y con ids nuevos. */
+export function duplicateElements(
+  elements: PlanElement[],
+  ids: string[],
+  dx = 40,
+  dy = 40
+): { copies: PlanElement[]; ids: string[] } {
+  const originals = elements.filter((element) => ids.includes(element.id));
+  if (originals.length === 0) return { copies: [], ids: [] };
+
+  // Las paredes copiadas se llevan sus aberturas, y las aberturas copiadas
+  // apuntan a la copia de su pared, no a la original.
+  const newIdByOld = new Map(originals.map((element) => [element.id, newElementId()]));
+  const copies = originals.map((element) => {
+    const copy: PlanElement = {
+      ...element,
+      id: newIdByOld.get(element.id) as string,
+      x: Math.round(element.x + dx),
+      y: Math.round(element.y + dy),
+      // Una copia ya no representa al tablero ni a la carga del relevamiento.
+      panelId: undefined,
+      loadId: undefined,
+    };
+    if (element.x2 !== undefined) copy.x2 = Math.round(element.x2 + dx);
+    if (element.y2 !== undefined) copy.y2 = Math.round(element.y2 + dy);
+    if (element.wallId) copy.wallId = newIdByOld.get(element.wallId) ?? undefined;
+    return copy;
+  });
+
+  return { copies, ids: copies.map((copy) => copy.id) };
+}
+
+export type MirrorAxis = 'vertical' | 'horizontal';
+
+/**
+ * Refleja un conjunto de elementos respecto de su propio centro.
+ *
+ * Es lo que en un plano sirve para repetir un sector simétrico: se copia y se
+ * espeja, y las puertas quedan abriendo para el lado correcto.
+ */
+export function mirrorElements(elements: PlanElement[], ids: string[], axis: MirrorAxis): PlanElement[] {
+  const selected = elements.filter((element) => ids.includes(element.id));
+  if (selected.length === 0) return elements;
+
+  const xs = selected.flatMap((element) => [element.x, element.x2 ?? element.x]);
+  const ys = selected.flatMap((element) => [element.y, element.y2 ?? element.y]);
+  const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const centerY = (Math.min(...ys) + Math.max(...ys)) / 2;
+
+  const mirrorX = (x: number): number => Math.round(axis === 'vertical' ? 2 * centerX - x : x);
+  const mirrorY = (y: number): number => Math.round(axis === 'horizontal' ? 2 * centerY - y : y);
+
+  return elements.map((element) => {
+    if (!ids.includes(element.id)) return element;
+
+    const mirrored: PlanElement = { ...element, x: mirrorX(element.x), y: mirrorY(element.y) };
+    if (element.x2 !== undefined) mirrored.x2 = mirrorX(element.x2);
+    if (element.y2 !== undefined) mirrored.y2 = mirrorY(element.y2);
+
+    /* El giro cambia de signo al espejar, y la hoja de la puerta pasa al otro
+       lado: si no, una puerta espejada abriría para adentro de la pared. */
+    if (element.rotation !== undefined && element.rotation !== 0) {
+      mirrored.rotation = (360 - element.rotation) % 360;
+    }
+    if (element.hand) mirrored.hand = element.hand === 'izquierda' ? 'derecha' : 'izquierda';
+
+    return mirrored;
+  });
+}
+
+/** Cuántos elementos hay de cada tipo, para el resumen de la selección. */
+export function describeSelection(elements: PlanElement[], ids: string[]): string {
+  const selected = elements.filter((element) => ids.includes(element.id));
+  if (selected.length === 0) return 'Nada seleccionado';
+  if (selected.length === 1) return elementTypeLabel(selected[0]);
+  const tipos = new Set(selected.map((element) => elementTypeLabel(element)));
+  return `${selected.length} elementos${tipos.size > 1 ? ` (${[...tipos].slice(0, 3).join(', ')}…)` : ''}`;
+}
+
+/** Resumen del resultado de una medición, con la escala aplicada. */
+export function measurementSummary(plan: ClientPlan, measurement: Measurement): string {
+  const largo = formatLength(plan, measurement.distance);
+  return `${largo} · ángulo ${measurement.angle}° · Δx ${formatLength(plan, Math.abs(measurement.dx))} · Δy ${formatLength(
+    plan,
+    Math.abs(measurement.dy)
+  )}`;
 }
 
 /**

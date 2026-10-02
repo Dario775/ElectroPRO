@@ -1,39 +1,50 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ClipboardCopy,
   Copy,
   Download,
+  FlipHorizontal2,
+  FlipVertical2,
   Grid3x3,
   ImagePlus,
   Info,
   Keyboard,
+  Layers,
   Map as MapIcon,
   Maximize2,
   Minimize2,
+  Minus,
   MousePointer2,
   Plus,
   Printer,
   Redo2,
   RotateCw,
+  Ruler,
   Trash2,
   Undo2,
   X,
 } from 'lucide-react';
-import { ClientPlan, ClientRecord, PlanElement, PlanStructureType, PlanSymbolType } from '../types/electrical';
+import { ClientPlan, ClientRecord, PlanElement, PlanElementKind, PlanStructureType, PlanSymbolType } from '../types/electrical';
 import {
   PLAN_SYMBOLS,
   STRUCTURE_TOOLS,
+  ANNOTATION_TOOLS,
+  DEFAULT_COTA_OFFSET,
+  DEFAULT_TEXT_SIZE,
   elementKind,
   elementTransform,
   elementTypeLabel,
   findStructure,
+  findTool,
   findSymbol,
   isStructure,
   layerOf,
   renderStructure,
   renderSymbolShapes,
+  renderTool,
   structureIcon,
-} from './planSymbols';
-import { Button, IconButton } from './ui/Button';
+  toolIcon,
+} from './planSymbols';import { Button, IconButton } from './ui/Button';
 import { Badge, EmptyState, SectionHeader } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
 import { Modal } from './ui/Modal';
@@ -46,30 +57,52 @@ import {
   clampElements,
   constrainAngle,
   countWalls,
+  cotaLength,
+  cotaTextPoint,
+  createCota,
   createElement,
   createOpening,
   createPlan,
+  createText,
   createWall,
   describePlan,
+  describeSelection,
+  duplicateElements,
   elementsFromLoads,
   elementsFromPanels,
+  elementsInRect,
   followWall,
+  formatLength,
+  hasScale,
+  isCota,
   isOpening,
+  isText,
   isWall,
   loadsWithoutElement,
+  measureBetween,
+  measurementSummary,
+  metersPerUnit,
+  mirrorElements,
   nearestWall,
   panelsWithoutElement,
   planHeight,
   preparePlanImage,
+  printScaleLabel,
   removeElement,
+  scaleFromReference,
   sheetOf,
+  sheetSizeMeters,
   slideOpeningOnWall,
   snapCoordinate,
   snapPoint,
+  translateElements,
   wallAngle,
   wallCorners,
   wallLength,
+  wallMidpoints,
+  wallsOf,
 } from '../utils/plan';
+import type { MirrorAxis } from '../utils/plan';
 import {
   canRedo,
   canUndo,
@@ -106,6 +139,8 @@ import { cx } from '../utils/cx';
 const INK = '#111827';
 const SOFT_INK = '#6b7280';
 const SELECTION = '#2563eb';
+/** Color de las mediciones: distinto del de la selección, para no confundirlos. */
+const MEASURE = '#0f766e';
 const GRID_LINE = '#e5e7eb';
 const SHEET_EDGE = '#cbd5e1';
 const BACKGROUND_FILL = '#ffffff';
@@ -114,20 +149,39 @@ const PLAN_FONT = 'system-ui, sans-serif';
 const OPENING_SNAP_RADIUS = 45;
 /** Una pared más corta que esto no se guarda: es un clic suelto, no un trazo. */
 const MIN_WALL_LENGTH = 25;
+/** Un trazo de medición, cota o escala más corto que esto no se toma. */
+const MIN_TWO_POINT_LENGTH = 12;
+/** Límites del zoom del lienzo. */
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 10;
 
 /**
- * Herramienta activa. `select` sirve para elegir y mover; las de estructura
- * dibujan; `sym:` coloca una plantilla eléctrica.
+ * Herramienta activa. `select` sirve para elegir y mover; las de estructura y
+ * anotación dibujan; `medir` y `escala` toman dos puntos sin dejar nada en el
+ * plano; `sym:` coloca una plantilla eléctrica.
  */
-type DrawTool = 'select' | PlanStructureType | `sym:${PlanSymbolType}`;
+type DrawTool =
+  | 'select'
+  | 'medir'
+  | 'escala'
+  | Exclude<PlanElementKind, 'symbol'>
+  | `sym:${PlanSymbolType}`;
+
+/**
+ * Orden de las herramientas, que es el de las teclas: `1` selecciona y del `2`
+ * al `9` van las demás, en el orden en que aparecen en el riel.
+ */
+const TOOL_ORDER: DrawTool[] = ['select', 'pared', 'puerta', 'ventana', 'abertura', 'cota', 'texto', 'medir', 'escala'];
 
 interface DragState {
-  /** Mover el elemento, o estirar uno de los extremos de una pared. */
+  /** Mover el elemento (o la selección entera), o estirar una de sus puntas. */
   mode: 'move' | 'endpointA' | 'endpointB';
   planId: string;
   /** Copia del elemento al empezar, para calcular todo desde el original. */
   origin: PlanElement;
   elementId: string;
+  /** Qué elementos se están moviendo: puede ser la selección completa. */
+  ids: string[];
   startClientX: number;
   startClientY: number;
   /** Unidades del lienzo por píxel de pantalla. */
@@ -149,14 +203,18 @@ interface DraftWall {
  * (suprimir, deshacer, duplicar) y las flechas para mover, más un número por
  * herramienta en el orden del riel.
  */
-export const SHORTCUT_GROUPS: Array<{ title: string; items: Array<{ keys: string[]; what: string }> }> = [  {
+export const SHORTCUT_GROUPS: Array<{ title: string; items: Array<{ keys: string[]; what: string }> }> = [
+  {
     title: 'Edición',
     items: [
-      { keys: ['Supr', 'Retroceso'], what: 'Borrar el elemento seleccionado' },
+      { keys: ['Supr', 'Retroceso'], what: 'Borrar lo seleccionado' },
       { keys: ['Ctrl', 'Z'], what: 'Deshacer el último cambio' },
       { keys: ['Ctrl', 'Mayús', 'Z'], what: 'Rehacer' },
       { keys: ['Ctrl', 'Y'], what: 'Rehacer (lo mismo, en Windows)' },
-      { keys: ['Ctrl', 'D'], what: 'Duplicar el elemento seleccionado' },
+      { keys: ['Ctrl', 'C'], what: 'Copiar lo seleccionado' },
+      { keys: ['Ctrl', 'X'], what: 'Cortar lo seleccionado' },
+      { keys: ['Ctrl', 'V'], what: 'Pegar, corrido respecto del original' },
+      { keys: ['Ctrl', 'D'], what: 'Duplicar sin pasar por el portapapeles' },
       { keys: ['Flechas'], what: 'Mover 1 unidad' },
       { keys: ['Mayús', 'Flechas'], what: 'Mover una rejilla (25 unidades)' },
       { keys: ['Ctrl', 'S'], what: 'Descargar el plano en PNG' },
@@ -165,14 +223,22 @@ export const SHORTCUT_GROUPS: Array<{ title: string; items: Array<{ keys: string
   {
     title: 'Herramientas y vista',
     items: [
-      { keys: ['1'], what: 'Seleccionar y mover' },
-      { keys: ['2'], what: 'Pared' },
+      { keys: ['1'], what: 'Seleccionar y mover (arrastrá un recuadro para elegir varios)' },
+      { keys: ['2'], what: 'Pared, encadenada de punta a punta' },
       { keys: ['3'], what: 'Puerta' },
       { keys: ['4'], what: 'Ventana' },
       { keys: ['5'], what: 'Abertura' },
+      { keys: ['6'], what: 'Cota: mide y escribe el largo' },
+      { keys: ['7'], what: 'Texto: una nota en el plano' },
+      { keys: ['8'], what: 'Medir entre dos puntos, sin dejar nada dibujado' },
+      { keys: ['9'], what: 'Escala: calibrar sobre una distancia conocida' },
       { keys: ['V'], what: 'Volver a seleccionar' },
       { keys: ['G'], what: 'Encender o apagar la rejilla' },
+      { keys: ['O'], what: 'Orto: trabar el trazo en horizontal y vertical' },
       { keys: ['F'], what: 'Pantalla completa' },
+      { keys: ['Rueda'], what: 'Acercar y alejar donde está el puntero' },
+      { keys: ['Espacio', 'arrastrar'], what: 'Desplazar el plano' },
+      { keys: ['Z'], what: 'Ajustar el plano a la ventana' },
       { keys: ['Esc'], what: 'Terminar la herramienta, deseleccionar o salir de pantalla completa' },
       { keys: ['?'], what: 'Mostrar esta ayuda' },
     ],
@@ -206,16 +272,34 @@ function symbolOfTool(tool: DrawTool): PlanSymbolType {
 /** Nombre de la herramienta activa, para la barra del lienzo. */
 function toolLabel(tool: DrawTool): string {
   if (tool === 'select') return 'Seleccionar';
+  if (tool === 'medir') return 'Medir';
+  if (tool === 'escala') return 'Escala';
   if (tool.startsWith('sym:')) return findSymbol(symbolOfTool(tool)).label;
-  return findStructure(tool as PlanStructureType)?.label ?? 'Dibujar';
+  return findTool(tool as Exclude<PlanElementKind, 'symbol'>)?.label ?? 'Dibujar';
 }
 
 /** Qué hacer ahora, en una línea. */
 function toolHint(tool: DrawTool): string {
-  if (tool === 'select') return 'Hacé clic en un elemento para editarlo y arrastralo para moverlo.';
-  if (tool === 'pared') return 'Mantené presionado y arrastrá de una punta a la otra: la pared se engancha con las esquinas y con las horizontales, verticales y diagonales exactas.';
+  if (tool === 'select') {
+    return 'Hacé clic en un elemento para editarlo, arrastralo para moverlo, y con el fondo vacío arrastrá un recuadro para seleccionar varios.';
+  }
+  if (tool === 'pared') {
+    return 'Clic en cada punta: la pared sigue encadenada desde donde terminó. Esc o Enter terminan. Se engancha con las esquinas y se endereza sola.';
+  }
   if (tool === 'puerta' || tool === 'ventana' || tool === 'abertura') {
     return 'Hacé clic sobre una pared: la abertura se abre el hueco y queda alineada sola.';
+  }
+  if (tool === 'cota') {
+    return 'Arrastrá de una punta a la otra: la cota mide y escribe el largo. Con la escala cargada, en metros.';
+  }
+  if (tool === 'texto') {
+    return 'Un clic donde va la nota y la escribís en el panel de propiedades. Con el círculo se le agrega una directriz.';
+  }
+  if (tool === 'medir') {
+    return 'Arrastrá entre dos puntos para medir: distancia, ángulo y Δx/Δy. No deja nada dibujado.';
+  }
+  if (tool === 'escala') {
+    return 'Marcá dos puntos cuya distancia real conozcas (por ejemplo los extremos de una pared): después escribís cuántos metros hay.';
   }
   return 'Hacé clic en el plano donde va. Podés ubicar varios seguidos.';
 }
@@ -351,6 +435,90 @@ const PlanElementNode: React.FC<{
     );
   }
 
+  /* --- Cota --- */
+  if (kind === 'cota') {
+    const dx = (element.x2 ?? element.x) - element.x;
+    const dy = (element.y2 ?? element.y) - element.y;
+    const length = Math.hypot(dx, dy);
+    const offset = element.offset ?? DEFAULT_COTA_OFFSET;
+    const nx = length < 1 ? 0 : (-dy / length) * offset;
+    const ny = length < 1 ? 0 : (dx / length) * offset;
+
+    return (
+      <g
+        transform={elementTransform(element)}
+        onPointerDown={(event) => onPointerDown(event, element)}
+        className="cursor-grab active:cursor-grabbing"
+      >
+        {/* Zona de agarre: la línea de medida y la de cota, anchas para el dedo */}
+        <line x1={0} y1={0} x2={dx} y2={dy} stroke="transparent" strokeWidth={40} data-export="hide" />
+        <line
+          x1={nx}
+          y1={ny}
+          x2={dx + nx}
+          y2={dy + ny}
+          stroke="transparent"
+          strokeWidth={40}
+          data-export="hide"
+        />
+        {selected && (
+          <>
+            <line x1={0} y1={0} x2={dx} y2={dy} stroke={SELECTION} strokeWidth={3} strokeDasharray="8 6" data-export="hide" />
+            {/* Los tiradores van en los puntos que se miden, no en la línea de
+                cota: lo que se acomoda es lo que se está midiendo. */}
+            <circle cx={0} cy={0} r={9} fill={BACKGROUND_FILL} stroke={SELECTION} strokeWidth={2.5} data-export="hide" className="cursor-move" onPointerDown={(event) => onHandlePointerDown(event, element, 'a')} />
+            <circle cx={dx} cy={dy} r={9} fill={BACKGROUND_FILL} stroke={SELECTION} strokeWidth={2.5} data-export="hide" className="cursor-move" onPointerDown={(event) => onHandlePointerDown(event, element, 'b')} />
+          </>
+        )}
+        {renderTool(element, { wall: INK, gap: BACKGROUND_FILL })}
+      </g>
+    );
+  }
+
+  /* --- Texto --- */
+  if (kind === 'texto') {
+    const size = element.size ?? DEFAULT_TEXT_SIZE;
+    const width = Math.max(40, (element.label ?? '').length * size * 0.52 + 16);
+
+    return (
+      <g
+        transform={elementTransform(element)}
+        onPointerDown={(event) => onPointerDown(event, element)}
+        className="cursor-grab active:cursor-grabbing"
+      >
+        <rect x={-8} y={-size - 4} width={width} height={size * 1.6 + 8} fill="transparent" data-export="hide" />
+        {selected && (
+          <rect
+            x={-8}
+            y={-size - 4}
+            width={width}
+            height={size * 1.6 + 8}
+            rx={4}
+            fill={SELECTION}
+            fillOpacity={0.12}
+            stroke={SELECTION}
+            strokeDasharray="6 4"
+            data-export="hide"
+          />
+        )}
+        {renderTool(element, { wall: INK, gap: BACKGROUND_FILL })}
+        {selected && element.x2 !== undefined && element.y2 !== undefined && (
+          <circle
+            cx={element.x2 - element.x}
+            cy={element.y2 - element.y}
+            r={9}
+            fill={BACKGROUND_FILL}
+            stroke={SELECTION}
+            strokeWidth={2.5}
+            data-export="hide"
+            className="cursor-move"
+            onPointerDown={(event) => onHandlePointerDown(event, element, 'b')}
+          />
+        )}
+      </g>
+    );
+  }
+
   /* --- Plantilla eléctrica --- */
   const def = findSymbol(element.symbol ?? 'toma');
   const hitWidth = Math.max(44, def.size + 26);
@@ -405,39 +573,57 @@ const PlanElementNode: React.FC<{
  * quedaría con el nombre al revés y una de una pared lateral, vertical. Además
  * el texto se corre para adentro de la hoja cuando el elemento está cerca del
  * borde, así no se corta.
+ *
+ * Las cotas escriben acá su medida: es la capa que sabe la escala del plano.
  */
-const PlanLabel: React.FC<{ element: PlanElement; height: number; selected: boolean }> = ({
-  element,
-  height,
-  selected,
-}) => {
+const PlanLabel: React.FC<{
+  element: PlanElement;
+  plan: ClientPlan;
+  height: number;
+  selected: boolean;
+}> = ({ element, plan, height, selected }) => {
   const kind = elementKind(element);
   const label = (element.label ?? '').trim();
 
-  /* Los elementos que se llaman igual que su tipo no llevan rótulo: el dibujo
-     ya dice lo que son y el plano queda más limpio. */
-  const defaultLabel = kind === 'symbol' ? findSymbol(element.symbol ?? 'toma').label : findStructure(kind)?.label;
-  if (!label || label === defaultLabel) return null;
-
-  const fontSize = isStructure(element) ? 14 : 15;
+  let text = label;
+  let fontSize = isStructure(element) ? 14 : 15;
+  let anchor: 'middle' | 'start' = 'middle';
   let anchorX = element.x;
   let anchorY = element.y;
 
-  if (kind === 'pared') {
+  if (kind === 'cota') {
+    // Sin rótulo propio, la cota muestra su medida (con la escala si la hay).
+    text = label || formatLength(plan, cotaLength(element));
+    const point = cotaTextPoint(element);
+    anchorX = point.x;
+    anchorY = point.y - 7;
+  } else if (kind === 'texto') {
+    if (!label) return null;
+    fontSize = element.size ?? DEFAULT_TEXT_SIZE;
+    anchor = 'start';
+  } else if (kind === 'pared') {
+    /* Los elementos que se llaman igual que su tipo no llevan rótulo: el dibujo
+       ya dice lo que son y el plano queda más limpio. */
+    if (!label || label === findTool('pared')?.label) return null;
     anchorX = (element.x + (element.x2 ?? element.x)) / 2;
     anchorY = (element.y + (element.y2 ?? element.y)) / 2 - (element.thickness ?? 14) / 2 - 8;
   } else if (isOpening(element)) {
+    if (!label || label === findTool(kind as 'puerta' | 'ventana' | 'abertura')?.label) return null;
     anchorY = element.y + (element.thickness ?? 14) / 2 + 20;
   } else {
+    if (!label || label === findSymbol(element.symbol ?? 'toma').label) return null;
     anchorY = element.y + findSymbol(element.symbol ?? 'toma').size / 2 + 18;
   }
 
   // Ancho aproximado del texto, para no dejarlo salir de la hoja.
-  const halfWidth = (label.length * fontSize * 0.52) / 2;
-  const x = Math.min(Math.max(anchorX, halfWidth + 4), PLAN_WIDTH - halfWidth - 4);
+  const width = text.length * fontSize * 0.52;
+  const x =
+    anchor === 'middle'
+      ? Math.min(Math.max(anchorX, width / 2 + 4), PLAN_WIDTH - width / 2 - 4)
+      : Math.min(Math.max(anchorX, 4), PLAN_WIDTH - width - 4);
   const y = Math.min(Math.max(anchorY, fontSize + 2), height - 5);
 
-  const color = selected ? SELECTION : isStructure(element) ? SOFT_INK : INK;
+  const color = selected ? SELECTION : kind === 'texto' ? INK : isStructure(element) ? SOFT_INK : INK;
 
   /* El rótulo se dibuja dos veces: primero el mismo texto en blanco y con un
      trazo grueso (el «halo», que lo despega de la pared cuando lo cruza) y
@@ -449,29 +635,97 @@ const PlanLabel: React.FC<{ element: PlanElement; height: number; selected: bool
       <text
         x={x}
         y={y}
-        textAnchor="middle"
+        textAnchor={anchor}
         fontSize={fontSize}
         fontFamily={PLAN_FONT}
-        fontWeight={selected ? 700 : 400}
+        fontWeight={selected ? 700 : kind === 'texto' ? 600 : 400}
         fill={BACKGROUND_FILL}
         stroke={BACKGROUND_FILL}
         strokeWidth={5}
         strokeLinejoin="round"
       >
-        {label}
+        {text}
       </text>
       <text
         x={x}
         y={y}
-        textAnchor="middle"
+        textAnchor={anchor}
         fontSize={fontSize}
         fontFamily={PLAN_FONT}
-        fontWeight={selected ? 700 : 400}
+        fontWeight={selected ? 700 : kind === 'texto' ? 600 : 400}
         fill={color}
         stroke="none"
       >
-        {label}
+        {text}
       </text>
+    </g>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+/* Ayudas de dibujo                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Etiqueta de una medición: en un recuadro oscuro, como en un programa de dibujo. */
+const MeasureLabel: React.FC<{ x: number; y: number; text: string }> = ({ x, y, text }) => (
+  <g pointerEvents="none">
+    <rect
+      x={x - text.length * 4.4 - 8}
+      y={y - 34}
+      width={text.length * 8.8 + 16}
+      height={26}
+      rx={5}
+      fill={MEASURE}
+      opacity={0.92}
+    />
+    <text x={x} y={y - 15} textAnchor="middle" fontSize={15} fontFamily={PLAN_FONT} fill={BACKGROUND_FILL}>
+      {text}
+    </text>
+  </g>
+);
+
+/**
+ * Trazo en curso.
+ *
+ * Muestra qué se está dibujando y cuánto mide, con la escala del plano aplicada
+ * cuando está cargada: es la diferencia entre dibujar a ojo y saber que esa
+ * pared mide 3,20 m.
+ */
+const DraftOverlay: React.FC<{
+  tool: DrawTool;
+  draft: DraftWall;
+  plan: ClientPlan;
+  ortho: boolean;
+  chain: boolean;
+}> = ({ tool, draft, plan, ortho }) => {
+  const measurement = measureBetween({ x: draft.x, y: draft.y }, { x: draft.x2, y: draft.y2 });
+  const label = `${formatLength(plan, measurement.distance)} · ${measurement.angle}°${ortho ? ' · orto' : ''}`;
+
+  return (
+    <g data-export="hide" pointerEvents="none">
+      {tool === 'pared' && (
+        <line
+          x1={draft.x}
+          y1={draft.y}
+          x2={draft.x2}
+          y2={draft.y2}
+          stroke={INK}
+          strokeWidth={14}
+          strokeLinecap="square"
+          opacity={0.7}
+        />
+      )}
+      <line
+        x1={draft.x}
+        y1={draft.y}
+        x2={draft.x2}
+        y2={draft.y2}
+        stroke={tool === 'pared' ? SELECTION : MEASURE}
+        strokeWidth={1.8}
+        strokeDasharray="7 5"
+      />
+      <circle cx={draft.x} cy={draft.y} r={4.5} fill={tool === 'pared' ? SELECTION : MEASURE} />
+      <MeasureLabel x={(draft.x + draft.x2) / 2} y={(draft.y + draft.y2) / 2} text={label} />
     </g>
   );
 };
@@ -499,17 +753,41 @@ export const PlanView: React.FC<PlanViewProps> = ({
 }) => {
   const [plans, setPlans] = useState<ClientPlan[]>(() => client.plans ?? []);
   const [activePlanId, setActivePlanId] = useState<string>(() => (client.plans ?? [])[0]?.id ?? '');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** Elementos seleccionados: puede haber varios, para moverlos o borrarlos juntos. */
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [tool, setTool] = useState<DrawTool>('select');
   const [snap, setSnap] = useState(true);
+  /** Orto: traba el trazo y el movimiento en horizontal y vertical. */
+  const [ortho, setOrtho] = useState(false);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [draftWall, setDraftWall] = useState<DraftWall | null>(null);
+  /** Punto donde terminó la última pared: la siguiente sigue desde ahí. */
+  const [chainStart, setChainStart] = useState<{ x: number; y: number } | null>(null);
+  /** Última medición, que se muestra hasta que se mida otra cosa. */
+  const [measurement, setMeasurement] = useState<DraftWall | null>(null);
+  /** Recuadro de selección en curso. */
+  const [selectionRect, setSelectionRect] = useState<DraftWall | null>(null);
+  const [isBandSelecting, setIsBandSelecting] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  /** Vista del lienzo: 1 es «ajustado a la ventana». */
+  const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 });
+  /** Capas visibles: sirven para trabajar sobre una foto sin ruido encima. */
+  const [visible, setVisible] = useState({
+    estructura: true,
+    simbolos: true,
+    anotaciones: true,
+    fondo: true,
+    rejilla: true,
+  });
   const [isNewPlanOpen, setIsNewPlanOpen] = useState(false);
   const [newPlanName, setNewPlanName] = useState('');
   const [newPlanSheet, setNewPlanSheet] = useState(PLAN_SHEETS[0].id);
   const [newPlanSupplyId, setNewPlanSupplyId] = useState('');
   const [newPlanWithData, setNewPlanWithData] = useState(true);
+  /** Calibración de escala: los dos puntos marcados y el dato que se pide. */
+  const [scaleDraft, setScaleDraft] = useState<DraftWall | null>(null);
+  const [scaleMeters, setScaleMeters] = useState('');
   const [message, setMessage] = useState<{ tone: 'info' | 'danger' | 'success'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
@@ -529,6 +807,15 @@ export const PlanView: React.FC<PlanViewProps> = ({
   const [historyInfo, setHistoryInfo] = useState({ past: 0, future: 0 });
   /** Un arrastre anota un solo paso, y recién cuando el elemento se mueve. */
   const dragRecordedRef = useRef(false);
+  /** Portapapeles propio: guarda copias listas para pegar. */
+  const clipboardRef = useRef<PlanElement[]>([]);
+  /** Desplazamiento del plano con la barra espaciadora o el botón del medio. */
+  const panRef = useRef<{ clientX: number; clientY: number; panX: number; panY: number } | null>(null);
+  const spaceRef = useRef(false);
+  /** Recuadro de selección: en refs para no rearmar los listeners por cuadro. */
+  const bandRef = useRef<{ x: number; y: number } | null>(null);
+  const bandRectRef = useRef<DraftWall | null>(null);
+  const bandAddRef = useRef(false);
   /** Último estado del teclado: el manejador se registra una sola vez. */
   const keyHandlerRef = useRef<(event: KeyboardEvent) => void>(() => undefined);
   clientRef.current = client;
@@ -548,9 +835,12 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
   useEffect(() => {
     const next = client.plans ?? [];
-    setSelectedId(null);
+    setSelectedIds([]);
     setTool('select');
     setActivePlanId(next[0]?.id ?? '');
+    setView({ zoom: 1, panX: 0, panY: 0 });
+    setChainStart(null);
+    setMeasurement(null);
     // El historial es de este cliente: al cambiar de ficha no se puede deshacer
     // un cambio que fue de otro.
     historyRef.current = newHistory<ClientPlan[]>();
@@ -558,14 +848,42 @@ export const PlanView: React.FC<PlanViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client.id]);
 
+  /** Al cambiar de plano también se vuelve a la vista ajustada. */
+  useEffect(() => {
+    setSelectedIds([]);
+    setChainStart(null);
+    setMeasurement(null);
+    setView({ zoom: 1, panX: 0, panY: 0 });
+  }, [activePlanId]);
+
   const activePlan = plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? null;
   const height = activePlan ? planHeight(activePlan) : 707;
-  const selected = activePlan?.elements.find((element) => element.id === selectedId) ?? null;
+  const selectedElements = activePlan
+    ? activePlan.elements.filter((element) => selectedIds.includes(element.id))
+    : [];
+  const selected = selectedElements.length === 1 ? selectedElements[0] : null;
 
   /** Elementos en orden de pintado: paredes, aberturas y símbolos. */
   const orderedElements = useMemo(
     () => (activePlan ? [...activePlan.elements].sort((a, b) => layerOf(a) - layerOf(b)) : []),
     [activePlan]
+  );
+
+  /**
+   * Qué se dibuja según las capas encendidas.
+   *
+   * Apagar una capa no borra nada: sirve para trabajar sobre una foto sin los
+   * símbolos encima, o para revisar solo la planta.
+   */
+  const visibleElements = useMemo(
+    () =>
+      orderedElements.filter((element) => {
+        const kind = elementKind(element);
+        if (kind === 'symbol') return visible.simbolos;
+        if (kind === 'cota' || kind === 'texto') return visible.anotaciones;
+        return visible.estructura;
+      }),
+    [orderedElements, visible]
   );
 
   /* ---------------------------------------------------------------- */
@@ -617,9 +935,9 @@ export const PlanView: React.FC<PlanViewProps> = ({
     plansRef.current = next;
     setPlans(next);
     onUpdateRef.current({ ...clientRef.current, plans: next });
-    // Si el elemento seleccionado ya no existe, se suelta la selección.
-    setSelectedId((current) =>
-      current && next.some((plan) => plan.elements.some((element) => element.id === current)) ? current : null
+    // Los elementos seleccionados que ya no existen se sueltan.
+    setSelectedIds((current) =>
+      current.filter((id) => next.some((plan) => plan.elements.some((element) => element.id === id)))
     );
     setHistoryInfo(historyDepth(historyRef.current));
   }, []);
@@ -652,43 +970,125 @@ export const PlanView: React.FC<PlanViewProps> = ({
   }, []);
 
   /**
-   * Cómo está dibujada la hoja dentro del lienzo de la pantalla.
+   * Cómo está dibujada la hoja dentro del lienzo de la pantalla, **sin zoom**.
    *
    * El SVG ocupa todo el recuadro disponible y la hoja se ajusta adentro
    * conservando su proporción (como en un programa de dibujo), así que puede
    * quedar con franjas libres arriba y abajo o a los costados. Todo lo que
    * traduce entre píxeles y coordenadas del plano pasa por acá.
    */
-  const viewMetrics = useCallback((): { scale: number; offsetX: number; offsetY: number } | null => {
+  const viewMetrics = useCallback((): { baseScale: number; offsetX: number; offsetY: number } | null => {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0 || rect.height === 0) return null;
-    const scale = Math.min(rect.width / PLAN_WIDTH, rect.height / height);
+    const baseScale = Math.min(rect.width / PLAN_WIDTH, rect.height / height);
     return {
-      scale,
-      offsetX: (rect.width - PLAN_WIDTH * scale) / 2,
-      offsetY: (rect.height - height * scale) / 2,
+      baseScale,
+      offsetX: (rect.width - PLAN_WIDTH * baseScale) / 2,
+      offsetY: (rect.height - height * baseScale) / 2,
     };
   }, [height]);
 
-  /** Pasa un punto de la pantalla a coordenadas del lienzo. Fuera de la hoja, nada. */
-  const clientToPlan = useCallback(
+  /** Unidades del lienzo por píxel de pantalla, con el zoom puesto. */
+  const planScale = useCallback(
+    (): number => {
+      const metrics = viewMetrics();
+      return metrics ? 1 / (metrics.baseScale * view.zoom) : 1;
+    },
+    [viewMetrics, view.zoom]
+  );
+
+  /** Pasa un punto de la pantalla a coordenadas del lienzo, sin recortar. */
+  const clientToPlanRaw = useCallback(
     (clientX: number, clientY: number): { x: number; y: number } | null => {
       const rect = svgRef.current?.getBoundingClientRect();
       const metrics = viewMetrics();
       if (!rect || !metrics) return null;
-      const x = (clientX - rect.left - metrics.offsetX) / metrics.scale;
-      const y = (clientY - rect.top - metrics.offsetY) / metrics.scale;
-      if (x < 0 || y < 0 || x > PLAN_WIDTH || y > height) return null;
-      return { x, y };
+      const screenX = (clientX - rect.left - metrics.offsetX) / metrics.baseScale;
+      const screenY = (clientY - rect.top - metrics.offsetY) / metrics.baseScale;
+      return { x: (screenX - view.panX) / view.zoom, y: (screenY - view.panY) / view.zoom };
     },
-    [viewMetrics, height]
+    [viewMetrics, view]
   );
 
-  /** Ajusta un punto del lienzo a la rejilla y a las esquinas de las paredes. */
+  /** Pasa un punto de la pantalla a coordenadas del lienzo. Fuera de la hoja, nada. */
+  const clientToPlan = useCallback(
+    (clientX: number, clientY: number): { x: number; y: number } | null => {
+      const point = clientToPlanRaw(clientX, clientY);
+      if (!point) return null;
+      if (point.x < 0 || point.y < 0 || point.x > PLAN_WIDTH || point.y > height) return null;
+      return point;
+    },
+    [clientToPlanRaw, height]
+  );
+
+  /** Acerca o aleja dejando quieto el punto que está bajo el puntero. */
+  const zoomAt = useCallback(
+    (clientX: number, clientY: number, factor: number): void => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      const metrics = viewMetrics();
+      if (!rect || !metrics) return;
+
+      setView((current) => {
+        const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, current.zoom * factor));
+        if (zoom === current.zoom) return current;
+        const screenX = (clientX - rect.left - metrics.offsetX) / metrics.baseScale;
+        const screenY = (clientY - rect.top - metrics.offsetY) / metrics.baseScale;
+        const planX = (screenX - current.panX) / current.zoom;
+        const planY = (screenY - current.panY) / current.zoom;
+        return { zoom, panX: screenX - planX * zoom, panY: screenY - planY * zoom };
+      });
+    },
+    [viewMetrics]
+  );
+
+  /** Acerca o aleja desde el centro del lienzo (botones y teclas). */
+  const zoomBy = useCallback(
+    (factor: number): void => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, factor);
+    },
+    [zoomAt]
+  );
+
+  /** Vuelve a la vista que muestra la hoja entera. */
+  const zoomToFit = useCallback((): void => {
+    setView({ zoom: 1, panX: 0, panY: 0 });
+  }, []);
+
+  /** Ajusta un punto del plano a las paredes, sus puntos medios y la rejilla. */
   const snapToPlan = useCallback(
-    (x: number, y: number): { x: number; y: number } =>
-      snapPoint(x, y, { grid: snap, corners: wallCorners(currentElements()), height, radius: 30 }),
+    (x: number, y: number): { x: number; y: number } => {
+      const elements = currentElements();
+      return snapPoint(x, y, {
+        grid: snap,
+        corners: wallCorners(elements),
+        midpoints: wallMidpoints(elements),
+        walls: wallsOf(elements),
+        height,
+        radius: 30,
+      });
+    },
     [snap, height, currentElements]
+  );
+
+  /**
+   * Con orto activado, el trazo y el movimiento se traban en horizontal o
+   * vertical: es la tecla F8 de toda la vida, para no depender del pulso.
+   */
+  const applyOrtho = useCallback(
+    (ax: number, ay: number, bx: number, by: number): { x: number; y: number } => {
+      if (!ortho) return { x: bx, y: by };
+      return Math.abs(bx - ax) >= Math.abs(by - ay) ? { x: bx, y: ay } : { x: ax, y: by };
+    },
+    [ortho]
+  );
+
+  /** Encadena el trazo: con orto, endereza; sin orto, engancha ángulos redondos. */
+  const constrainDraft = useCallback(
+    (ax: number, ay: number, bx: number, by: number): { x: number; y: number } =>
+      ortho ? applyOrtho(ax, ay, bx, by) : constrainAngle(ax, ay, bx, by),
+    [ortho, applyOrtho]
   );
 
   /* ---------------------------------------------------------------- */
@@ -738,6 +1138,22 @@ export const PlanView: React.FC<PlanViewProps> = ({
         if (letra === 'd' || letra === 's') event.preventDefault();
         return;
       }
+      if (letra === 'c') {
+        event.preventDefault();
+        handleCopy();
+        return;
+      }
+      if (letra === 'x') {
+        event.preventDefault();
+        handleCopy();
+        handleRemoveSelection();
+        return;
+      }
+      if (letra === 'v') {
+        event.preventDefault();
+        handlePaste();
+        return;
+      }
       if (letra === 'd') {
         event.preventDefault();
         handleDuplicateElement();
@@ -753,23 +1169,51 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
     if (escribiendo) return;
 
+    /* La barra espaciadora desplaza el plano, como en cualquier editor. Va
+       después del control de escritura: si no, no se podría escribir un espacio
+       en el nombre del elemento. */
+    if (tecla === ' ') {
+      spaceRef.current = true;
+      event.preventDefault();
+      return;
+    }
+
     if (tecla === 'Escape') {
+      // Va soltando de a uno: primero la herramienta, después la cadena de
+      // paredes, después la selección y al final la pantalla completa.
       if (tool !== 'select') {
         setTool('select');
+        setChainStart(null);
         return;
       }
-      if (selectedId) {
-        setSelectedId(null);
+      if (chainStart) {
+        setChainStart(null);
+        return;
+      }
+      if (selectedIds.length > 0) {
+        setSelectedIds([]);
+        return;
+      }
+      if (measurement) {
+        setMeasurement(null);
         return;
       }
       if (focus) onToggleFocus?.();
       return;
     }
 
-    if (tecla === 'Delete' || tecla === 'Backspace') {
-      if (!selectedId) return;
+    if (tecla === 'Enter' && chainStart) {
+      // Enter cierra la cadena de paredes, como en cualquier programa de dibujo.
       event.preventDefault();
-      handleRemoveElement(selectedId);
+      setChainStart(null);
+      setTool('select');
+      return;
+    }
+
+    if (tecla === 'Delete' || tecla === 'Backspace') {
+      if (selectedIds.length === 0) return;
+      event.preventDefault();
+      handleRemoveSelection();
       return;
     }
 
@@ -782,6 +1226,14 @@ export const PlanView: React.FC<PlanViewProps> = ({
       setSnap((current) => !current);
       return;
     }
+    if (tecla === 'o' || tecla === 'O') {
+      setOrtho((current) => !current);
+      return;
+    }
+    if (tecla === 'z' || tecla === 'Z') {
+      zoomToFit();
+      return;
+    }
     if (tecla === 'f' || tecla === 'F') {
       onToggleFocus?.();
       return;
@@ -790,17 +1242,26 @@ export const PlanView: React.FC<PlanViewProps> = ({
       setTool('select');
       return;
     }
+    if (tecla === '+' || tecla === '=') {
+      zoomBy(1.25);
+      return;
+    }
+    if (tecla === '-' || tecla === '_') {
+      zoomBy(1 / 1.25);
+      return;
+    }
 
     /* Un número por herramienta, en el orden del riel. */
     const numero = Number(tecla);
-    if (Number.isInteger(numero) && numero >= 1 && numero <= 1 + STRUCTURE_TOOLS.length) {
-      if (numero === 1) setTool('select');
-      else setTool(STRUCTURE_TOOLS[numero - 2].type);
+    if (Number.isInteger(numero) && numero >= 1 && numero <= TOOL_ORDER.length) {
+      const elegida = TOOL_ORDER[numero - 1];
+      setTool(elegida);
+      if (elegida !== 'pared') setChainStart(null);
       return;
     }
 
     if (tecla.startsWith('Arrow')) {
-      if (!selectedId) return;
+      if (selectedIds.length === 0) return;
       event.preventDefault();
       const paso = event.shiftKey ? PLAN_GRID : 1;
       if (tecla === 'ArrowLeft') nudgeSelection(-paso, 0);
@@ -812,8 +1273,15 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => keyHandlerRef.current(event);
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.key === ' ') spaceRef.current = false;
+    };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
   }, []);
 
   /* ---------------------------------------------------------------- */
@@ -827,7 +1295,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       supplyId: activePlan.supplyId,
     });
     patchElements(activePlan.id, [...currentElements(), element]);
-    setSelectedId(element.id);
+    setSelectedIds([element.id]);
   };
 
   const placeOpening = (point: { x: number; y: number }, type: Exclude<PlanStructureType, 'pared'>): void => {
@@ -836,38 +1304,96 @@ export const PlanView: React.FC<PlanViewProps> = ({
     const near = nearestWall(elements, point.x, point.y, OPENING_SNAP_RADIUS);
     const opening = createOpening(type, point.x, point.y, near?.wall, { supplyId: activePlan.supplyId });
     patchElements(activePlan.id, [...elements, opening]);
-    setSelectedId(opening.id);
+    setSelectedIds([opening.id]);
     setMessage(
       near
         ? { tone: 'info', text: `Se abrió el hueco en la pared. Arrastrala a lo largo de ella para correrla.` }
         : {
             tone: 'info',
-            text: 'La abertura quedó suelta, sin pared. Dibujá una pared y arrastrala encima para que se apoye.',
+            text: 'La abertura quedó suelta, sin pared. Dibujá una pared debajo y arrastrala encima para que se apoye.',
           }
     );
+  };
+
+  const placeText = (point: { x: number; y: number }): void => {
+    if (!activePlan) return;
+    const position = snapToPlan(point.x, point.y);
+    const element = createText(position.x, position.y, 'Nota');
+    patchElements(activePlan.id, [...currentElements(), element]);
+    setSelectedIds([element.id]);
+    setMessage({
+      tone: 'info',
+      text: 'Escribí la nota en «Nombre en el plano», en el panel de la derecha.',
+    });
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Trazos de dos puntos: pared, cota, medir y escala                 */
+  /* ---------------------------------------------------------------- */
+
+  /** Cierra una pared y deja la cadena lista para seguir desde su punta. */
+  const commitWall = (draft: DraftWall): void => {
+    if (!activePlan) return;
+    const wall = createWall(draft.x, draft.y, draft.x2, draft.y2);
+    const elements = currentElements();
+    // Una pared nueva puede pasar por debajo de aberturas que quedaron sueltas:
+    // las que están justo encima se apoyan y toman su espesor.
+    const adopted = elements.map((element) => {
+      if (!isOpening(element) || element.wallId) return element;
+      const radius = (element.thickness ?? wall.thickness ?? 14) / 2 + 8;
+      const near = nearestWall([wall], element.x, element.y, radius);
+      return near
+        ? { ...element, wallId: wall.id, x: near.x, y: near.y, rotation: near.rotation, thickness: wall.thickness }
+        : element;
+    });
+    patchElements(activePlan.id, [...adopted, wall]);
+    setSelectedIds([wall.id]);
   };
 
   const handleCanvasPointerDown = (event: React.PointerEvent): void => {
     if (!activePlan || busy) return;
 
-    if (tool === 'select') {
-      setSelectedId(null);
+    // Botón del medio o barra espaciadora: se desplaza el plano.
+    if (event.button === 1 || spaceRef.current) {
+      const metrics = viewMetrics();
+      if (!metrics) return;
+      panRef.current = { clientX: event.clientX, clientY: event.clientY, panX: view.panX, panY: view.panY };
+      setIsPanning(true);
       return;
     }
 
-    const point = clientToPlan(event.clientX, event.clientY);
-    if (!point) return;
+    const raw = clientToPlanRaw(event.clientX, event.clientY);
+    if (!raw) return;
 
-    if (tool === 'pared') {
-      const start = snapToPlan(point.x, point.y);
+    if (tool === 'select') {
+      // Arrastrar sobre el fondo abre un recuadro de selección.
+      bandRef.current = { x: raw.x, y: raw.y };
+      bandRectRef.current = null;
+      bandAddRef.current = event.shiftKey;
+      setIsBandSelecting(true);
+      if (!event.shiftKey) setSelectedIds([]);
+      return;
+    }
+
+    if (tool === 'pared' || tool === 'cota' || tool === 'medir' || tool === 'escala') {
+      // Con la pared encadenada, el trazo sigue desde la punta anterior.
+      const start =
+        tool === 'pared' && chainStart ? chainStart : snapToPlan(Math.max(0, raw.x), Math.max(0, raw.y));
       draftRef.current = { x: start.x, y: start.y, x2: start.x, y2: start.y };
       setDraftWall({ ...draftRef.current });
       setIsDrawing(true);
       return;
     }
 
+    const point = clientToPlan(event.clientX, event.clientY);
+    if (!point) return;
+
     if (tool === 'puerta' || tool === 'ventana' || tool === 'abertura') {
       placeOpening(point, tool);
+      return;
+    }
+    if (tool === 'texto') {
+      placeText(point);
       return;
     }
 
@@ -875,7 +1401,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
   };
 
   /* ---------------------------------------------------------------- */
-  /* Trazo de paredes                                                  */
+  /* Trazo en curso: paredes encadenadas, cotas, medición y escala     */
   /* ---------------------------------------------------------------- */
 
   useEffect(() => {
@@ -886,13 +1412,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
       const point = clientToPlan(event.clientX, event.clientY);
       if (!draft || !point) return;
 
-      const free = snapPoint(point.x, point.y, {
-        grid: snap,
-        corners: wallCorners(currentElements()),
-        height,
-        radius: 26,
-      });
-      const constrained = constrainAngle(draft.x, draft.y, free.x, free.y);
+      const free = snapToPlan(point.x, point.y);
+      const constrained = constrainDraft(draft.x, draft.y, free.x, free.y);
       draftRef.current = { ...draft, x2: constrained.x, y2: constrained.y };
       setDraftWall({ ...draftRef.current });
     };
@@ -905,22 +1426,35 @@ export const PlanView: React.FC<PlanViewProps> = ({
       if (!draft || !activePlan) return;
 
       const length = Math.hypot(draft.x2 - draft.x, draft.y2 - draft.y);
-      if (length < MIN_WALL_LENGTH) return;
 
-      const wall = createWall(draft.x, draft.y, draft.x2, draft.y2);
-      const elements = currentElements();
-      // Una pared nueva puede pasar por debajo de aberturas que quedaron sueltas:
-      // las que están justo encima se apoyan y toman su espesor.
-      const adopted = elements.map((element) => {
-        if (!isOpening(element) || element.wallId) return element;
-        const radius = (element.thickness ?? wall.thickness ?? 14) / 2 + 8;
-        const near = nearestWall([wall], element.x, element.y, radius);
-        return near
-          ? { ...element, wallId: wall.id, x: near.x, y: near.y, rotation: near.rotation, thickness: wall.thickness }
-          : element;
-      });
-      patchElements(activePlan.id, [...adopted, wall]);
-      setSelectedId(wall.id);
+      if (tool === 'pared') {
+        if (length < MIN_WALL_LENGTH) {
+          // Un clic suelto fija el punto de arranque y espera la punta.
+          setChainStart({ x: draft.x, y: draft.y });
+          return;
+        }
+        commitWall(draft);
+        setChainStart({ x: draft.x2, y: draft.y2 });
+        return;
+      }
+
+      if (length < MIN_TWO_POINT_LENGTH) return;
+
+      if (tool === 'cota') {
+        const cota = createCota({ x: draft.x, y: draft.y }, { x: draft.x2, y: draft.y2 });
+        patchElements(activePlan.id, [...currentElements(), cota]);
+        setSelectedIds([cota.id]);
+        return;
+      }
+
+      if (tool === 'medir') {
+        setMeasurement(draft);
+        return;
+      }
+
+      // Escala: se piden los metros reales de lo que se acaba de marcar.
+      setScaleDraft(draft);
+      setScaleMeters('');
     };
 
     window.addEventListener('pointermove', onMove);
@@ -931,7 +1465,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [isDrawing, snap, height, activePlan, clientToPlan, currentElements, patchElements]);
+  }, [isDrawing, tool, activePlan, clientToPlan, snapToPlan, constrainDraft, currentElements, patchElements]);
 
   /* ---------------------------------------------------------------- */
   /* Arrastre y estirado                                               */
@@ -943,8 +1477,6 @@ export const PlanView: React.FC<PlanViewProps> = ({
     mode: DragState['mode']
   ): void => {
     if (!activePlan) return;
-    const metrics = viewMetrics();
-    if (!metrics) return;
 
     // El paso de historial se anota recién cuando el elemento se mueve de verdad:
     // un clic para seleccionar no tiene que llenar la lista de deshacer.
@@ -955,30 +1487,148 @@ export const PlanView: React.FC<PlanViewProps> = ({
       planId: activePlan.id,
       elementId: element.id,
       origin: { ...element },
+      ids: mode === 'move' ? selectedIds : [element.id],
       startClientX: event.clientX,
       startClientY: event.clientY,
-      scale: 1 / metrics.scale,
+      scale: planScale(),
       height: planHeight(activePlan),
     });
   };
 
   const handleElementPointerDown = (event: React.PointerEvent, element: PlanElement): void => {
     event.stopPropagation();
+
+    // Botón del medio o barra espaciadora: desplazar el plano, aunque el clic
+    // caiga encima de un elemento.
+    if (event.button === 1 || spaceRef.current) {
+      handleCanvasPointerDown(event);
+      return;
+    }
+
     // Con una herramienta de dibujo activa, cualquier clic sobre el plano dibuja:
     // así una puerta se apoya sobre la pared aunque el clic caiga encima de ella.
     if (tool !== 'select') {
       handleCanvasPointerDown(event);
       return;
     }
-    setSelectedId(element.id);
+
+    if (event.shiftKey) {
+      // Con Mayús se suma o se saca de la selección, sin mover nada.
+      setSelectedIds((current) =>
+        current.includes(element.id) ? current.filter((id) => id !== element.id) : [...current, element.id]
+      );
+      return;
+    }
+
+    if (!selectedIds.includes(element.id)) setSelectedIds([element.id]);
     startDrag(event, element, 'move');
   };
 
   const handleHandlePointerDown = (event: React.PointerEvent, element: PlanElement, handle: 'a' | 'b'): void => {
     event.stopPropagation();
-    setSelectedId(element.id);
+    setSelectedIds([element.id]);
     startDrag(event, element, handle === 'a' ? 'endpointA' : 'endpointB');
   };
+
+  /* Recuadro de selección ------------------------------------------- */
+
+  useEffect(() => {
+    if (!isBandSelecting) return;
+
+    const onMove = (event: PointerEvent): void => {
+      const start = bandRef.current;
+      const point = clientToPlanRaw(event.clientX, event.clientY);
+      if (!start || !point) return;
+      const rect = { x: start.x, y: start.y, x2: point.x, y2: point.y };
+      bandRectRef.current = rect;
+      setSelectionRect(rect);
+    };
+
+    const onUp = (): void => {
+      const band = bandRectRef.current;
+      bandRef.current = null;
+      bandRectRef.current = null;
+      setIsBandSelecting(false);
+      setSelectionRect(null);
+
+      const plan = plansRef.current.find((candidate) => candidate.id === activePlanIdRef.current);
+      if (!plan) return;
+
+      if (!band || Math.abs(band.x2 - band.x) < 4 || Math.abs(band.y2 - band.y) < 4) {
+        // Fue un clic: sirve para soltar la selección.
+        if (!bandAddRef.current) setSelectedIds([]);
+        return;
+      }
+
+      const ids = elementsInRect(plan.elements, { x1: band.x, y1: band.y, x2: band.x2, y2: band.y2 }).filter((id) =>
+        visibleElements.some((element) => element.id === id)
+      );
+      setSelectedIds((current) => (bandAddRef.current ? [...new Set([...current, ...ids])] : ids));
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [isBandSelecting, clientToPlanRaw, visibleElements]);
+
+  /* Desplazamiento del plano ---------------------------------------- */
+
+  useEffect(() => {
+    if (!isPanning) return;
+
+    const onMove = (event: PointerEvent): void => {
+      const pan = panRef.current;
+      const metrics = viewMetrics();
+      if (!pan || !metrics) return;
+      setView((current) => ({
+        ...current,
+        panX: pan.panX + (event.clientX - pan.clientX) / metrics.baseScale,
+        panY: pan.panY + (event.clientY - pan.clientY) / metrics.baseScale,
+      }));
+    };
+
+    const onUp = (): void => {
+      panRef.current = null;
+      setIsPanning(false);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [isPanning, viewMetrics]);
+
+  /* Rueda del mouse: zoom donde está el puntero ---------------------- */
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const onWheel = (event: WheelEvent): void => {
+      // El navegador hace zoom con la página si no se frena acá; por eso el
+      // listener es nativo y no pasivo.
+      event.preventDefault();
+      if (event.shiftKey && !event.ctrlKey) {
+        const metrics = viewMetrics();
+        if (!metrics) return;
+        setView((current) => ({ ...current, panX: current.panX - event.deltaY / metrics.baseScale }));
+        return;
+      }
+      zoomAt(event.clientX, event.clientY, event.deltaY < 0 ? 1.15 : 1 / 1.15);
+    };
+
+    svg.addEventListener('wheel', onWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', onWheel);
+  }, [viewMetrics, zoomAt]);
 
   useEffect(() => {
     if (!drag) return;
@@ -999,26 +1649,25 @@ export const PlanView: React.FC<PlanViewProps> = ({
       const elements = plan.elements;
 
       if (drag.mode === 'move') {
-        if (isWall(origin)) {
-          // La pared se mueve entera: los dos extremos, y con ella sus aberturas.
-          const x = snapCoordinate(origin.x + dx, PLAN_WIDTH, snap);
-          const y = snapCoordinate(origin.y + dy, drag.height, snap);
-          const moved: PlanElement = {
-            ...origin,
-            x,
-            y,
-            x2: snapCoordinate((origin.x2 ?? origin.x) + (x - origin.x), PLAN_WIDTH, snap),
-            y2: snapCoordinate((origin.y2 ?? origin.y) + (y - origin.y), drag.height, snap),
-          };
-          const next = elements.map((element) => (element.id === origin.id ? moved : element));
-          patchElements(drag.planId, followWall(next, moved), false);
-          return;
+        let movedX = dx;
+        let movedY = dy;
+
+        // Con orto, el movimiento se traba en el eje que más se movió.
+        if (ortho) {
+          if (Math.abs(dx) >= Math.abs(dy)) movedY = 0;
+          else movedX = 0;
+        }
+        // Con la rejilla encendida, el desplazamiento va en pasos de rejilla.
+        if (snap) {
+          movedX = Math.round(movedX / PLAN_GRID) * PLAN_GRID;
+          movedY = Math.round(movedY / PLAN_GRID) * PLAN_GRID;
         }
 
+        // Una abertura suelta se corre a lo largo de su pared, no se despega.
         const wall = origin.wallId ? elements.find((element) => element.id === origin.wallId) : undefined;
-        if (wall && isOpening(origin)) {
-          // Una abertura no se despega de su pared: se corre a lo largo de ella.
-          const slid = slideOpeningOnWall(origin, wall, origin.x + dx, origin.y + dy);
+        const single = drag.ids.length === 1;
+        if (single && wall && isOpening(origin)) {
+          const slid = slideOpeningOnWall(origin, wall, origin.x + movedX, origin.y + movedY);
           patchElements(
             drag.planId,
             elements.map((element) => (element.id === origin.id ? slid : element)),
@@ -1027,23 +1676,16 @@ export const PlanView: React.FC<PlanViewProps> = ({
           return;
         }
 
-        const moved: PlanElement = {
-          ...origin,
-          x: snapCoordinate(origin.x + dx, PLAN_WIDTH, snap),
-          y: snapCoordinate(origin.y + dy, drag.height, snap),
-        };
-        patchElements(
-          drag.planId,
-          elements.map((element) => (element.id === origin.id ? moved : element)),
-          false
-        );
+        // La selección se mueve entera: las paredes se llevan sus aberturas.
+        patchElements(drag.planId, translateElements(elements, drag.ids, movedX, movedY, drag.height), false);
         return;
       }
 
-      // Estirar un extremo de la pared
+      // Estirar una punta: la pared, la medida de una cota o la directriz de un texto.
       const free = snapPoint(origin.x + dx, origin.y + dy, {
         grid: snap,
         corners: wallCorners(elements.filter((element) => element.id !== origin.id)),
+        midpoints: wallMidpoints(elements.filter((element) => element.id !== origin.id)),
         height: drag.height,
         radius: 26,
       });
@@ -1051,7 +1693,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
         drag.mode === 'endpointA'
           ? { x: origin.x2 ?? origin.x, y: origin.y2 ?? origin.y }
           : { x: origin.x, y: origin.y };
-      const constrained = constrainAngle(anchor.x, anchor.y, free.x, free.y);
+      const constrained = constrainDraft(anchor.x, anchor.y, free.x, free.y);
 
       const reshaped: PlanElement =
         drag.mode === 'endpointA'
@@ -1059,7 +1701,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
           : { ...origin, x2: constrained.x, y2: constrained.y };
 
       const next = elements.map((element) => (element.id === origin.id ? reshaped : element));
-      patchElements(drag.planId, followWall(next, reshaped), false);
+      patchElements(drag.planId, isWall(reshaped) ? followWall(next, reshaped) : next, false);
     };
 
     const onUp = (): void => {
@@ -1076,7 +1718,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [drag, snap, patchElements, pushHistory]);
+  }, [drag, snap, ortho, patchElements, pushHistory, constrainDraft]);
 
   /* ---------------------------------------------------------------- */
   /* Alta, edición y borrado de planos                                 */
@@ -1115,7 +1757,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
     applyPlans([...plansRef.current, created]);
     setActivePlanId(created.id);
-    setSelectedId(null);
+    setSelectedIds([]);
     setIsNewPlanOpen(false);
   };
 
@@ -1123,7 +1765,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
     const remaining = plansRef.current.filter((candidate) => candidate.id !== plan.id);
     applyPlans(remaining);
     setActivePlanId(remaining[0]?.id ?? '');
-    setSelectedId(null);
+    setSelectedIds([]);
   };
 
   const handleUpdateElement = (patch: Partial<PlanElement>): void => {
@@ -1146,70 +1788,66 @@ export const PlanView: React.FC<PlanViewProps> = ({
   /**
    * Mueve la selección con las flechas del teclado.
    *
-   * Una pared se mueve entera (con sus aberturas), una abertura se corre a lo
-   * largo de su pared y un símbolo se mueve libre. Todo queda dentro de la hoja.
+   * Las paredes se llevan sus aberturas, las aberturas se corren a lo largo de
+   * su pared y todo queda dentro de la hoja: es la misma lógica que el arrastre,
+   * así que se reutiliza (`translateElements`).
    */
   const nudgeSelection = (dx: number, dy: number): void => {
-    if (!activePlan || !selected) return;
-    const elements = currentElements();
-    const origin = elements.find((element) => element.id === selected.id);
-    if (!origin) return;
+    if (!activePlan || selectedIds.length === 0) return;
+    const next = translateElements(currentElements(), selectedIds, dx, dy, height);
+    patchElements(activePlan.id, next, true, `mover:${selectedIds.join(',')}`);
+  };
 
-    const x = snapCoordinate(origin.x + dx, PLAN_WIDTH, false);
-    const y = snapCoordinate(origin.y + dy, height, false);
+  /** Copia lo seleccionado al portapapeles propio. */
+  const handleCopy = (): void => {
+    if (!activePlan || selectedIds.length === 0) return;
+    const { copies } = duplicateElements(activePlan.elements, selectedIds, 0, 0);
+    // Las copias se guardan ya con ids nuevos, listas para pegar.
+    clipboardRef.current = copies;
+    setMessage({
+      tone: 'info',
+      text: `${copies.length} ${copies.length === 1 ? 'elemento copiado' : 'elementos copiados'}. Pegá con Ctrl+V.`,
+    });
+  };
 
-    if (isWall(origin)) {
-      const movedX = x - origin.x;
-      const movedY = y - origin.y;
-      const moved: PlanElement = {
-        ...origin,
-        x,
-        y,
-        x2: snapCoordinate((origin.x2 ?? origin.x) + movedX, PLAN_WIDTH, false),
-        y2: snapCoordinate((origin.y2 ?? origin.y) + movedY, height, false),
-      };
-      const next = elements.map((element) => (element.id === origin.id ? moved : element));
-      patchElements(activePlan.id, followWall(next, moved), true, `mover:${origin.id}`);
-      return;
-    }
-
-    const wall = origin.wallId ? elements.find((element) => element.id === origin.wallId) : undefined;
-    const moved: PlanElement =
-      wall && isOpening(origin)
-        ? slideOpeningOnWall(origin, wall, x, y)
-        : { ...origin, x, y };
-
-    patchElements(
-      activePlan.id,
-      elements.map((element) => (element.id === origin.id ? moved : element)),
-      true,
-      `mover:${origin.id}`
-    );
+  /** Pega lo copiado, corrido para que no quede encima del original. */
+  const handlePaste = (): void => {
+    if (!activePlan || clipboardRef.current.length === 0) return;
+    const offset = 40;
+    const copies = clipboardRef.current.map((element) => ({
+      ...element,
+      id: `el_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      x: snapCoordinate(element.x + offset, PLAN_WIDTH, false),
+      y: snapCoordinate(element.y + offset, height, false),
+      x2: element.x2 === undefined ? undefined : snapCoordinate(element.x2 + offset, PLAN_WIDTH, false),
+      y2: element.y2 === undefined ? undefined : snapCoordinate(element.y2 + offset, height, false),
+    }));
+    patchElements(activePlan.id, [...activePlan.elements, ...copies]);
+    setSelectedIds(copies.map((copy) => copy.id));
   };
 
   const handleDuplicateElement = (): void => {
-    if (!activePlan || !selected) return;
-    const offset = 40;
-    const copy: PlanElement = {
-      ...selected,
-      id: `el_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      x: snapCoordinate(selected.x + offset, PLAN_WIDTH, snap),
-      y: snapCoordinate(selected.y + offset, height, snap),
-      // La copia ya no representa al tablero o la carga originales.
-      panelId: undefined,
-      loadId: undefined,
-    };
-    if (isWall(selected)) {
-      copy.x2 = snapCoordinate((selected.x2 ?? selected.x) + offset, PLAN_WIDTH, snap);
-      copy.y2 = snapCoordinate((selected.y2 ?? selected.y) + offset, height, snap);
-    }
-    if (isOpening(selected)) {
-      // Una abertura duplicada queda suelta, para poder apoyarla en otra pared.
-      copy.wallId = undefined;
-    }
-    patchElements(activePlan.id, [...activePlan.elements, copy]);
-    setSelectedId(copy.id);
-    setMessage({ tone: 'info', text: `Se duplicó «${copy.label}». Arrastralo hasta su lugar.` });
+    if (!activePlan || selectedIds.length === 0) return;
+    const { copies, ids } = duplicateElements(activePlan.elements, selectedIds, 40, 40);
+    if (copies.length === 0) return;
+    patchElements(activePlan.id, [...activePlan.elements, ...copies]);
+    setSelectedIds(ids);
+    setMessage({
+      tone: 'info',
+      text: `Se ${copies.length === 1 ? 'duplicó' : 'duplicaron'} ${copies.length} ${
+        copies.length === 1 ? 'elemento' : 'elementos'
+      }. Arrastralos hasta su lugar.`,
+    });
+  };
+
+  /** Espeja la selección respecto de su centro, como el comando SIMETRÍA. */
+  const handleMirror = (axis: MirrorAxis): void => {
+    if (!activePlan || selectedIds.length === 0) return;
+    patchElements(activePlan.id, mirrorElements(activePlan.elements, selectedIds, axis));
+    setMessage({
+      tone: 'info',
+      text: `Se reflejó ${axis === 'vertical' ? 'de izquierda a derecha' : 'de arriba abajo'} respecto del centro de la selección.`,
+    });
   };
 
   const handleRemoveElement = (elementId: string): void => {
@@ -1218,7 +1856,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
     const openings =
       target && isWall(target) ? activePlan.elements.filter((element) => element.wallId === elementId).length : 0;
     patchElements(activePlan.id, removeElement(activePlan.elements, elementId));
-    if (selectedId === elementId) setSelectedId(null);
+    setSelectedIds((current) => current.filter((id) => id !== elementId));
     setMessage({
       tone: 'info',
       text: `Se borró «${target?.label ?? 'el elemento'}»${
@@ -1268,7 +1906,46 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
     if (added.length === 0) return;
     patchElements(activePlan.id, [...activePlan.elements, ...added]);
-    setSelectedId(added[0].id);
+    setSelectedIds([added[0].id]);
+  };
+
+  /** Borra todo lo seleccionado, con las aberturas de las paredes que se van. */
+  const handleRemoveSelection = (): void => {
+    if (!activePlan || selectedIds.length === 0) return;
+    let elements = activePlan.elements;
+    for (const id of selectedIds) elements = removeElement(elements, id);
+    const removed = activePlan.elements.length - elements.length;
+    patchElements(activePlan.id, elements);
+    setSelectedIds([]);
+    setMessage({
+      tone: 'info',
+      text: `Se ${removed === 1 ? 'borró 1 elemento' : `borraron ${removed} elementos`}. Ctrl+Z lo recupera.`,
+    });
+  };
+
+  /** Aplica la escala a partir de los metros reales que escribió el técnico. */
+  const handleApplyScale = (): void => {
+    if (!activePlan || !scaleDraft) return;
+    const metros = Number(scaleMeters.replace(',', '.'));
+    const perUnit = scaleFromReference(
+      { x: scaleDraft.x, y: scaleDraft.y },
+      { x: scaleDraft.x2, y: scaleDraft.y2 },
+      metros
+    );
+    if (perUnit === null) {
+      setMessage({ tone: 'danger', text: 'Escribí una distancia en metros mayor que cero.' });
+      return;
+    }
+    patchPlan(activePlan.id, { metersPerUnit: perUnit });
+    const sheet = sheetSizeMeters({ ...activePlan, metersPerUnit: perUnit });
+    setScaleDraft(null);
+    setScaleMeters('');
+    setMessage({
+      tone: 'success',
+      text: `Escala lista: la hoja mide ${sheet.width.toFixed(2).replace('.', ',')} m × ${sheet.height
+        .toFixed(2)
+        .replace('.', ',')} m. Las cotas y los largos ya salen en metros.`,
+    });
   };
 
   /* ---------------------------------------------------------------- */
@@ -1284,11 +1961,14 @@ export const PlanView: React.FC<PlanViewProps> = ({
       patchPlan(activePlan.id, {
         imageDataUrl: prepared.dataUrl,
         aspect: prepared.aspect,
+        // El fondo arranca semitransparente: sobre una foto, el dibujo propio
+        // tiene que ganar. Se ajusta con el control de opacidad.
+        backgroundOpacity: 0.65,
         elements: clampElements(activePlan.elements, nextHeight),
       });
       setMessage({
         tone: 'success',
-        text: 'Fondo cargado. Ahora podés dibujar las paredes encima y ubicar los símbolos.',
+        text: 'Fondo cargado. Calibrá la escala sobre una distancia conocida y después dibujá las paredes encima.',
       });
     } catch {
       setMessage({ tone: 'danger', text: 'No se pudo leer la imagen. Probá con un JPG o un PNG.' });
@@ -1312,6 +1992,9 @@ export const PlanView: React.FC<PlanViewProps> = ({
     const clone = svg.cloneNode(true) as SVGSVGElement;
     clone.querySelectorAll('[data-export="hide"]').forEach((node) => node.remove());
     clone.querySelectorAll('[data-background]').forEach((node) => node.remove());
+    // El PNG siempre sale con la hoja entera, sin el zoom ni el desplazamiento
+    // que se estén usando para trabajar.
+    clone.querySelector('[data-view="true"]')?.setAttribute('transform', 'translate(0 0) scale(1)');
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     clone.setAttribute('width', String(PLAN_WIDTH));
     clone.setAttribute('height', String(planPixelHeight));
@@ -1507,8 +2190,82 @@ export const PlanView: React.FC<PlanViewProps> = ({
     </Modal>
   );
 
-  const shortcutsModal = (
+  /**
+   * Ventana de calibración: se marcaron dos puntos y se piden los metros.
+   *
+   * Es el paso que le da sentido a todo lo demás: sin escala, el plano se mide
+   * en unidades del lienzo y no sirve para presupuestar un cableado.
+   */
+  const scaleModal = (
     <Modal
+      isOpen={Boolean(scaleDraft)}
+      onClose={() => {
+        setScaleDraft(null);
+        setScaleMeters('');
+        setTool('select');
+      }}
+      title="¿Cuánto mide de verdad?"
+      description="Escribí la distancia real entre los dos puntos que marcaste. Con eso el plano queda a escala."
+      icon={<Ruler className="h-4 w-4" />}
+      footer={
+        <>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setScaleDraft(null);
+              setScaleMeters('');
+              setTool('select');
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button variant="primary" onClick={handleApplyScale} disabled={!scaleMeters}>
+            Aplicar la escala
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="rounded-xl border border-hairline bg-sunken px-3 py-2.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Distancia marcada en el plano</p>
+          <p className="mt-1 font-mono text-lg font-bold text-strong">
+            {scaleDraft ? `${Math.round(Math.hypot(scaleDraft.x2 - scaleDraft.x, scaleDraft.y2 - scaleDraft.y))} u` : '—'}
+          </p>
+          <p className="mt-0.5 text-xs text-muted">
+            Cuidado con la unidad: escribí en metros. Por ejemplo 3,20 para tres metros veinte.
+          </p>
+        </div>
+        <TextField
+          label="Distancia real, en metros"
+          value={scaleMeters}
+          onChange={setScaleMeters}
+          placeholder="3,20"
+          inputMode="decimal"
+          autoFocus
+          hint="Se puede usar coma o punto decimal."
+        />
+        <div className="flex flex-wrap gap-1.5">
+          {['2,50', '3,20', '4,00', '6,00', '10,00'].map((valor) => (
+            <button
+              key={valor}
+              type="button"
+              onClick={() => setScaleMeters(valor)}
+              className={cx(
+                'rounded-lg border px-2.5 py-1 font-mono text-xs font-bold transition-colors',
+                scaleMeters === valor
+                  ? 'border-accent-line bg-accent-soft text-accent-text'
+                  : 'border-edge bg-raised text-muted hover:text-strong'
+              )}
+            >
+              {valor} m
+            </button>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+
+  const shortcutsModal = (    <Modal
       isOpen={isShortcutsOpen}
       onClose={() => setIsShortcutsOpen(false)}
       title="Atajos de teclado"
@@ -1585,6 +2342,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
   const isSelecting = tool === 'select';
   const selectedIsWall = selected ? isWall(selected) : false;
   const selectedIsOpening = selected ? isOpening(selected) : false;
+  const selectedIsCota = selected ? isCota(selected) : false;
+  const selectedIsText = selected ? isText(selected) : false;
 
   return (
     <div className="flex flex-col gap-2 lg:h-[calc(100dvh-var(--app-header-h)-1.75rem)]">
@@ -1616,7 +2375,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
               type="button"
               onClick={() => {
                 setActivePlanId(plan.id);
-                setSelectedId(null);
+                setSelectedIds([]);
                 setTool('select');
               }}
               aria-current={plan.id === activePlan.id ? 'true' : undefined}
@@ -1679,6 +2438,19 @@ export const PlanView: React.FC<PlanViewProps> = ({
             <Grid3x3 className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Rejilla {snap ? 'activada' : 'libre'}</span>
           </button>
+          <button
+            type="button"
+            aria-pressed={ortho}
+            onClick={() => setOrtho((current) => !current)}
+            className={cx(
+              'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors',
+              ortho ? 'border-accent-line bg-accent-soft text-accent-text' : 'border-edge bg-raised text-muted'
+            )}
+            title="Orto: traba el trazo y el movimiento en horizontal y vertical (O)"
+          >
+            <Ruler className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Orto {ortho ? 'activado' : 'libre'}</span>
+          </button>
           <IconButton
             label="Atajos de teclado (?)"
             variant="secondary"
@@ -1735,10 +2507,11 @@ export const PlanView: React.FC<PlanViewProps> = ({
                 style={{
                   aspectRatio: `${PLAN_WIDTH} / ${height}`,
                   touchAction: 'none',
-                  cursor: isSelecting ? 'default' : 'crosshair',
+                  cursor: isPanning ? 'grabbing' : isSelecting ? 'default' : 'crosshair',
                 }}
                 className="block w-full select-none lg:h-full"
                 onPointerDown={handleCanvasPointerDown}
+                onContextMenu={(event) => event.preventDefault()}
                 role="img"
                 aria-label={`Plano ${activePlan.name}`}
               >
@@ -1753,94 +2526,142 @@ export const PlanView: React.FC<PlanViewProps> = ({
                   </pattern>
                 </defs>
 
-                {/* Fondo blanco: el plano se ve igual en tema claro y oscuro, y
-                    el PNG sale como se ve en pantalla. */}
-                <rect width={PLAN_WIDTH} height={height} fill={BACKGROUND_FILL} data-export="hide" />
-                <rect
-                  width={PLAN_WIDTH}
-                  height={height}
-                  fill={`url(#plan-grid-${activePlan.id})`}
-                  data-export="hide"
-                />
-                <rect
-                  x={1}
-                  y={1}
-                  width={PLAN_WIDTH - 2}
-                  height={height - 2}
-                  fill="none"
-                  stroke={SHEET_EDGE}
-                  strokeWidth={2}
-                  data-export="hide"
-                />
-
-                {activePlan.imageDataUrl && (
-                  <image
-                    href={activePlan.imageDataUrl}
-                    x={0}
-                    y={0}
-                    width={PLAN_WIDTH}
-                    height={height}
-                    preserveAspectRatio="none"
-                    data-background="true"
-                  />
-                )}
-
-                {orderedElements.map((element) => (
-                  <PlanElementNode
-                    key={element.id}
-                    element={element}
-                    selected={element.id === selectedId}
-                    onPointerDown={handleElementPointerDown}
-                    onHandlePointerDown={handleHandlePointerDown}
-                  />
-                ))}
-
-                {/* Rótulos: última capa, siempre horizontales y con el
-                    seleccionado destacado. */}
-                {orderedElements.map((element) => (
-                  <PlanLabel
-                    key={`rotulo-${element.id}`}
-                    element={element}
-                    height={height}
-                    selected={element.id === selectedId}
-                  />
-                ))}
-
-                {/* Trazo de pared en curso */}
-                {draftWall && (
-                  <g data-export="hide" pointerEvents="none">
-                    <line
-                      x1={draftWall.x}
-                      y1={draftWall.y}
-                      x2={draftWall.x2}
-                      y2={draftWall.y2}
-                      stroke={INK}
-                      strokeWidth={14}
-                      strokeLinecap="square"
-                      opacity={0.7}
+                {/* El zoom y el desplazamiento se aplican acá adentro: la hoja
+                    sigue estando en las mismas coordenadas, solo se mira más de
+                    cerca. La exportación devuelve esta transformación a cero. */}
+                <g
+                  data-view="true"
+                  transform={`translate(${view.panX} ${view.panY}) scale(${view.zoom})`}
+                >
+                  {/* Fondo blanco: el plano se ve igual en tema claro y oscuro, y
+                      el PNG sale como se ve en pantalla. */}
+                  <rect width={PLAN_WIDTH} height={height} fill={BACKGROUND_FILL} data-export="hide" />
+                  {visible.rejilla && (
+                    <rect
+                      width={PLAN_WIDTH}
+                      height={height}
+                      fill={`url(#plan-grid-${activePlan.id})`}
+                      data-export="hide"
                     />
-                    <line
-                      x1={draftWall.x}
-                      y1={draftWall.y}
-                      x2={draftWall.x2}
-                      y2={draftWall.y2}
+                  )}
+                  <rect
+                    x={1}
+                    y={1}
+                    width={PLAN_WIDTH - 2}
+                    height={height - 2}
+                    fill="none"
+                    stroke={SHEET_EDGE}
+                    strokeWidth={2}
+                    data-export="hide"
+                  />
+
+                  {activePlan.imageDataUrl && visible.fondo && (
+                    <image
+                      href={activePlan.imageDataUrl}
+                      x={0}
+                      y={0}
+                      width={PLAN_WIDTH}
+                      height={height}
+                      preserveAspectRatio="none"
+                      opacity={activePlan.backgroundOpacity ?? 1}
+                      data-background="true"
+                    />
+                  )}
+
+                  {visibleElements.map((element) => (
+                    <PlanElementNode
+                      key={element.id}
+                      element={element}
+                      selected={selectedIds.includes(element.id)}
+                      onPointerDown={handleElementPointerDown}
+                      onHandlePointerDown={handleHandlePointerDown}
+                    />
+                  ))}
+
+                  {/* Rótulos: última capa, siempre horizontales y con lo
+                      seleccionado destacado. */}
+                  {visibleElements.map((element) => (
+                    <PlanLabel
+                      key={`rotulo-${element.id}`}
+                      element={element}
+                      plan={activePlan}
+                      height={height}
+                      selected={selectedIds.includes(element.id)}
+                    />
+                  ))}
+
+                  {/* Trazo en curso: se ve qué se está dibujando y cuánto mide */}
+                  {draftWall && (
+                    <DraftOverlay
+                      tool={tool}
+                      draft={draftWall}
+                      plan={activePlan}
+                      ortho={ortho}
+                      chain={false}
+                    />
+                  )}
+
+                  {/* Cadena de paredes: la punta donde sigue el trazo */}
+                  {chainStart && tool === 'pared' && (
+                    <g data-export="hide" pointerEvents="none">
+                      <circle cx={chainStart.x} cy={chainStart.y} r={7} fill={SELECTION} opacity={0.85} />
+                      <circle
+                        cx={chainStart.x}
+                        cy={chainStart.y}
+                        r={13}
+                        fill="none"
+                        stroke={SELECTION}
+                        strokeWidth={2}
+                        opacity={0.6}
+                      />
+                    </g>
+                  )}
+
+                  {/* Última medición */}
+                  {measurement && (
+                    <g data-export="hide" pointerEvents="none">
+                      <line
+                        x1={measurement.x}
+                        y1={measurement.y}
+                        x2={measurement.x2}
+                        y2={measurement.y2}
+                        stroke={MEASURE}
+                        strokeWidth={2}
+                        strokeDasharray="9 6"
+                      />
+                      <circle cx={measurement.x} cy={measurement.y} r={5} fill={MEASURE} />
+                      <circle cx={measurement.x2} cy={measurement.y2} r={5} fill={MEASURE} />
+                      <MeasureLabel
+                        x={(measurement.x + measurement.x2) / 2}
+                        y={(measurement.y + measurement.y2) / 2}
+                        text={measurementSummary(
+                          activePlan,
+                          measureBetween(
+                            { x: measurement.x, y: measurement.y },
+                            { x: measurement.x2, y: measurement.y2 }
+                          )
+                        )}
+                      />
+                    </g>
+                  )}
+
+                  {/* Rectángulo de selección */}
+                  {selectionRect && (
+                    <rect
+                      x={Math.min(selectionRect.x, selectionRect.x2)}
+                      y={Math.min(selectionRect.y, selectionRect.y2)}
+                      width={Math.abs(selectionRect.x2 - selectionRect.x)}
+                      height={Math.abs(selectionRect.y2 - selectionRect.y)}
+                      fill={SELECTION}
+                      fillOpacity={0.1}
                       stroke={SELECTION}
                       strokeWidth={1.5}
-                      strokeDasharray="6 5"
+                      strokeDasharray="7 5"
+                      data-export="hide"
+                      pointerEvents="none"
                     />
-                    <text
-                      x={(draftWall.x + draftWall.x2) / 2}
-                      y={(draftWall.y + draftWall.y2) / 2 - 16}
-                      textAnchor="middle"
-                      fontSize={16}
-                      fontFamily={PLAN_FONT}
-                      fill={SELECTION}
-                      stroke="none"
-                    >
-                      {Math.round(Math.hypot(draftWall.x2 - draftWall.x, draftWall.y2 - draftWall.y))} u
-                    </text>
-                  </g>
-                )}
+                  )}
+                </g>
               </svg>
             </div>
 
@@ -1861,16 +2682,55 @@ export const PlanView: React.FC<PlanViewProps> = ({
               </div>
             )}
 
-            {/* Pie del lienzo: qué hacer ahora y el tamaño de la hoja */}
+            {/* Pie del lienzo: qué hacer ahora, la escala y el zoom */}
             <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-t border-hairline bg-surface/80 px-2.5 py-1.5 text-xs text-muted">
-              <span className="min-w-0">{toolHint(tool)}</span>
-              <span className="flex flex-shrink-0 items-center gap-2 font-mono">
+              <span className="min-w-0">
+                {chainStart && tool === 'pared'
+                  ? 'Seguí con la próxima punta de la pared · Esc o Enter terminan'
+                  : toolHint(tool)}
+              </span>
+              <span className="flex flex-shrink-0 items-center gap-2">
                 {activePlan.supplyId && (
                   <span className="truncate font-sans font-semibold text-info-text">
                     {supplies.find((supply) => supply.id === activePlan.supplyId)?.name}
                   </span>
                 )}
-                hoja {PLAN_WIDTH} × {height}
+                <span className="font-mono">
+                  {hasScale(activePlan)
+                    ? `${sheetSizeMeters(activePlan).width.toFixed(1).replace('.', ',')} × ${sheetSizeMeters(activePlan)
+                        .height.toFixed(1)
+                        .replace('.', ',')} m`
+                    : `hoja ${PLAN_WIDTH} × ${height}`}
+                </span>
+                {printScaleLabel(activePlan) && <Badge tone="info">{printScaleLabel(activePlan)}</Badge>}
+                <span className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    aria-label="Alejar"
+                    title="Alejar (tecla -)"
+                    onClick={() => zoomBy(1 / 1.25)}
+                    className="flex h-6 w-6 items-center justify-center rounded-md border border-edge bg-raised text-soft transition-colors hover:text-strong"
+                  >
+                    <Minus className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={zoomToFit}
+                    title="Ajustar el plano a la ventana (tecla Z)"
+                    className="min-w-[52px] rounded-md border border-edge bg-raised px-1.5 py-1 font-mono font-bold text-soft transition-colors hover:text-strong"
+                  >
+                    {Math.round(view.zoom * 100)}%
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Acercar"
+                    title="Acercar (tecla +)"
+                    onClick={() => zoomBy(1.25)}
+                    className="flex h-6 w-6 items-center justify-center rounded-md border border-edge bg-raised text-soft transition-colors hover:text-strong"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                </span>
               </span>
             </div>
           </div>
@@ -1879,12 +2739,65 @@ export const PlanView: React.FC<PlanViewProps> = ({
         {/* ---------------- Panel de propiedades ---------------- */}
         <div className="order-3 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-hairline bg-surface">
           <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-hairline px-3 py-2">
-            <span className="text-xs font-bold uppercase tracking-wide text-muted">Propiedades del elemento</span>
+            <span className="text-xs font-bold uppercase tracking-wide text-muted">
+              {selectedIds.length > 1 ? 'Selección' : 'Propiedades del elemento'}
+            </span>
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2.5">
-          {/* Propiedades del elemento elegido */}
-          {selected ? (
-            <div className="space-y-3 rounded-2xl border border-accent-line bg-surface p-4">
+          {/* Varios elementos: se mueven y se editan juntos */}
+          {selectedElements.length > 1 ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-bold text-strong">
+                  {selectedIds.length} elementos
+                </span>
+                <Badge tone="accent">{describeSelection(activePlan.elements, selectedIds)}</Badge>
+              </div>
+              <p className="text-xs leading-snug text-muted">
+                Se mueven juntos: arrastrá cualquiera de ellos, o usá las flechas (con Mayús, una rejilla). Mayús+clic
+                suma o saca elementos de la selección.
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                <Button size="sm" variant="ghost" icon={<Copy className="h-3.5 w-3.5" />} onClick={handleDuplicateElement}>
+                  Duplicar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<ClipboardCopy className="h-3.5 w-3.5" />}
+                  onClick={handleCopy}
+                >
+                  Copiar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<FlipHorizontal2 className="h-3.5 w-3.5" />}
+                  onClick={() => handleMirror('vertical')}
+                >
+                  Espejar ↔
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<FlipVertical2 className="h-3.5 w-3.5" />}
+                  onClick={() => handleMirror('horizontal')}
+                >
+                  Espejar ↕
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  icon={<Trash2 className="h-3.5 w-3.5" />}
+                  onClick={handleRemoveSelection}
+                  className="col-span-2"
+                >
+                  Borrar los {selectedIds.length}
+                </Button>
+              </div>
+            </div>
+          ) : selected ? (
+            <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="flex items-center gap-2 text-sm font-bold text-strong">
                   {elementTypeLabel(selected)}
@@ -2050,7 +2963,77 @@ export const PlanView: React.FC<PlanViewProps> = ({
                     />
                   </>
                 )}
+
+                {selectedIsCota && (
+                  <>
+                    <NumberField
+                      label="Corrimiento de la línea"
+                      unit="u"
+                      value={selected.offset ?? DEFAULT_COTA_OFFSET}
+                      onChange={(value) => {
+                        if (typeof value === 'number') handleUpdateElement({ offset: value });
+                      }}
+                      min={-400}
+                      max={400}
+                      presets={[0, 40, 70, 110]}
+                      presetsLabel="Frecuentes"
+                      hint="Cuánto se separa la línea de cota de lo que mide. Sirve para esquivar el dibujo."
+                    />
+                    <div className="flex items-end">
+                      <div className="w-full rounded-xl border border-hairline bg-sunken px-3 py-2.5">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Mide</p>
+                        <p className="mt-1 font-mono text-lg font-bold text-strong">
+                          {formatLength(activePlan, cotaLength(selected))}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted">
+                          {hasScale(activePlan) ? 'Con la escala cargada' : 'Cargá la escala para verlo en metros'}
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {selectedIsText && (
+                  <NumberField
+                    label="Alto de la letra"
+                    unit="u"
+                    value={selected.size ?? DEFAULT_TEXT_SIZE}
+                    onChange={(value) => {
+                      if (typeof value === 'number') handleUpdateElement({ size: value });
+                    }}
+                    min={8}
+                    max={90}
+                    presets={[16, 22, 30, 44]}
+                    presetsLabel="Frecuentes"
+                  />
+                )}
               </div>
+
+              {selectedIsCota && (
+                <p className="flex items-start gap-1.5 text-xs leading-snug text-muted">
+                  <Info className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>
+                    Mientras el nombre esté vacío, la cota escribe sola la medida. Si le escribís un nombre, lo muestra a
+                    él (por ejemplo «ancho del portón»).
+                  </span>
+                </p>
+              )}
+
+              {selectedIsText && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() =>
+                    handleUpdateElement(
+                      selected.x2 === undefined
+                        ? { x2: selected.x + 60, y2: selected.y + 50 }
+                        : { x2: undefined, y2: undefined }
+                    )
+                  }
+                >
+                  {selected.x2 === undefined ? 'Agregar una directriz' : 'Quitar la directriz'}
+                </Button>
+              )}
 
               {!selectedIsWall &&
                 (selectedIsOpening ? (
@@ -2151,22 +3134,22 @@ export const PlanView: React.FC<PlanViewProps> = ({
                     <div
                       className={cx(
                         'flex items-center gap-2 rounded-xl border px-2 py-1.5',
-                        element.id === selectedId ? 'border-accent-line bg-accent-soft' : 'border-hairline bg-sunken'
+                        selectedIds.includes(element.id)
+                          ? 'border-accent-line bg-accent-soft'
+                          : 'border-hairline bg-sunken'
                       )}
                     >
                       <button
                         type="button"
                         onClick={() => {
-                          setSelectedId(element.id);
+                          setSelectedIds([element.id]);
                           setTool('select');
                         }}
                         className="flex min-w-0 flex-1 items-center gap-2 text-left"
                       >
                         {isStructure(element) ? (
                           <svg viewBox="-20 -20 40 40" className="h-6 w-6 flex-shrink-0 text-strong" aria-hidden="true">
-                            <g stroke="currentColor">
-                              {structureIcon(elementKind(element) as PlanStructureType)}
-                            </g>
+                            <g stroke="currentColor">{toolIcon(elementKind(element) as Exclude<PlanElementKind, 'symbol'>)}</g>
                           </svg>
                         ) : (
                           <svg viewBox="-20 -20 40 40" className="h-6 w-6 flex-shrink-0 text-strong" aria-hidden="true">
@@ -2298,6 +3281,61 @@ export const PlanView: React.FC<PlanViewProps> = ({
                 onChange={(value) => patchPlan(activePlan.id, { notes: value })}
                 placeholder="Referencias, escala, aclaraciones para el cliente…"
               />
+
+              {/* Escala: es lo que convierte el dibujo en medidas de verdad. */}
+              <div className="rounded-xl border border-hairline bg-sunken p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted">Escala</span>
+                  {printScaleLabel(activePlan) && <Badge tone="info">{printScaleLabel(activePlan)}</Badge>}
+                </div>
+                {hasScale(activePlan) ? (
+                  <>
+                    <p className="mt-1.5 font-mono text-sm font-bold text-strong">
+                      {sheetSizeMeters(activePlan).width.toFixed(2).replace('.', ',')} ×{' '}
+                      {sheetSizeMeters(activePlan).height.toFixed(2).replace('.', ',')} m
+                    </p>
+                    <p className="mt-0.5 text-xs leading-snug text-muted">
+                      1 unidad = {(metersPerUnit(activePlan) * 100).toFixed(1).replace('.', ',')} cm. Los largos, las
+                      cotas y las mediciones salen en metros.
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <Button size="sm" variant="secondary" onClick={() => setTool('escala')}>
+                        Calibrar de nuevo
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => patchPlan(activePlan.id, { metersPerUnit: undefined })}
+                      >
+                        Quitar la escala
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-1.5 text-xs leading-snug text-muted">
+                      Todavía no tiene escala: los largos se muestran en unidades del lienzo. Cargala para que las cotas,
+                      las mediciones y los largos de pared salgan en metros.
+                    </p>
+                    <div className="mt-2">
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => {
+                          setTool('escala');
+                          setMessage({
+                            tone: 'info',
+                            text: 'Marcá en el plano dos puntos cuya distancia real conozcas (una pared, el ancho de un local).',
+                          });
+                        }}
+                      >
+                        Calibrar la escala
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+
               <p className="text-xs leading-snug text-muted">
                 El plano tiene {wallCount} {wallCount === 1 ? 'pared' : 'paredes'} y {structureCount - wallCount}{' '}
                 {structureCount - wallCount === 1 ? 'abertura' : 'aberturas'} dibujadas, más{' '}
@@ -2312,6 +3350,62 @@ export const PlanView: React.FC<PlanViewProps> = ({
               >
                 Borrar este plano
               </Button>
+            </div>
+          </Collapsible>
+
+          {/* Capas: sirven para trabajar sobre una foto sin ruido encima. */}
+          <Collapsible
+            id="plan-layers"
+            title="Qué se ve"
+            summary={`${[visible.estructura && 'planta', visible.simbolos && 'símbolos', visible.anotaciones && 'cotas y textos']
+              .filter(Boolean)
+              .join(' · ') || 'todo apagado'}`}
+            description="Apagá lo que no necesitás ver: sirve para dibujar sobre una foto o para revisar solo la planta."
+            icon={<Layers className="h-4 w-4" />}
+          >
+            <div className="space-y-1.5">
+              {(
+                [
+                  ['estructura', 'Planta: paredes y aberturas'],
+                  ['simbolos', 'Símbolos eléctricos'],
+                  ['anotaciones', 'Cotas y textos'],
+                  ['fondo', 'Imagen de fondo'],
+                ] as Array<[keyof typeof visible, string]>
+              ).map(([clave, etiqueta]) => (
+                <label
+                  key={clave}
+                  className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-hairline bg-sunken px-2.5 py-1.5"
+                >
+                  <span className="text-xs font-semibold text-soft">{etiqueta}</span>
+                  <input
+                    type="checkbox"
+                    checked={visible[clave]}
+                    onChange={(event) => setVisible((current) => ({ ...current, [clave]: event.target.checked }))}
+                    className="h-4 w-4 accent-current text-accent-text"
+                  />
+                </label>
+              ))}
+              {activePlan.imageDataUrl && (
+                <div className="rounded-lg border border-hairline bg-sunken px-2.5 py-2">
+                  <label className="flex items-center justify-between gap-2 text-xs font-semibold text-soft">
+                    Opacidad del fondo
+                    <span className="font-mono text-muted">
+                      {Math.round((activePlan.backgroundOpacity ?? 1) * 100)}%
+                    </span>
+                  </label>
+                  <input
+                    type="range"
+                    min={10}
+                    max={100}
+                    step={5}
+                    value={Math.round((activePlan.backgroundOpacity ?? 1) * 100)}
+                    onChange={(event) =>
+                      patchPlan(activePlan.id, { backgroundOpacity: Number(event.target.value) / 100 })
+                    }
+                    className="mt-1.5 w-full accent-current text-accent-text"
+                  />
+                </div>
+              )}
             </div>
           </Collapsible>
 
@@ -2427,6 +3521,88 @@ export const PlanView: React.FC<PlanViewProps> = ({
                 </p>
               </div>
 
+              {/* Anotaciones: lo que hace que el plano se entienda y se mida. */}
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Anotar y medir</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {ANNOTATION_TOOLS.map((annotation) => {
+                    const active = tool === annotation.type;
+                    const tecla = TOOL_ORDER.indexOf(annotation.type) + 1;
+                    return (
+                      <button
+                        key={annotation.type}
+                        type="button"
+                        onClick={() => setTool(annotation.type)}
+                        aria-pressed={active}
+                        title={`${annotation.hint} (tecla ${tecla})`}
+                        className={cx(
+                          'relative flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-colors',
+                          active
+                            ? 'border-accent-line bg-accent-soft'
+                            : 'border-hairline bg-sunken hover:border-accent-line hover:bg-accent-soft'
+                        )}
+                      >
+                        <kbd
+                          className={cx(
+                            'absolute right-1 top-1 rounded border px-1 font-mono text-xs font-bold',
+                            active ? 'border-accent-line bg-surface text-accent-text' : 'border-edge bg-raised text-muted'
+                          )}
+                        >
+                          {tecla}
+                        </kbd>
+                        <svg viewBox="-20 -20 40 40" className="h-9 w-9 text-strong" aria-hidden="true">
+                          <g stroke="currentColor">{toolIcon(annotation.type)}</g>
+                        </svg>
+                        <span className={cx('text-xs leading-tight', active ? 'font-bold text-strong' : 'font-semibold text-soft')}>
+                          {annotation.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Medir y calibrar la escala: no dejan nada dibujado. */}
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      ['medir', 'Medir'],
+                      ['escala', 'Escala'],
+                    ] as Array<[DrawTool, string]>
+                  ).map(([herramienta, etiqueta]) => {
+                    const active = tool === herramienta;
+                    const tecla = TOOL_ORDER.indexOf(herramienta) + 1;
+                    return (
+                      <button
+                        key={herramienta}
+                        type="button"
+                        onClick={() => setTool(herramienta)}
+                        aria-pressed={active}
+                        title={`${toolHint(herramienta)} (tecla ${tecla})`}
+                        className={cx(
+                          'relative flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center transition-colors',
+                          active
+                            ? 'border-accent-line bg-accent-soft font-bold text-strong'
+                            : 'border-hairline bg-sunken font-semibold text-soft hover:border-accent-line hover:bg-accent-soft'
+                        )}
+                      >
+                        <kbd
+                          className={cx(
+                            'rounded border px-1 font-mono text-xs font-bold',
+                            active ? 'border-accent-line bg-surface text-accent-text' : 'border-edge bg-raised text-muted'
+                          )}
+                        >
+                          {tecla}
+                        </kbd>
+                        <span className="text-xs leading-tight">{etiqueta}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs leading-snug text-muted">
+                  La cota queda en el plano y escribe el largo. Medir y Escala no dejan nada dibujado.
+                </p>
+              </div>
+
               {symbolsByCategory.map(([category, symbols]) => (
                 <div key={category}>
                   <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">{category}</p>
@@ -2465,6 +3641,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       </div>
 
       {newPlanModal}
+      {scaleModal}
       {shortcutsModal}
     </div>
   );

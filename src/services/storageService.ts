@@ -606,6 +606,8 @@ const INITIAL_MARKET_CLIENT: ClientRecord = {
       name: 'Sala de ventas',
       supplyId: 'sup_ventas',
       aspect: 1000 / 707,
+      // 1 unidad del lienzo = 1 cm, así el salón mide 7,80 m × 5,30 m.
+      metersPerUnit: 0.01,
       elements: [
         // La planta primero: las paredes del salón, con su puerta de entrada y
         // las ventanas sobre la calle. Sin esto los símbolos flotan y nadie se
@@ -614,6 +616,21 @@ const INITIAL_MARKET_CLIENT: ClientRecord = {
         { id: 'pw_v2', kind: 'pared', label: 'Pared', x: 930, y: 100, x2: 930, y2: 630, thickness: 14 },
         { id: 'pw_v3', kind: 'pared', label: 'Pared', x: 930, y: 630, x2: 150, y2: 630, thickness: 14 },
         { id: 'pw_v4', kind: 'pared', label: 'Pared', x: 150, y: 630, x2: 150, y2: 100, thickness: 14 },
+        // Cotas: son las que se leen sobre el papel.
+        { id: 'pc_v1', kind: 'cota', label: '', x: 150, y: 630, x2: 930, y2: 630, offset: 45 },
+        { id: 'pc_v2', kind: 'cota', label: '', x: 150, y: 100, x2: 150, y2: 630, offset: -45 },
+        // Notas: el título del sector y una aclaración con directriz al tablero.
+        { id: 'pt_v1', kind: 'texto', label: 'SALA DE VENTAS', x: 320, y: 360, size: 30 },
+        {
+          id: 'pt_v2',
+          kind: 'texto',
+          label: 'Tablero con DPS Tipo 2',
+          x: 265,
+          y: 205,
+          x2: 225,
+          y2: 180,
+          size: 18,
+        },
         {
           id: 'po_v1',
           kind: 'puerta',
@@ -711,11 +728,24 @@ const INITIAL_MARKET_CLIENT: ClientRecord = {
       name: 'Depósito y cámaras',
       supplyId: 'sup_deposito',
       aspect: 1000 / 707,
+      metersPerUnit: 0.01,
       elements: [
         { id: 'pw_d1', kind: 'pared', label: 'Pared', x: 150, y: 100, x2: 930, y2: 100, thickness: 20 },
         { id: 'pw_d2', kind: 'pared', label: 'Pared', x: 930, y: 100, x2: 930, y2: 630, thickness: 20 },
         { id: 'pw_d3', kind: 'pared', label: 'Pared', x: 930, y: 630, x2: 150, y2: 630, thickness: 20 },
         { id: 'pw_d4', kind: 'pared', label: 'Pared', x: 150, y: 630, x2: 150, y2: 100, thickness: 20 },
+        { id: 'pc_d1', kind: 'cota', label: '', x: 150, y: 630, x2: 930, y2: 630, offset: 45 },
+        { id: 'pt_d1', kind: 'texto', label: 'DEPÓSITO Y CÁMARAS', x: 320, y: 400, size: 30 },
+        {
+          id: 'pt_d2',
+          kind: 'texto',
+          label: 'PAT 41 Ω: rehacer',
+          x: 250,
+          y: 255,
+          x2: 230,
+          y2: 225,
+          size: 18,
+        },
         {
           id: 'po_d1',
           kind: 'puerta',

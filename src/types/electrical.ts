@@ -196,8 +196,19 @@ export type PlanSymbolType =
  */
 export type PlanStructureType = 'pared' | 'puerta' | 'ventana' | 'abertura';
 
+/**
+ * Anotaciones del plano: lo que se agrega para que el plano se entienda y se
+ * pueda medir sobre el papel.
+ *
+ *  - `cota`: línea de medida entre dos puntos, con su valor. Es la que permite
+ *    leer un largo sin instrumentos.
+ *  - `texto`: una nota suelta, con una directriz opcional hacia el lugar al que
+ *    se refiere.
+ */
+export type PlanAnnotationType = 'cota' | 'texto';
+
 /** Cómo se dibuja un elemento del plano. */
-export type PlanElementKind = 'symbol' | PlanStructureType;
+export type PlanElementKind = 'symbol' | PlanStructureType | PlanAnnotationType;
 
 /**
  * Elemento ubicado en el plano. Las coordenadas están en unidades del lienzo
@@ -209,6 +220,10 @@ export type PlanElementKind = 'symbol' | PlanStructureType;
  *  - `pared`: segmento de `(x, y)` a `(x2, y2)` con `thickness`.
  *  - `puerta`, `ventana`, `abertura`: van sobre una pared (`wallId`), giradas
  *    como ella y con `length` de ancho. `hand` es hacia dónde abre la puerta.
+ *  - `cota`: mide de `(x, y)` a `(x2, y2)`, con la línea corrida `offset` en
+ *    perpendicular. Si `label` está vacío, muestra la medida calculada.
+ *  - `texto`: el rótulo va en `label`, en su posición; si hay `x2`/`y2`, se une
+ *    con una directriz hasta ese punto.
  */
 export interface PlanElement {
   id: string;
@@ -219,7 +234,7 @@ export interface PlanElement {
   label: string;
   x: number;
   y: number;
-  /** Extremo de la pared (solo `kind: 'pared'`). */
+  /** Segundo punto: el otro extremo de la pared, la cota o la directriz. */
   x2?: number;
   y2?: number;
   /** Ancho de la abertura sobre la pared (puerta, ventana o abertura). */
@@ -232,6 +247,10 @@ export interface PlanElement {
   hand?: 'izquierda' | 'derecha';
   /** Giro en grados (0, 90, 180 o 270 para los símbolos; el de la pared para las aberturas). */
   rotation?: number;
+  /** Corrimiento de la línea de cota respecto de la medida, en unidades. */
+  offset?: number;
+  /** Alto de la letra, en unidades (solo texto). */
+  size?: number;
   /** Acometida a la que pertenece. */
   supplyId?: string;
   /** Tablero del relevamiento que representa, si corresponde. */
@@ -251,6 +270,17 @@ export interface ClientPlan {
   imageDataUrl?: string;
   /** Relación ancho/alto de la imagen de fondo, para no deformarla. */
   aspect?: number;
+  /**
+   * Escala del plano: cuántos metros mide una unidad del lienzo.
+   *
+   * Sin este dato el plano se mide «en unidades», que sirven para dibujar pero
+   * no dicen nada. Se carga de dos maneras: escribiendo el ancho real de la
+   * hoja, o calibrando sobre dos puntos cuya distancia se conoce (que es lo que
+   * hace falta cuando el fondo es una foto del lugar).
+   */
+  metersPerUnit?: number;
+  /** Opacidad del fondo, para que el dibujo no se pierda sobre una foto. */
+  backgroundOpacity?: number;
   elements: PlanElement[];
   notes?: string;
   createdAt: string;
