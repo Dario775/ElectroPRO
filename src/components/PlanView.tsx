@@ -1362,7 +1362,10 @@ export const PlanView: React.FC<PlanViewProps> = ({
         </span>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 lg:grid lg:grid-cols-[178px_minmax(0,1fr)_252px] lg:items-stretch">
+      {/* La fila se limita al alto disponible: sin esto, la grilla se estiraría
+          hasta el alto del riel completo y el módulo haría desplazar la página,
+          que es justamente lo que no tiene que pasar. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 lg:grid lg:grid-cols-[178px_minmax(0,1fr)_252px] lg:grid-rows-[minmax(0,1fr)] lg:items-stretch">
         {/* ---------------- Lienzo ---------------- */}
         <div className="order-1 flex min-h-0 flex-col gap-1.5 lg:order-2">
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline bg-sunken">
