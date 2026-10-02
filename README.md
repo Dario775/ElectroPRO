@@ -23,7 +23,7 @@ Verificado en este repositorio:
 | Contraste WCAG AA en tema claro y oscuro | `node contrast.mjs` | ✅ 52 pares en verde |
 | Lógica del recorrido (progreso y siguiente paso) | `npx tsx check-workflow.ts` | ✅ 11 escenarios (incluye dos acometidas) |
 | Catálogo de productos y marcas | `npx tsx check-catalog.ts` | ✅ integridad + alta, edición y borrado |
-| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 154 comprobaciones |
+| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 182 comprobaciones |
 | Render de las 14 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
 | Render de la aplicación completa | `npx tsx render-check.tsx` | ✅ marca, navegación y estado inicial |
 | Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
@@ -84,7 +84,8 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
     │   ├── diagnosticEngine.ts    Evaluación de seguridad y plan de acción
     │   ├── supplies.ts            Acometidas múltiples: normalización y consultas por suministro
     │   ├── workflow.ts            Etapas, pasos, módulos y progreso del recorrido
-    │   └── plan.ts                Geometría del plano: hojas, rejilla y vínculo con el relevamiento
+    │   ├── plan.ts                Geometría del plano: hojas, rejilla y vínculo con el relevamiento
+    │   └── history.ts             Deshacer y rehacer: pasos, agrupado y tope (puro y sin React)
     ├── services/
     │   ├── storageService.ts      Persistencia en localStorage + datos de ejemplo + migraciones
     │   ├── budgetGeneratorService.ts  Generación automática de presupuestos y catálogo de materiales
@@ -405,6 +406,44 @@ se mueve, y las herramientas van a los costados.
 - El pie de la aplicación **se retira en el plano**: su alto entraría en la cuenta del lienzo y haría que la página se
   pueda desplazar.
 
+### Atajos de teclado y deshacer
+
+Se trabaja como en un programa de dibujo: el teclado hace el trabajo fino y **todo se puede deshacer**. La ayuda
+completa está en el botón del teclado de la barra, o con la tecla `?`.
+
+| Teclas | Qué hace |
+|---|---|
+| `Supr` / `Retroceso` | Borrar el elemento seleccionado (si es una pared, se lleva sus aberturas) |
+| `Ctrl+Z` | Deshacer |
+| `Ctrl+Mayús+Z` · `Ctrl+Y` | Rehacer |
+| `Ctrl+D` | Duplicar lo seleccionado |
+| `Flechas` | Mover 1 unidad · con `Mayús`, una rejilla (25 unidades) |
+| `Ctrl+S` | Descargar el plano en PNG |
+| `1` … `5` | Seleccionar · Pared · Puerta · Ventana · Abertura |
+| `V` | Volver a seleccionar |
+| `G` | Encender o apagar la rejilla |
+| `F` | Pantalla completa |
+| `Esc` | Terminar la herramienta, deseleccionar o salir de pantalla completa |
+| `?` | Mostrar la ayuda de atajos |
+
+- Las **teclas de herramienta y las flechas no intervienen mientras se escribe** en un campo: ahí el teclado se usa
+  para escribir. `Ctrl+Z` y `Ctrl+Mayús+Z`, en cambio, funcionan siempre, porque deshacen el documento completo.
+- El riel muestra **la tecla de cada herramienta** en un recuadro, así el atajo se descubre sin abrir la ayuda.
+- Al borrar, el aviso dice que `Ctrl+Z` lo recupera: es la acción más fácil de lamentar.
+
+**Deshacer y rehacer** (`src/utils/history.ts`) es una estructura **pura y sin React**: guarda la foto del estado
+anterior a cada cambio y devuelve una copia nueva en cada operación, así se prueba sola (25 de las comprobaciones del
+banco son suyas). Tres decisiones que importan:
+
+- **Los cambios seguidos del mismo campo se agrupan en un solo paso**: escribir un nombre no deja veinte pasos de
+  deshacer. Vale para los campos (`elemento:<id>`) y para mover con las flechas (`mover:<id>`); se agrupa dentro de una
+  ventana de 900 ms.
+- **Un arrastre anota un solo paso, y recién cuando el elemento se mueve**: un clic para seleccionar no ensucia la
+  lista, y soltar no deja un paso por cuadro (durante el arrastre el cambio vive solo en pantalla).
+- **Seguir trabajando descarta lo que había para rehacer**, que es lo que espera cualquiera que dibuja. El historial se
+  recorta a 60 pasos, descartando el más viejo, y **se vacía al cambiar de cliente** (no se puede deshacer un cambio
+  que fue de otra ficha).
+
 ### Cómo se usa
 
 Se trabaja como en un tablero de dibujo: **se elige una herramienta en el riel y se trabaja sobre el lienzo**. La barra
@@ -447,7 +486,7 @@ del plano muestra la herramienta activa, y con «Terminar» (o **Escape**) se vu
 
 ### Verificación
 
-`.devtools/check-plan.ts` comprueba 154 casos: que exista una plantilla por cada tipo de símbolo y una herramienta por
+`.devtools/check-plan.ts` comprueba 182 casos: que exista una plantilla por cada tipo de símbolo y una herramienta por
 cada tipo de estructura, la geometría de la hoja (A4 horizontal por omisión, 1000 × 707 unidades), el ajuste a la
 rejilla y el recorte dentro del lienzo, la geometría de las paredes (largo, ángulo, distancia y proyección sobre el
 segmento), el apoyado de una abertura sobre una pared (alineación, espesor heredado, deslizamiento sin salirse de las
@@ -457,8 +496,9 @@ ya ubicado no se ofrece otra vez), el resumen del plano, que el módulo no alter
 se dibuje de verdad (SVG de 1000 × 707, el espesor de las paredes, el arco de la puerta, los rótulos con su halo en una
 capa sin girar, las 14 plantillas en la paleta y sin franja de etapa), el armado de programa de dibujo (alto calculado
 sobre `--app-header-h`, las tres columnas, el riel de herramientas, el panel de propiedades, el ajuste del lienzo sin
-deformarse y la barra compacta) y que los planos del cliente de demostración tengan la planta dibujada, con cada
-abertura apoyada y alineada con una pared existente del mismo plano.
+deformarse y la barra compacta), el historial de deshacer y rehacer (agrupado de cambios seguidos, tope de pasos,
+descarte del rehacer al seguir trabajando y las teclas que anuncia la ayuda) y que los planos del cliente de
+demostración tengan la planta dibujada, con cada abertura apoyada y alineada con una pared existente del mismo plano.
 
 Como el plano es una función visual, `.devtools/render-plan.tsx` lo dibuja a `pdf-out/plano-N-<sector>.svg` y `.png`
 reproduciendo exactamente lo que hace «Descargar PNG» (quitando los elementos que son solo de pantalla), para poder

@@ -5,14 +5,17 @@ import {
   Grid3x3,
   ImagePlus,
   Info,
+  Keyboard,
   Map as MapIcon,
   Maximize2,
   Minimize2,
   MousePointer2,
   Plus,
   Printer,
+  Redo2,
   RotateCw,
   Trash2,
+  Undo2,
   X,
 } from 'lucide-react';
 import { ClientPlan, ClientRecord, PlanElement, PlanStructureType, PlanSymbolType } from '../types/electrical';
@@ -67,6 +70,16 @@ import {
   wallCorners,
   wallLength,
 } from '../utils/plan';
+import {
+  canRedo,
+  canUndo,
+  historyDepth,
+  newHistory,
+  record,
+  redo as redoStep,
+  undo as undoStep,
+} from '../utils/history';
+import type { History } from '../utils/history';
 import { cx } from '../utils/cx';
 
 /**
@@ -128,6 +141,43 @@ interface DraftWall {
   x2: number;
   y2: number;
 }
+
+/**
+ * Atajos de teclado, tal como se muestran en la ayuda.
+ *
+ * Están pensados como en los programas de dibujo: las teclas de edición
+ * (suprimir, deshacer, duplicar) y las flechas para mover, más un número por
+ * herramienta en el orden del riel.
+ */
+export const SHORTCUT_GROUPS: Array<{ title: string; items: Array<{ keys: string[]; what: string }> }> = [  {
+    title: 'Edición',
+    items: [
+      { keys: ['Supr', 'Retroceso'], what: 'Borrar el elemento seleccionado' },
+      { keys: ['Ctrl', 'Z'], what: 'Deshacer el último cambio' },
+      { keys: ['Ctrl', 'Mayús', 'Z'], what: 'Rehacer' },
+      { keys: ['Ctrl', 'Y'], what: 'Rehacer (lo mismo, en Windows)' },
+      { keys: ['Ctrl', 'D'], what: 'Duplicar el elemento seleccionado' },
+      { keys: ['Flechas'], what: 'Mover 1 unidad' },
+      { keys: ['Mayús', 'Flechas'], what: 'Mover una rejilla (25 unidades)' },
+      { keys: ['Ctrl', 'S'], what: 'Descargar el plano en PNG' },
+    ],
+  },
+  {
+    title: 'Herramientas y vista',
+    items: [
+      { keys: ['1'], what: 'Seleccionar y mover' },
+      { keys: ['2'], what: 'Pared' },
+      { keys: ['3'], what: 'Puerta' },
+      { keys: ['4'], what: 'Ventana' },
+      { keys: ['5'], what: 'Abertura' },
+      { keys: ['V'], what: 'Volver a seleccionar' },
+      { keys: ['G'], what: 'Encender o apagar la rejilla' },
+      { keys: ['F'], what: 'Pantalla completa' },
+      { keys: ['Esc'], what: 'Terminar la herramienta, deseleccionar o salir de pantalla completa' },
+      { keys: ['?'], what: 'Mostrar esta ayuda' },
+    ],
+  },
+];
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -462,6 +512,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
   const [newPlanWithData, setNewPlanWithData] = useState(true);
   const [message, setMessage] = useState<{ tone: 'info' | 'danger' | 'success'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   /** Última versión de los planos: las escrituras y el arrastre la necesitan al día. */
@@ -472,6 +523,14 @@ export const PlanView: React.FC<PlanViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   /** Trazo de pared en curso: en un ref para no rearmar los listeners por cuadro. */
   const draftRef = useRef<DraftWall | null>(null);
+  /** Cambios para deshacer y rehacer. */
+  const historyRef = useRef<History<ClientPlan[]>>(newHistory<ClientPlan[]>());
+  /** Cuántos pasos hay en cada dirección: refresca los botones y los habilita. */
+  const [historyInfo, setHistoryInfo] = useState({ past: 0, future: 0 });
+  /** Un arrastre anota un solo paso, y recién cuando el elemento se mueve. */
+  const dragRecordedRef = useRef(false);
+  /** Último estado del teclado: el manejador se registra una sola vez. */
+  const keyHandlerRef = useRef<(event: KeyboardEvent) => void>(() => undefined);
   clientRef.current = client;
   onUpdateRef.current = onUpdateClient;
   activePlanIdRef.current = activePlanId;
@@ -492,6 +551,10 @@ export const PlanView: React.FC<PlanViewProps> = ({
     setSelectedId(null);
     setTool('select');
     setActivePlanId(next[0]?.id ?? '');
+    // El historial es de este cliente: al cambiar de ficha no se puede deshacer
+    // un cambio que fue de otro.
+    historyRef.current = newHistory<ClientPlan[]>();
+    setHistoryInfo({ past: 0, future: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client.id]);
 
@@ -505,29 +568,82 @@ export const PlanView: React.FC<PlanViewProps> = ({
     [activePlan]
   );
 
-  /** Guarda los planos en el cliente. `persist: false` deja el cambio solo en pantalla. */
-  const applyPlans = useCallback((next: ClientPlan[], persist = true) => {
-    plansRef.current = next;
-    setPlans(next);
-    if (persist) onUpdateRef.current({ ...clientRef.current, plans: next });
+  /* ---------------------------------------------------------------- */
+  /* Deshacer y rehacer                                                */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * Anota el estado anterior al cambio: es lo que permite deshacer.
+   *
+   * Con una clave (escribir en un campo, mover con las flechas) los cambios
+   * seguidos se agrupan en un solo paso, así deshacer no va letra por letra.
+   */
+  const pushHistory = useCallback((key: string | null = null) => {
+    const next = record(historyRef.current, plansRef.current, key, Date.now());
+    historyRef.current = next;
+    setHistoryInfo(historyDepth(next));
   }, []);
 
+  /** Guarda los planos en el cliente. `persist: false` deja el cambio solo en pantalla. */
+  const applyPlans = useCallback(
+    (next: ClientPlan[], persist = true, historyKey: string | null = null) => {
+      if (persist) pushHistory(historyKey);
+      plansRef.current = next;
+      setPlans(next);
+      if (persist) onUpdateRef.current({ ...clientRef.current, plans: next });
+    },
+    [pushHistory]
+  );
+
   const patchPlan = useCallback(
-    (planId: string, patch: Partial<ClientPlan>, persist = true) => {
+    (planId: string, patch: Partial<ClientPlan>, persist = true, historyKey: string | null = null) => {
       const next = plansRef.current.map((plan) =>
         plan.id === planId ? { ...plan, ...patch, updatedAt: new Date().toISOString() } : plan
       );
-      applyPlans(next, persist);
+      applyPlans(next, persist, historyKey);
     },
     [applyPlans]
   );
 
   const patchElements = useCallback(
-    (planId: string, elements: PlanElement[], persist = true) => {
-      patchPlan(planId, { elements }, persist);
+    (planId: string, elements: PlanElement[], persist = true, historyKey: string | null = null) => {
+      patchPlan(planId, { elements }, persist, historyKey);
     },
     [patchPlan]
   );
+
+  /** Deja los planos en el cliente sin tocar el historial (deshacer y rehacer). */
+  const goToPlans = useCallback((next: ClientPlan[]) => {
+    plansRef.current = next;
+    setPlans(next);
+    onUpdateRef.current({ ...clientRef.current, plans: next });
+    // Si el elemento seleccionado ya no existe, se suelta la selección.
+    setSelectedId((current) =>
+      current && next.some((plan) => plan.elements.some((element) => element.id === current)) ? current : null
+    );
+    setHistoryInfo(historyDepth(historyRef.current));
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    const step = undoStep(historyRef.current, plansRef.current);
+    if (!step) {
+      setMessage({ tone: 'info', text: 'No hay ningún cambio para deshacer.' });
+      return;
+    }
+    historyRef.current = step.history;
+    goToPlans(step.value);
+    setMessage({ tone: 'info', text: 'Se deshizo el último cambio. Ctrl+Mayús+Z lo vuelve a hacer.' });
+  }, [goToPlans]);
+
+  const handleRedo = useCallback(() => {
+    const step = redoStep(historyRef.current, plansRef.current);
+    if (!step) {
+      setMessage({ tone: 'info', text: 'No hay ningún cambio para rehacer.' });
+      return;
+    }
+    historyRef.current = step.history;
+    goToPlans(step.value);
+  }, [goToPlans]);
 
   /** Elementos del plano activo, siempre al día. */
   const currentElements = useCallback((): PlanElement[] => {
@@ -579,20 +695,121 @@ export const PlanView: React.FC<PlanViewProps> = ({
   /* Herramientas                                                      */
   /* ---------------------------------------------------------------- */
 
-  /* Escape sale del modo de dibujo y, si no hay ninguna herramienta activa,
-     sale de pantalla completa. Es la salida rápida que espera cualquiera. */
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return;
+  /* ------------------------------------------------------------------ */
+  /* Atajos de teclado                                                   */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * El manejador vive en un ref y el listener se registra una sola vez: así
+   * siempre ve el estado actual —qué herramienta está activa, qué hay
+   * seleccionado— sin volver a engancharlo en cada dibujado.
+   *
+   * Las teclas de edición funcionan igual que en un programa de dibujo; las
+   * demás no interfieren mientras se escribe en un campo.
+   */
+  keyHandlerRef.current = (event: KeyboardEvent): void => {
+    const target = event.target as HTMLElement | null;
+    const escribiendo = Boolean(
+      target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+    );
+    const tecla = event.key;
+    const conCtrl = event.ctrlKey || event.metaKey;
+
+    if (conCtrl) {
+      const letra = tecla.toLowerCase();
+      if (letra === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) handleRedo();
+        else handleUndo();
+        return;
+      }
+      if (letra === 'y') {
+        event.preventDefault();
+        handleRedo();
+        return;
+      }
+      if (escribiendo) return;
+      if (letra === 'd') {
+        event.preventDefault();
+        handleDuplicateElement();
+        return;
+      }
+      if (letra === 's') {
+        event.preventDefault();
+        void handleDownloadPng();
+        return;
+      }
+      return;
+    }
+
+    if (escribiendo) return;
+
+    if (tecla === 'Escape') {
       if (tool !== 'select') {
         setTool('select');
         return;
       }
+      if (selectedId) {
+        setSelectedId(null);
+        return;
+      }
       if (focus) onToggleFocus?.();
-    };
+      return;
+    }
+
+    if (tecla === 'Delete' || tecla === 'Backspace') {
+      if (!selectedId) return;
+      event.preventDefault();
+      handleRemoveElement(selectedId);
+      return;
+    }
+
+    if (tecla === '?') {
+      event.preventDefault();
+      setIsShortcutsOpen(true);
+      return;
+    }
+    if (tecla === 'g' || tecla === 'G') {
+      setSnap((current) => !current);
+      return;
+    }
+    if (tecla === 'f' || tecla === 'F') {
+      onToggleFocus?.();
+      return;
+    }
+    if (tecla === 'v' || tecla === 'V') {
+      setTool('select');
+      return;
+    }
+
+    /* Un número por herramienta, en el orden del riel. */
+    const numero = Number(tecla);
+    if (Number.isInteger(numero) && numero >= 1 && numero <= 1 + STRUCTURE_TOOLS.length) {
+      if (numero === 1) setTool('select');
+      else setTool(STRUCTURE_TOOLS[numero - 2].type);
+      return;
+    }
+
+    if (tecla.startsWith('Arrow')) {
+      if (!selectedId) return;
+      event.preventDefault();
+      const paso = event.shiftKey ? PLAN_GRID : 1;
+      if (tecla === 'ArrowLeft') nudgeSelection(-paso, 0);
+      if (tecla === 'ArrowRight') nudgeSelection(paso, 0);
+      if (tecla === 'ArrowUp') nudgeSelection(0, -paso);
+      if (tecla === 'ArrowDown') nudgeSelection(0, paso);
+    }
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => keyHandlerRef.current(event);
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [tool, focus, onToggleFocus]);
+  }, []);
 
   /* ---------------------------------------------------------------- */
   /* Alta de elementos con la herramienta activa                       */
@@ -724,6 +941,10 @@ export const PlanView: React.FC<PlanViewProps> = ({
     const metrics = viewMetrics();
     if (!metrics) return;
 
+    // El paso de historial se anota recién cuando el elemento se mueve de verdad:
+    // un clic para seleccionar no tiene que llenar la lista de deshacer.
+    dragRecordedRef.current = false;
+
     setDrag({
       mode,
       planId: activePlan.id,
@@ -760,6 +981,12 @@ export const PlanView: React.FC<PlanViewProps> = ({
     const onMove = (event: PointerEvent): void => {
       const plan = plansRef.current.find((candidate) => candidate.id === drag.planId);
       if (!plan) return;
+
+      // Primer movimiento del arrastre: acá se anota el paso para deshacer.
+      if (!dragRecordedRef.current) {
+        dragRecordedRef.current = true;
+        pushHistory(`arrastre:${drag.elementId}`);
+      }
 
       const dx = (event.clientX - drag.startClientX) * drag.scale;
       const dy = (event.clientY - drag.startClientY) * drag.scale;
@@ -844,7 +1071,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [drag, snap, patchElements]);
+  }, [drag, snap, patchElements, pushHistory]);
 
   /* ---------------------------------------------------------------- */
   /* Alta, edición y borrado de planos                                 */
@@ -901,7 +1128,58 @@ export const PlanView: React.FC<PlanViewProps> = ({
     );
     // Si se estira o se mueve una pared desde los campos, sus aberturas la siguen.
     const updatedWall = updated.find((element) => element.id === selected.id);
-    patchElements(activePlan.id, updatedWall && isWall(updatedWall) ? followWall(updated, updatedWall) : updated);
+    // La clave agrupa los cambios seguidos del mismo elemento: escribir el nombre
+    // no deja un paso de deshacer por letra.
+    patchElements(
+      activePlan.id,
+      updatedWall && isWall(updatedWall) ? followWall(updated, updatedWall) : updated,
+      true,
+      `elemento:${selected.id}`
+    );
+  };
+
+  /**
+   * Mueve la selección con las flechas del teclado.
+   *
+   * Una pared se mueve entera (con sus aberturas), una abertura se corre a lo
+   * largo de su pared y un símbolo se mueve libre. Todo queda dentro de la hoja.
+   */
+  const nudgeSelection = (dx: number, dy: number): void => {
+    if (!activePlan || !selected) return;
+    const elements = currentElements();
+    const origin = elements.find((element) => element.id === selected.id);
+    if (!origin) return;
+
+    const x = snapCoordinate(origin.x + dx, PLAN_WIDTH, false);
+    const y = snapCoordinate(origin.y + dy, height, false);
+
+    if (isWall(origin)) {
+      const movedX = x - origin.x;
+      const movedY = y - origin.y;
+      const moved: PlanElement = {
+        ...origin,
+        x,
+        y,
+        x2: snapCoordinate((origin.x2 ?? origin.x) + movedX, PLAN_WIDTH, false),
+        y2: snapCoordinate((origin.y2 ?? origin.y) + movedY, height, false),
+      };
+      const next = elements.map((element) => (element.id === origin.id ? moved : element));
+      patchElements(activePlan.id, followWall(next, moved), true, `mover:${origin.id}`);
+      return;
+    }
+
+    const wall = origin.wallId ? elements.find((element) => element.id === origin.wallId) : undefined;
+    const moved: PlanElement =
+      wall && isOpening(origin)
+        ? slideOpeningOnWall(origin, wall, x, y)
+        : { ...origin, x, y };
+
+    patchElements(
+      activePlan.id,
+      elements.map((element) => (element.id === origin.id ? moved : element)),
+      true,
+      `mover:${origin.id}`
+    );
   };
 
   const handleDuplicateElement = (): void => {
@@ -926,6 +1204,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
     }
     patchElements(activePlan.id, [...activePlan.elements, copy]);
     setSelectedId(copy.id);
+    setMessage({ tone: 'info', text: `Se duplicó «${copy.label}». Arrastralo hasta su lugar.` });
   };
 
   const handleRemoveElement = (elementId: string): void => {
@@ -935,12 +1214,12 @@ export const PlanView: React.FC<PlanViewProps> = ({
       target && isWall(target) ? activePlan.elements.filter((element) => element.wallId === elementId).length : 0;
     patchElements(activePlan.id, removeElement(activePlan.elements, elementId));
     if (selectedId === elementId) setSelectedId(null);
-    if (openings > 0) {
-      setMessage({
-        tone: 'info',
-        text: `Se borró la pared y ${openings} ${openings === 1 ? 'abertura que tenía' : 'aberturas que tenía'}.`,
-      });
-    }
+    setMessage({
+      tone: 'info',
+      text: `Se borró «${target?.label ?? 'el elemento'}»${
+        openings > 0 ? ` y ${openings} ${openings === 1 ? 'abertura que tenía' : 'aberturas que tenía'}` : ''
+      }. Ctrl+Z lo recupera.`,
+    });
   };
 
   const handleBringFromSurvey = (): void => {
@@ -1223,6 +1502,54 @@ export const PlanView: React.FC<PlanViewProps> = ({
     </Modal>
   );
 
+  const shortcutsModal = (
+    <Modal
+      isOpen={isShortcutsOpen}
+      onClose={() => setIsShortcutsOpen(false)}
+      title="Atajos de teclado"
+      description="Para trabajar el plano como en un programa de dibujo, sin soltar el mouse."
+      icon={<Keyboard className="h-4 w-4" />}
+      size="lg"
+      footer={
+        <Button variant="primary" onClick={() => setIsShortcutsOpen(false)}>
+          Entendido
+        </Button>
+      }
+    >
+      <div className="grid gap-5 sm:grid-cols-2">
+        {SHORTCUT_GROUPS.map((group) => (
+          <div key={group.title}>
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">{group.title}</p>
+            <ul className="space-y-1.5">
+              {group.items.map((item) => (
+                <li
+                  key={item.what}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-hairline bg-sunken px-2.5 py-1.5"
+                >
+                  <span className="min-w-0 text-xs leading-snug text-soft">{item.what}</span>
+                  <span className="flex flex-shrink-0 items-center gap-1">
+                    {item.keys.map((key) => (
+                      <kbd
+                        key={key}
+                        className="rounded-md border border-edge bg-raised px-1.5 py-0.5 font-mono text-xs font-bold text-soft"
+                      >
+                        {key}
+                      </kbd>
+                    ))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <p className="mt-4 rounded-xl border border-info-line bg-info-soft px-3 py-2.5 text-xs leading-snug text-info-text">
+        Mientras escribís en un campo, los atajos de herramienta no intervienen: el teclado se usa para escribir.
+        Deshacer y rehacer, en cambio, funcionan siempre.
+      </p>
+    </Modal>
+  );
+
   if (!activePlan) {
     return (
       <div className="space-y-4">
@@ -1312,6 +1639,24 @@ export const PlanView: React.FC<PlanViewProps> = ({
         </div>
 
         <span className="flex flex-shrink-0 items-center gap-1.5">
+          <IconButton
+            label={`Deshacer (Ctrl+Z)${historyInfo.past > 0 ? ` · ${historyInfo.past} ${historyInfo.past === 1 ? 'cambio' : 'cambios'}` : ' · nada para deshacer'}`}
+            variant="secondary"
+            size="sm"
+            onClick={handleUndo}
+            disabled={!canUndo(historyRef.current)}
+          >
+            <Undo2 className="h-4 w-4" />
+          </IconButton>
+          <IconButton
+            label={`Rehacer (Ctrl+Mayús+Z)${historyInfo.future > 0 ? ` · ${historyInfo.future} pendiente${historyInfo.future === 1 ? '' : 's'}` : ''}`}
+            variant="secondary"
+            size="sm"
+            onClick={handleRedo}
+            disabled={!canRedo(historyRef.current)}
+          >
+            <Redo2 className="h-4 w-4" />
+          </IconButton>
           <Badge tone="neutral" className="font-mono">
             {wallCount > 0 ? `${wallCount} paredes · ` : ''}
             {elementCount} {elementCount === 1 ? 'elemento' : 'elementos'}
@@ -1324,14 +1669,22 @@ export const PlanView: React.FC<PlanViewProps> = ({
               'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors',
               snap ? 'border-accent-line bg-accent-soft text-accent-text' : 'border-edge bg-raised text-muted'
             )}
-            title="Ajusta los trazos a una rejilla y a las esquinas de las paredes"
+            title="Ajusta los trazos a una rejilla y a las esquinas de las paredes (G)"
           >
             <Grid3x3 className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Rejilla {snap ? 'activada' : 'libre'}</span>
           </button>
+          <IconButton
+            label="Atajos de teclado (?)"
+            variant="secondary"
+            size="sm"
+            onClick={() => setIsShortcutsOpen(true)}
+          >
+            <Keyboard className="h-4 w-4" />
+          </IconButton>
           {onToggleFocus && (
             <IconButton
-              label={focus ? 'Salir de pantalla completa (Esc)' : 'Pantalla completa: el lienzo ocupa toda la ventana'}
+              label={focus ? 'Salir de pantalla completa (Esc)' : 'Pantalla completa: el lienzo ocupa toda la ventana (F)'}
               variant={focus ? 'primary' : 'secondary'}
               size="sm"
               onClick={onToggleFocus}
@@ -2021,14 +2374,16 @@ export const PlanView: React.FC<PlanViewProps> = ({
                 >
                   <MousePointer2 className="h-4 w-4 flex-shrink-0" />
                   <span className="min-w-0 flex-1 text-sm font-semibold">Seleccionar y mover</span>
-                  <span className="font-mono text-xs text-muted">Esc</span>
+                  <kbd className="rounded-md border border-edge bg-raised px-1.5 py-0.5 font-mono text-xs font-bold text-muted">
+                    1
+                  </kbd>
                 </button>
               </div>
 
               <div>
                 <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Estructura del inmueble</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {STRUCTURE_TOOLS.map((structure) => {
+                  {STRUCTURE_TOOLS.map((structure, index) => {
                     const active = tool === structure.type;
                     return (
                       <button
@@ -2036,14 +2391,22 @@ export const PlanView: React.FC<PlanViewProps> = ({
                         type="button"
                         onClick={() => setTool(structure.type)}
                         aria-pressed={active}
-                        title={structure.hint}
+                        title={`${structure.hint} (tecla ${index + 2})`}
                         className={cx(
-                          'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-colors',
+                          'relative flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-colors',
                           active
                             ? 'border-accent-line bg-accent-soft'
                             : 'border-hairline bg-sunken hover:border-accent-line hover:bg-accent-soft'
                         )}
                       >
+                        <kbd
+                          className={cx(
+                            'absolute right-1 top-1 rounded border px-1 font-mono text-xs font-bold',
+                            active ? 'border-accent-line bg-surface text-accent-text' : 'border-edge bg-raised text-muted'
+                          )}
+                        >
+                          {index + 2}
+                        </kbd>
                         <svg viewBox="-20 -20 40 40" className="h-9 w-9 text-strong" aria-hidden="true">
                           <g stroke="currentColor">{structureIcon(structure.type)}</g>
                         </svg>
@@ -2097,6 +2460,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       </div>
 
       {newPlanModal}
+      {shortcutsModal}
     </div>
   );
 };
