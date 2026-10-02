@@ -23,7 +23,7 @@ Verificado en este repositorio:
 | Contraste WCAG AA en tema claro y oscuro | `node contrast.mjs` | ✅ 52 pares en verde |
 | Lógica del recorrido (progreso y siguiente paso) | `npx tsx check-workflow.ts` | ✅ 11 escenarios (incluye dos acometidas) |
 | Catálogo de productos y marcas | `npx tsx check-catalog.ts` | ✅ integridad + alta, edición y borrado |
-| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 143 comprobaciones |
+| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 146 comprobaciones |
 | Render de las 14 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
 | Render de la aplicación completa | `npx tsx render-check.tsx` | ✅ marca, navegación y estado inicial |
 | Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
@@ -278,7 +278,8 @@ node check-ui.mjs            # sin clases de color crudas, sin fuentes a mano, s
 node contrast.mjs            # contraste WCAG AA de los tokens en ambos temas
 npx tsx check-workflow.ts    # progreso y siguiente paso del recorrido
 npx tsx check-catalog.ts     # integridad del catálogo + alta, edición, borrado y restauración
-npx tsx check-plan.ts        # módulo del plano: plantillas, hoja, rejilla y vínculo con el relevamiento
+npx tsx check-plan.ts        # módulo del plano: estructura, plantillas, hoja, rejilla y vínculo con el relevamiento
+npx tsx render-plan.tsx      # dibuja los planos de ejemplo en pdf-out/ (SVG y PNG) para mirarlos sin abrir la app
 npx tsx render-views.tsx     # renderiza las 14 pantallas con datos reales y detecta errores
 npx tsx render-check.tsx     # renderiza la aplicación completa (marca, navegación, estado inicial)
 ```
@@ -339,6 +340,21 @@ herramientas de estructura, que se dibujan directamente sobre el lienzo:
 - Con una pared seleccionada aparecen **dos círculos en las puntas** para estirarla, además de los campos numéricos
   (extremos, espesor y largo calculado) en el panel del elemento.
 
+### Rótulos
+
+Los nombres de los elementos se dibujan en una **capa propia, encima de todo y sin girar**: si el texto fuera adentro
+del grupo del elemento, una puerta de una pared de abajo quedaría con el nombre al revés y una de una pared lateral,
+vertical. Además:
+
+- El texto se **corre para adentro de la hoja** cuando el elemento está cerca del borde, así no se corta (el ancho se
+  estima a partir del largo del texto y el cuerpo de letra).
+- Cada rótulo se dibuja con un **halo del color de la hoja**, para que se lea aunque cruce una pared. Se hace pintando
+  el mismo texto dos veces (primero el halo, después el texto) y no con `paint-order`, porque hay dibujantes de SVG que
+  no lo soportan y, al aplicar el trazo encima del relleno, dejarían el plano sin ningún nombre.
+- Los elementos que se llaman igual que su tipo (`Pared`, `Puerta`, `Tomacorriente`…) **no llevan rótulo**: el dibujo ya
+  dice lo que son, y así el plano no se llena de texto repetido. El elemento seleccionado se destaca en azul y en
+  negrita.
+
 ### Plantillas de símbolos eléctricos
 
 `src/components/planSymbols.tsx` dibuja **14 plantillas en SVG** dentro de una caja de 32 × 32 centrada en el origen,
@@ -391,16 +407,21 @@ barra del plano muestra la herramienta activa, y con «Terminar» (o **Escape**)
 
 ### Verificación
 
-`.devtools/check-plan.ts` comprueba 143 casos: que exista una plantilla por cada tipo de símbolo y una herramienta por
+`.devtools/check-plan.ts` comprueba 146 casos: que exista una plantilla por cada tipo de símbolo y una herramienta por
 cada tipo de estructura, la geometría de la hoja (A4 horizontal por omisión, 1000 × 707 unidades), el ajuste a la
 rejilla y el recorte dentro del lienzo, la geometría de las paredes (largo, ángulo, distancia y proyección sobre el
 segmento), el apoyado de una abertura sobre una pared (alineación, espesor heredado, deslizamiento sin salirse de las
 puntas y seguimiento al mover o estirar la pared), el borrado en cascada de las aberturas, el enganche de esquinas y el
 enderezado de trazos, el orden de pintado, el vínculo tablero/carga → elemento (incluida la deduplicación: un tablero
 ya ubicado no se ofrece otra vez), el resumen del plano, que el módulo no altere el recorrido de 7 pasos, que el lienzo
-se dibuje de verdad (SVG de 1000 × 707, el espesor de las paredes, el arco de la puerta, las 14 plantillas y las cuatro
-herramientas en la paleta y sin franja de etapa) y que los planos del cliente de demostración tengan la planta dibujada,
-con cada abertura apoyada y alineada con una pared existente del mismo plano.
+se dibuje de verdad (SVG de 1000 × 707, el espesor de las paredes, el arco de la puerta, los rótulos con su halo en una
+capa sin girar, las 14 plantillas y las cuatro herramientas en la paleta y sin franja de etapa) y que los planos del
+cliente de demostración tengan la planta dibujada, con cada abertura apoyada y alineada con una pared existente del
+mismo plano.
+
+Como el plano es una función visual, `.devtools/render-plan.tsx` lo dibuja a `pdf-out/plano-N-<sector>.svg` y `.png`
+reproduciendo exactamente lo que hace «Descargar PNG» (quitando los elementos que son solo de pantalla), para poder
+mirarlo y compararlo sin abrir la aplicación.
 
 ---
 

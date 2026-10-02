@@ -183,7 +183,6 @@ const PlanElementNode: React.FC<{
     const dx = (element.x2 ?? element.x) - element.x;
     const dy = (element.y2 ?? element.y) - element.y;
     const thickness = element.thickness ?? 14;
-    const showLabel = element.label && element.label !== findStructure('pared')?.label;
 
     return (
       <g
@@ -215,20 +214,6 @@ const PlanElementNode: React.FC<{
           />
         )}
         {renderStructure(element, { wall: INK, gap: BACKGROUND_FILL })}
-        {showLabel && (
-          <text
-            x={dx / 2}
-            y={dy / 2 - thickness / 2 - 6}
-            textAnchor="middle"
-            fontSize={14}
-            fontFamily={PLAN_FONT}
-            fill={SOFT_INK}
-            stroke="none"
-            pointerEvents="none"
-          >
-            {element.label}
-          </text>
-        )}
         {selected && (
           <>
             <circle
@@ -264,7 +249,6 @@ const PlanElementNode: React.FC<{
     const length = element.length ?? 90;
     const thickness = element.thickness ?? 14;
     const half = length / 2;
-    const showLabel = element.label && element.label !== elementTypeLabel({ ...element, label: '' });
 
     return (
       <g
@@ -295,20 +279,6 @@ const PlanElementNode: React.FC<{
           />
         )}
         {renderStructure(element, { wall: INK, gap: BACKGROUND_FILL })}
-        {showLabel && (
-          <text
-            x={0}
-            y={thickness / 2 + 18}
-            textAnchor="middle"
-            fontSize={13}
-            fontFamily={PLAN_FONT}
-            fill={SOFT_INK}
-            stroke="none"
-            pointerEvents="none"
-          >
-            {element.label}
-          </text>
-        )}
         {selected && element.wallId && (
           <line
             x1={-half}
@@ -365,16 +335,88 @@ const PlanElementNode: React.FC<{
         />
       )}
       {renderSymbolShapes(element.symbol ?? 'toma', def.size)}
+    </g>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+/* Rótulos                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Rótulo de un elemento.
+ *
+ * Se dibuja en una capa aparte, encima de todo y **sin girar**: si el texto
+ * fuera adentro del grupo del elemento, una puerta de una pared de abajo
+ * quedaría con el nombre al revés y una de una pared lateral, vertical. Además
+ * el texto se corre para adentro de la hoja cuando el elemento está cerca del
+ * borde, así no se corta.
+ */
+const PlanLabel: React.FC<{ element: PlanElement; height: number; selected: boolean }> = ({
+  element,
+  height,
+  selected,
+}) => {
+  const kind = elementKind(element);
+  const label = (element.label ?? '').trim();
+
+  /* Los elementos que se llaman igual que su tipo no llevan rótulo: el dibujo
+     ya dice lo que son y el plano queda más limpio. */
+  const defaultLabel = kind === 'symbol' ? findSymbol(element.symbol ?? 'toma').label : findStructure(kind)?.label;
+  if (!label || label === defaultLabel) return null;
+
+  const fontSize = isStructure(element) ? 14 : 15;
+  let anchorX = element.x;
+  let anchorY = element.y;
+
+  if (kind === 'pared') {
+    anchorX = (element.x + (element.x2 ?? element.x)) / 2;
+    anchorY = (element.y + (element.y2 ?? element.y)) / 2 - (element.thickness ?? 14) / 2 - 8;
+  } else if (isOpening(element)) {
+    anchorY = element.y + (element.thickness ?? 14) / 2 + 20;
+  } else {
+    anchorY = element.y + findSymbol(element.symbol ?? 'toma').size / 2 + 18;
+  }
+
+  // Ancho aproximado del texto, para no dejarlo salir de la hoja.
+  const halfWidth = (label.length * fontSize * 0.52) / 2;
+  const x = Math.min(Math.max(anchorX, halfWidth + 4), PLAN_WIDTH - halfWidth - 4);
+  const y = Math.min(Math.max(anchorY, fontSize + 2), height - 5);
+
+  const color = selected ? SELECTION : isStructure(element) ? SOFT_INK : INK;
+
+  /* El rótulo se dibuja dos veces: primero el mismo texto en blanco y con un
+     trazo grueso (el «halo», que lo despega de la pared cuando lo cruza) y
+     encima el texto legible. Se hace así y no con `paint-order` porque hay
+     dibujantes de SVG que no lo soportan y, al aplicar el trazo encima del
+     relleno, borrarían el texto. */
+  return (
+    <g pointerEvents="none">
       <text
-        y={def.size / 2 + 16}
+        x={x}
+        y={y}
         textAnchor="middle"
-        fontSize={15}
+        fontSize={fontSize}
         fontFamily={PLAN_FONT}
-        fill={INK}
-        stroke="none"
-        pointerEvents="none"
+        fontWeight={selected ? 700 : 400}
+        fill={BACKGROUND_FILL}
+        stroke={BACKGROUND_FILL}
+        strokeWidth={5}
+        strokeLinejoin="round"
       >
-        {element.label}
+        {label}
+      </text>
+      <text
+        x={x}
+        y={y}
+        textAnchor="middle"
+        fontSize={fontSize}
+        fontFamily={PLAN_FONT}
+        fontWeight={selected ? 700 : 400}
+        fill={color}
+        stroke="none"
+      >
+        {label}
       </text>
     </g>
   );
@@ -1341,6 +1383,17 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
                     selected={element.id === selectedId}
                     onPointerDown={handleElementPointerDown}
                     onHandlePointerDown={handleHandlePointerDown}
+                  />
+                ))}
+
+                {/* Rótulos: última capa, siempre horizontales y con el
+                    seleccionado destacado. */}
+                {orderedElements.map((element) => (
+                  <PlanLabel
+                    key={`rotulo-${element.id}`}
+                    element={element}
+                    height={height}
+                    selected={element.id === selectedId}
                   />
                 ))}
 
