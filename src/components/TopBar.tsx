@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowRightLeft,
   Building2,
@@ -52,9 +52,42 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [rateMenuOpen, setRateMenuOpen] = useState(false);
   const { activeCurrency, setActiveCurrency, usdToArsRate, setUsdToArsRate } = useCurrency();
   const [tempRate, setTempRate] = useState(String(usdToArsRate));
+  const headerRef = useRef<HTMLElement | null>(null);
+
+  /**
+   * Publica la altura real de la barra en `--app-header-h`.
+   *
+   * La barra cambia de alto: en el teléfono el selector de cliente baja a su
+   * propia fila. El módulo del plano necesita el número exacto para ocupar lo
+   * que queda de la ventana con el lienzo fijo, sin dejar un hueco ni provocar
+   * que la página se pueda desplazar.
+   */
+  useEffect(() => {
+    const node = headerRef.current;
+    if (!node || typeof document === 'undefined') return;
+
+    const aplicar = (): void => {
+      document.documentElement.style.setProperty(
+        '--app-header-h',
+        `${Math.round(node.getBoundingClientRect().height)}px`
+      );
+    };
+    aplicar();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', aplicar);
+      return () => window.removeEventListener('resize', aplicar);
+    }
+    const observer = new ResizeObserver(aplicar);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <header className="sticky top-0 z-30 border-b border-hairline bg-surface/95 backdrop-blur-md">
+    <header
+      ref={headerRef}
+      className="sticky top-0 z-30 border-b border-hairline bg-surface/95 backdrop-blur-md"
+    >
       <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-2 px-3 py-2.5 sm:px-5">
         {/* Identidad */}
         <div className="flex items-center gap-2.5">

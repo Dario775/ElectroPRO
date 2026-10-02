@@ -23,7 +23,7 @@ Verificado en este repositorio:
 | Contraste WCAG AA en tema claro y oscuro | `node contrast.mjs` | ✅ 52 pares en verde |
 | Lógica del recorrido (progreso y siguiente paso) | `npx tsx check-workflow.ts` | ✅ 11 escenarios (incluye dos acometidas) |
 | Catálogo de productos y marcas | `npx tsx check-catalog.ts` | ✅ integridad + alta, edición y borrado |
-| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 146 comprobaciones |
+| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 154 comprobaciones |
 | Render de las 14 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
 | Render de la aplicación completa | `npx tsx render-check.tsx` | ✅ marca, navegación y estado inicial |
 | Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
@@ -367,20 +367,58 @@ así se escalan y se giran sin perder nitidez. Se eligen de una paleta agrupada 
 | Puesta a tierra | Jabalina / puesta a tierra · Caja de paso |
 | Artefactos | Aire acondicionado · Termotanque · Bomba · Motor / fuerza |
 
+### La pantalla: un programa de dibujo
+
+El plano no se trabaja como un formulario, sino como un **programa de edición**: el lienzo está siempre en el medio y no
+se mueve, y las herramientas van a los costados.
+
+```
+┌─ barra del plano: herramienta activa · planos · rejilla · pantalla completa · imprimir · PNG ─┐
+├──────────────┬──────────────────────────────────────────────┬─────────────────────────────────┤
+│ Herramientas │                  LIENZO                      │  Propiedades del elemento       │
+│ (riel fijo,  │  (fijo, se ajusta al alto de la ventana)     │  Elementos del plano            │
+│  con scroll) │                                              │  Traer del relevamiento         │
+│              │  ─────────────────────────────────────────   │  Hoja y datos del plano         │
+│              │  pie: qué hacer ahora · tamaño de la hoja    │  Fondo del plano                │
+└──────────────┴──────────────────────────────────────────────┴─────────────────────────────────┘
+```
+
+- **El lienzo no se desplaza nunca**: el módulo ocupa exactamente el alto que queda de la ventana. La barra superior
+  publica su altura real en la variable CSS `--app-header-h` (la mide con un `ResizeObserver`, porque en el teléfono
+  cambia de alto al bajar el selector de cliente) y el módulo usa `calc(100dvh - var(--app-header-h) - 1.75rem)`. Los
+  paneles laterales tienen su propio desplazamiento, así que la página no se mueve.
+- **La hoja se ajusta sola, sin deformarse**: el SVG ocupa todo el recuadro y la hoja se adapta adentro conservando su
+  proporción (`preserveAspectRatio="xMidYMid meet"`), como en cualquier editor. La zona libre alrededor es la «mesa»
+  (`bg-sunken`), y sobre el blanco de la hoja se ve el plano. Todo lo que traduce clics a coordenadas del plano
+  descuenta ese centrado, y los clics fuera de la hoja se ignoran.
+- **Tres columnas**: riel de herramientas a la izquierda (178 px, con su propio desplazamiento), lienzo en el medio
+  (todo el espacio restante) y panel de propiedades a la derecha (252 px). En el teléfono se apilan: primero el lienzo,
+  después las herramientas y por último las propiedades.
+- **Barra compacta arriba** (una sola fila): herramienta activa, los planos del cliente, contador de elementos, rejilla,
+  pantalla completa, imprimir y descargar. La explicación de cada herramienta vive en el pie del lienzo y en la ayuda de
+  la barra, para no gastar alto.
+- **Los avisos son flotantes**: aparecen superpuestos abajo del lienzo y se cierran con la cruz, en lugar de empujar el
+  dibujo hacia abajo cada vez que se coloca una puerta.
+- **Pantalla completa** (el botón de las flechas, o `Escape`): se retiran la navegación lateral, el riel de móvil, el pie
+  de la aplicación y el ancho máximo, y el lienzo se queda con toda la ventana. Se sale con el mismo botón o con
+  `Escape`. El módulo también usa el **ancho completo** de la pantalla cuando no está en pantalla completa.
+- El pie de la aplicación **se retira en el plano**: su alto entraría en la cuenta del lienzo y haría que la página se
+  pueda desplazar.
+
 ### Cómo se usa
 
-Se trabaja como en un tablero de dibujo: **se elige una herramienta en la paleta y se trabaja sobre el lienzo**. La
-barra del plano muestra la herramienta activa, y con «Terminar» (o **Escape**) se vuelve a seleccionar.
+Se trabaja como en un tablero de dibujo: **se elige una herramienta en el riel y se trabaja sobre el lienzo**. La barra
+del plano muestra la herramienta activa, y con «Terminar» (o **Escape**) se vuelve a seleccionar.
 
 | Acción | Cómo |
 |---|---|
 | **Crear un plano** | «Nuevo plano»: nombre, proporción de hoja (A4 horizontal, A4 vertical o cuadrada), acometida y, si querés, ubicar de una vez los tableros y las cargas ya relevados |
 | **Dibujar la planta** | Herramienta «Pared»: mantener presionado y arrastrar. El largo se ve mientras se dibuja y el trazo se engancha con las esquinas y se endereza en horizontales, verticales y diagonales |
 | **Abrir un hueco** | Herramientas «Puerta», «Ventana» o «Abertura»: un clic sobre la pared. Queda alineada, con el hueco hecho y su ancho según el tipo; se arrastra a lo largo de la pared para correrla |
-| **Ubicar un símbolo** | Un clic en la plantilla de la paleta y después un clic en el plano, dónde va. Se pueden ubicar varios seguidos sin volver a elegir |
+| **Ubicar un símbolo** | Un clic en la plantilla del riel y después un clic en el plano, dónde va. Se pueden ubicar varios seguidos sin volver a elegir |
 | **Moverlo** | Se arrastra con el dedo o el mouse. Con la rejilla activada los elementos se alinean cada 25 unidades; las paredes mueven sus aberturas y las aberturas se corren por su pared |
 | **Estirar una pared** | Se la selecciona y se arrastran los círculos de las puntas; las aberturas se acomodan solas |
-| **Editarlo** | Al seleccionarlo se abre su panel: nombre en el plano, plantilla (símbolos) o espesor y extremos (paredes), ancho y lado de apertura (puertas y ventanas), posición, giro, acometida y notas |
+| **Editarlo** | Al seleccionarlo se abre su panel a la derecha: nombre en el plano, plantilla (símbolos) o espesor y extremos (paredes), ancho y lado de apertura (puertas y ventanas), posición, giro, acometida y notas |
 | **Traer del relevamiento** | La lista muestra los tableros y las cargas que todavía no están en ningún plano, con «Ubicar» por ítem o «Ubicar todo». Cada elemento queda vinculado a su tablero (`panelId`) o a su artefacto (`loadId`) |
 | **Fondo real** | Se carga una foto o el plano del arquitecto: la imagen se reduce sola (1400 px de ancho, JPEG) para ocupar poco lugar, la hoja toma su proporción y las paredes que dibujes quedan encima |
 | **Entregarlo** | «Descargar PNG» (al doble de resolución, con encabezado de plano, cliente, acometida y fecha) o «Imprimir» (A4 apaisado) |
@@ -402,12 +440,14 @@ barra del plano muestra la herramienta activa, y con «Terminar» (o **Escape**)
 - Los planos se guardan junto con el cliente (`ClientRecord.plans`), así que entran en la copia de seguridad JSON sin
   ningún cambio. `PlanElement.kind` es opcional y vale `symbol` cuando falta, de modo que **los planos guardados antes
   de que existieran las paredes se siguen abriendo igual**.
+- El módulo usa el **ancho completo** de la pantalla y su propio alto, calculado a partir de `--app-header-h`: no
+  comparte la grilla de las vistas de paso (que están limitadas a 1500 px), porque ahí el lienzo perdería espacio.
 - Los planos de ejemplo del cliente «Supermercado El Trébol» traen la planta dibujada (cuatro paredes, puerta de
   entrada, vidriera, ventanas y el paso entre el salón y el depósito), para que se vea el uso real del módulo.
 
 ### Verificación
 
-`.devtools/check-plan.ts` comprueba 146 casos: que exista una plantilla por cada tipo de símbolo y una herramienta por
+`.devtools/check-plan.ts` comprueba 154 casos: que exista una plantilla por cada tipo de símbolo y una herramienta por
 cada tipo de estructura, la geometría de la hoja (A4 horizontal por omisión, 1000 × 707 unidades), el ajuste a la
 rejilla y el recorte dentro del lienzo, la geometría de las paredes (largo, ángulo, distancia y proyección sobre el
 segmento), el apoyado de una abertura sobre una pared (alineación, espesor heredado, deslizamiento sin salirse de las
@@ -415,9 +455,10 @@ puntas y seguimiento al mover o estirar la pared), el borrado en cascada de las 
 enderezado de trazos, el orden de pintado, el vínculo tablero/carga → elemento (incluida la deduplicación: un tablero
 ya ubicado no se ofrece otra vez), el resumen del plano, que el módulo no altere el recorrido de 7 pasos, que el lienzo
 se dibuje de verdad (SVG de 1000 × 707, el espesor de las paredes, el arco de la puerta, los rótulos con su halo en una
-capa sin girar, las 14 plantillas y las cuatro herramientas en la paleta y sin franja de etapa) y que los planos del
-cliente de demostración tengan la planta dibujada, con cada abertura apoyada y alineada con una pared existente del
-mismo plano.
+capa sin girar, las 14 plantillas en la paleta y sin franja de etapa), el armado de programa de dibujo (alto calculado
+sobre `--app-header-h`, las tres columnas, el riel de herramientas, el panel de propiedades, el ajuste del lienzo sin
+deformarse y la barra compacta) y que los planos del cliente de demostración tengan la planta dibujada, con cada
+abertura apoyada y alineada con una pared existente del mismo plano.
 
 Como el plano es una función visual, `.devtools/render-plan.tsx` lo dibuja a `pdf-out/plano-N-<sector>.svg` y `.png`
 reproduciendo exactamente lo que hace «Descargar PNG» (quitando los elementos que son solo de pantalla), para poder

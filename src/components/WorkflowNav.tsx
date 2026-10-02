@@ -76,7 +76,7 @@ export const WorkflowSidebar: React.FC<WorkflowNavProps> = ({
 
   return (
     <aside className="hidden w-[280px] flex-shrink-0 lg:block">
-      <div className="sticky top-[76px] space-y-4 py-5">
+      <div className="sticky top-[calc(var(--app-header-h)+0.75rem)] space-y-4 py-5">
         {/* Progreso del trabajo y próximo paso */}
         <div className="rounded-2xl border border-hairline bg-surface p-4">
           <ProgressBar value={progress.done} max={progress.total} label={`${progress.done} de ${progress.total} pasos`} />

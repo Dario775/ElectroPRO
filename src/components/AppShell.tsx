@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowRight, CheckCircle2, CircleAlert } from 'lucide-react';
 import { ViewId, WorkflowGroup, findGroupOfStep, findNextStep, getProgress, isModuleView } from '../utils/workflow';
+import { cx } from '../utils/cx';
 import { TopBar, TopBarProps } from './TopBar';
 import { WorkflowRail, WorkflowSidebar } from './WorkflowNav';
 import { Button } from './ui/Button';
@@ -18,6 +19,12 @@ export interface AppShellProps extends TopBarProps {
   workflow: WorkflowGroup[];
   activeView: ViewId;
   onNavigate: (view: ViewId) => void;
+  /**
+   * Modo pantalla completa del módulo del plano: se retiran la navegación
+   * lateral, el pie y el ancho máximo, para que el lienzo se quede con toda la
+   * ventana. Se sale con el mismo botón o con Escape.
+   */
+  focus?: boolean;
   children: React.ReactNode;
 }
 
@@ -108,6 +115,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   workflow,
   activeView,
   onNavigate,
+  focus = false,
   children,
   ...topBarProps
 }) => {
@@ -115,15 +123,28 @@ export const AppShell: React.FC<AppShellProps> = ({
   const nextStep = findNextStep(workflow);
   const navProps = { workflow, activeView, onNavigate, nextStep, progress };
 
+  /**
+   * El módulo del plano se trabaja como un programa de dibujo: el lienzo ocupa
+   * el alto de la ventana y no se desplaza con la página. Para eso la cáscara le
+   * deja el ancho completo y un margen chico, y en pantalla completa esconde la
+   * navegación lateral, el riel de móvil y el pie.
+   */
+  const workspace = activeView === 'plan';
+
   return (
     <div className="min-h-screen bg-page text-strong">
       <TopBar {...topBarProps} />
-      <WorkflowRail {...navProps} />
+      {!focus && <WorkflowRail {...navProps} />}
 
-      <div className="mx-auto flex max-w-[1500px] gap-6 px-3 sm:px-5">
-        <WorkflowSidebar {...navProps} />
+      <div
+        className={cx(
+          'mx-auto flex gap-6',
+          workspace ? 'max-w-none px-2 py-2 sm:px-3' : 'max-w-[1500px] px-3 sm:px-5'
+        )}
+      >
+        {!focus && <WorkflowSidebar {...navProps} />}
 
-        <main className="min-w-0 flex-1 py-4 pb-24 lg:pb-10">
+        <main className={cx('min-w-0 flex-1', workspace ? 'py-1 pb-2 lg:pb-1' : 'py-4 pb-24 lg:pb-10')}>
           {!isModuleView(activeView) && (
             <ContextBar workflow={workflow} activeView={activeView} onNavigate={onNavigate} />
           )}
@@ -131,12 +152,16 @@ export const AppShell: React.FC<AppShellProps> = ({
         </main>
       </div>
 
-      <MobileNextBar workflow={workflow} activeView={activeView} onNavigate={onNavigate} />
+      {!focus && <MobileNextBar workflow={workflow} activeView={activeView} onNavigate={onNavigate} />}
 
-      <footer className="border-t border-hairline px-4 py-4 text-center text-xs text-muted">
-        ElectroPro · Todo se guarda en este equipo, sin conexión a internet · Verificá siempre los cálculos antes de
-        intervenir una instalación
-      </footer>
+      {/* El pie se retira en el plano: su alto entraría en la cuenta del lienzo
+          y haría que la página se pueda desplazar. */}
+      {!focus && !workspace && (
+        <footer className="border-t border-hairline px-4 py-4 text-center text-xs text-muted">
+          ElectroPro · Todo se guarda en este equipo, sin conexión a internet · Verificá siempre los cálculos antes de
+          intervenir una instalación
+        </footer>
+      )}
     </div>
   );
 };

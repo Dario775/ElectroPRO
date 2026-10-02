@@ -6,10 +6,14 @@ import {
   ImagePlus,
   Info,
   Map as MapIcon,
+  Maximize2,
+  Minimize2,
   MousePointer2,
+  Plus,
   Printer,
   RotateCw,
   Trash2,
+  X,
 } from 'lucide-react';
 import { ClientPlan, ClientRecord, PlanElement, PlanStructureType, PlanSymbolType } from '../types/electrical';
 import {
@@ -27,10 +31,10 @@ import {
   structureIcon,
 } from './planSymbols';
 import { Button, IconButton } from './ui/Button';
-import { Badge, Callout, EmptyState, SectionHeader } from './ui/Card';
+import { Badge, EmptyState, SectionHeader } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
 import { Modal } from './ui/Modal';
-import { Field, NumberField, SegmentedControl, SelectField, TextAreaField, TextField } from './ui/Form';
+import { Field, HelpTip, NumberField, SegmentedControl, SelectField, TextAreaField, TextField } from './ui/Form';
 import { getPrimarySupply, getSupplies } from '../utils/supplies';
 import {
   PLAN_GRID,
@@ -429,9 +433,20 @@ const PlanLabel: React.FC<{ element: PlanElement; height: number; selected: bool
 export interface PlanViewProps {
   client: ClientRecord;
   onUpdateClient: (client: ClientRecord) => void;
+  /** Pantalla completa: el lienzo se queda con toda la ventana. */
+  focus?: boolean;
+  onToggleFocus?: () => void;
+  /** Atajo al relevamiento, para cuando el plano está en pantalla completa. */
+  onGoToSurvey?: () => void;
 }
 
-export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) => {
+export const PlanView: React.FC<PlanViewProps> = ({
+  client,
+  onUpdateClient,
+  focus = false,
+  onToggleFocus,
+  onGoToSurvey,
+}) => {
   const [plans, setPlans] = useState<ClientPlan[]>(() => client.plans ?? []);
   const [activePlanId, setActivePlanId] = useState<string>(() => (client.plans ?? [])[0]?.id ?? '');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -520,13 +535,38 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
     return plan?.elements ?? [];
   }, []);
 
-  /** Pasa un punto de la pantalla a coordenadas del lienzo. */
-  const clientToPlan = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
+  /**
+   * Cómo está dibujada la hoja dentro del lienzo de la pantalla.
+   *
+   * El SVG ocupa todo el recuadro disponible y la hoja se ajusta adentro
+   * conservando su proporción (como en un programa de dibujo), así que puede
+   * quedar con franjas libres arriba y abajo o a los costados. Todo lo que
+   * traduce entre píxeles y coordenadas del plano pasa por acá.
+   */
+  const viewMetrics = useCallback((): { scale: number; offsetX: number; offsetY: number } | null => {
     const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0) return null;
-    const scale = PLAN_WIDTH / rect.width;
-    return { x: (clientX - rect.left) * scale, y: (clientY - rect.top) * scale };
-  }, []);
+    if (!rect || rect.width === 0 || rect.height === 0) return null;
+    const scale = Math.min(rect.width / PLAN_WIDTH, rect.height / height);
+    return {
+      scale,
+      offsetX: (rect.width - PLAN_WIDTH * scale) / 2,
+      offsetY: (rect.height - height * scale) / 2,
+    };
+  }, [height]);
+
+  /** Pasa un punto de la pantalla a coordenadas del lienzo. Fuera de la hoja, nada. */
+  const clientToPlan = useCallback(
+    (clientX: number, clientY: number): { x: number; y: number } | null => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      const metrics = viewMetrics();
+      if (!rect || !metrics) return null;
+      const x = (clientX - rect.left - metrics.offsetX) / metrics.scale;
+      const y = (clientY - rect.top - metrics.offsetY) / metrics.scale;
+      if (x < 0 || y < 0 || x > PLAN_WIDTH || y > height) return null;
+      return { x, y };
+    },
+    [viewMetrics, height]
+  );
 
   /** Ajusta un punto del lienzo a la rejilla y a las esquinas de las paredes. */
   const snapToPlan = useCallback(
@@ -539,16 +579,20 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
   /* Herramientas                                                      */
   /* ---------------------------------------------------------------- */
 
-  /* Escape sale del modo de dibujo: es la salida rápida que espera cualquiera
-     que se haya quedado con una herramienta activa. */
+  /* Escape sale del modo de dibujo y, si no hay ninguna herramienta activa,
+     sale de pantalla completa. Es la salida rápida que espera cualquiera. */
   useEffect(() => {
-    if (tool === 'select') return;
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setTool('select');
+      if (event.key !== 'Escape') return;
+      if (tool !== 'select') {
+        setTool('select');
+        return;
+      }
+      if (focus) onToggleFocus?.();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [tool]);
+  }, [tool, focus, onToggleFocus]);
 
   /* ---------------------------------------------------------------- */
   /* Alta de elementos con la herramienta activa                       */
@@ -677,8 +721,8 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
     mode: DragState['mode']
   ): void => {
     if (!activePlan) return;
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0) return;
+    const metrics = viewMetrics();
+    if (!metrics) return;
 
     setDrag({
       mode,
@@ -687,7 +731,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
       origin: { ...element },
       startClientX: event.clientX,
       startClientY: event.clientY,
-      scale: PLAN_WIDTH / rect.width,
+      scale: 1 / metrics.scale,
       height: planHeight(activePlan),
     });
   };
@@ -1211,124 +1255,128 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
   const selectedIsOpening = selected ? isOpening(selected) : false;
 
   return (
-    <div className="space-y-4">
-      <SectionHeader
-        eyebrow="Módulo"
-        title="Plano de ubicación"
-        description="Dibujá la planta del inmueble —paredes, puertas, ventanas y aberturas— y ubicá sobre ella los tableros, las tomas y los artefactos."
-        icon={<MapIcon className="h-4 w-4" />}
-        actions={
-          <>
-            <Button
-              variant="secondary"
-              icon={<Printer className="h-4 w-4" />}
-              onClick={handlePrint}
-              disabled={busy || elementCount === 0}
-            >
-              Imprimir
-            </Button>
-            <Button
-              variant="primary"
-              icon={<Download className="h-4 w-4" />}
-              onClick={handleDownloadPng}
-              disabled={busy}
-              loading={busy}
-            >
-              Descargar PNG
-            </Button>
-          </>
-        }
-      />
+    <div className="flex flex-col gap-2 lg:h-[calc(100dvh-var(--app-header-h)-1.75rem)]">
+      {/* ---------------- Barra del plano ---------------- */}
+      <div className="flex flex-shrink-0 flex-wrap items-center gap-2 rounded-2xl border border-hairline bg-surface px-2 py-1.5">
+        <span
+          className={cx(
+            'inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold',
+            isSelecting ? 'border-hairline bg-raised text-soft' : 'border-accent-line bg-accent-soft text-accent-text'
+          )}
+          title={toolHint(tool)}
+        >
+          {isSelecting ? <MousePointer2 className="h-3.5 w-3.5" /> : <RotateCw className="h-3.5 w-3.5" />}
+          {toolLabel(tool)}
+        </span>
+        {!isSelecting && (
+          <Button size="sm" variant="ghost" onClick={() => setTool('select')}>
+            Terminar (Esc)
+          </Button>
+        )}
 
-      {/* Planos del cliente */}
-      <div className="flex flex-wrap items-center gap-2">
-        {plans.map((plan) => (
+        <span className="h-6 w-px flex-shrink-0 bg-hairline" />
+
+        {/* Planos del cliente */}
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none">
+          {plans.map((plan) => (
+            <button
+              key={plan.id}
+              type="button"
+              onClick={() => {
+                setActivePlanId(plan.id);
+                setSelectedId(null);
+                setTool('select');
+              }}
+              aria-current={plan.id === activePlan.id ? 'true' : undefined}
+              title={describePlan(plan)}
+              className={cx(
+                'flex flex-shrink-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors',
+                plan.id === activePlan.id
+                  ? 'border-accent-line bg-accent-soft text-strong'
+                  : 'border-hairline bg-raised text-soft hover:border-accent-line'
+              )}
+            >
+              {plan.name}
+              <span className="font-mono text-muted">{plan.elements.length}</span>
+            </button>
+          ))}
           <button
-            key={plan.id}
             type="button"
-            onClick={() => {
-              setActivePlanId(plan.id);
-              setSelectedId(null);
-              setTool('select');
-            }}
-            aria-current={plan.id === activePlan.id ? 'true' : undefined}
-            title={describePlan(plan)}
-            className={cx(
-              'flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors',
-              plan.id === activePlan.id
-                ? 'border-accent-line bg-accent-soft text-strong'
-                : 'border-hairline bg-surface text-soft hover:bg-raised'
-            )}
+            onClick={openNewPlanModal}
+            title="Crear un plano nuevo"
+            className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-dashed border-edge px-2.5 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-accent-line hover:text-strong"
           >
-            {plan.name}
-            <span className="font-mono text-xs text-muted">{plan.elements.length}</span>
+            <Plus className="h-3.5 w-3.5" />
+            Nuevo plano
           </button>
-        ))}
-        <Button variant="ghost" size="sm" icon={<MapIcon className="h-3.5 w-3.5" />} onClick={openNewPlanModal}>
-          Nuevo plano
-        </Button>
+        </div>
+
+        <span className="flex flex-shrink-0 items-center gap-1.5">
+          <Badge tone="neutral" className="font-mono">
+            {wallCount > 0 ? `${wallCount} paredes · ` : ''}
+            {elementCount} {elementCount === 1 ? 'elemento' : 'elementos'}
+          </Badge>
+          <button
+            type="button"
+            aria-pressed={snap}
+            onClick={() => setSnap((current) => !current)}
+            className={cx(
+              'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors',
+              snap ? 'border-accent-line bg-accent-soft text-accent-text' : 'border-edge bg-raised text-muted'
+            )}
+            title="Ajusta los trazos a una rejilla y a las esquinas de las paredes"
+          >
+            <Grid3x3 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Rejilla {snap ? 'activada' : 'libre'}</span>
+          </button>
+          {onToggleFocus && (
+            <IconButton
+              label={focus ? 'Salir de pantalla completa (Esc)' : 'Pantalla completa: el lienzo ocupa toda la ventana'}
+              variant={focus ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={onToggleFocus}
+            >
+              {focus ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </IconButton>
+          )}
+          <IconButton
+            label="Imprimir el plano en A4 apaisado"
+            variant="secondary"
+            size="sm"
+            onClick={handlePrint}
+            disabled={busy || elementCount === 0}
+          >
+            <Printer className="h-4 w-4" />
+          </IconButton>
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Download className="h-3.5 w-3.5" />}
+            onClick={handleDownloadPng}
+            disabled={busy}
+            loading={busy}
+          >
+            <span className="hidden sm:inline">Descargar PNG</span>
+            <span className="sm:hidden">PNG</span>
+          </Button>
+        </span>
       </div>
 
-      {message && (
-        <Callout tone={message.tone === 'success' ? 'success' : message.tone === 'danger' ? 'danger' : 'info'}>
-          {message.text}
-        </Callout>
-      )}
-
-      <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[290px_minmax(0,1fr)] lg:items-start">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 lg:grid lg:grid-cols-[178px_minmax(0,1fr)_252px] lg:items-stretch">
         {/* ---------------- Lienzo ---------------- */}
-        <div className="flex flex-col gap-4 lg:order-2">
-          <div className="overflow-hidden rounded-2xl border border-hairline bg-surface">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline px-3 py-2.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-bold text-strong">{activePlan.name}</span>
-                <Badge tone="neutral" className="font-mono">
-                  {wallCount > 0 ? `${wallCount} paredes · ` : ''}
-                  {elementCount} {elementCount === 1 ? 'elemento' : 'elementos'}
-                </Badge>
-                {activePlan.supplyId && (
-                  <Badge tone="info">
-                    {supplies.find((supply) => supply.id === activePlan.supplyId)?.name ?? 'Acometida'}
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={cx(
-                    'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold',
-                    isSelecting ? 'border-hairline bg-raised text-soft' : 'border-accent-line bg-accent-soft text-accent-text'
-                  )}
-                >
-                  {isSelecting ? <MousePointer2 className="h-3.5 w-3.5" /> : <RotateCw className="h-3.5 w-3.5" />}
-                  {toolLabel(tool)}
-                </span>
-                {!isSelecting && (
-                  <Button size="sm" variant="ghost" onClick={() => setTool('select')}>
-                    Terminar (Esc)
-                  </Button>
-                )}
-                <button
-                  type="button"
-                  aria-pressed={snap}
-                  onClick={() => setSnap((current) => !current)}
-                  className={cx(
-                    'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors',
-                    snap ? 'border-accent-line bg-accent-soft text-accent-text' : 'border-edge bg-raised text-muted'
-                  )}
-                  title="Ajusta los trazos a una rejilla y a las esquinas de las paredes"
-                >
-                  <Grid3x3 className="h-3.5 w-3.5" />
-                  Rejilla {snap ? 'activada' : 'libre'}
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-page p-2 sm:p-3">
+        <div className="order-1 flex min-h-0 flex-col gap-1.5 lg:order-2">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline bg-sunken">
+            <div className="min-h-0 flex-1 p-1.5 sm:p-2">
               <svg
                 ref={svgRef}
                 viewBox={`0 0 ${PLAN_WIDTH} ${height}`}
-                style={{ aspectRatio: `${PLAN_WIDTH} / ${height}`, touchAction: 'none', cursor: isSelecting ? 'default' : 'crosshair' }}
-                className="block w-full select-none rounded-xl shadow-sm"
+                preserveAspectRatio="xMidYMid meet"
+                style={{
+                  aspectRatio: `${PLAN_WIDTH} / ${height}`,
+                  touchAction: 'none',
+                  cursor: isSelecting ? 'default' : 'crosshair',
+                }}
+                className="block w-full select-none lg:h-full"
                 onPointerDown={handleCanvasPointerDown}
                 role="img"
                 aria-label={`Plano ${activePlan.name}`}
@@ -1435,14 +1483,44 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
               </svg>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline px-3 py-2 text-xs text-muted">
-              <span>{toolHint(tool)}</span>
-              <span className="font-mono">
+            {/* Avisos flotantes: no empujan el lienzo ni lo hacen saltar */}
+            {message && (
+              <div
+                className={cx(
+                  'animate-pop absolute bottom-2 left-2 right-2 flex items-start gap-2 rounded-xl border px-3 py-2 text-xs leading-snug shadow-lg sm:right-auto sm:max-w-md',
+                  message.tone === 'success' && 'border-success-line bg-success-soft text-success-text',
+                  message.tone === 'danger' && 'border-danger-line bg-danger-soft text-danger-text',
+                  message.tone === 'info' && 'border-info-line bg-info-soft text-info-text'
+                )}
+              >
+                <span className="min-w-0 flex-1">{message.text}</span>
+                <IconButton label="Cerrar el aviso" variant="ghost" size="sm" onClick={() => setMessage(null)}>
+                  <X className="h-3.5 w-3.5" />
+                </IconButton>
+              </div>
+            )}
+
+            {/* Pie del lienzo: qué hacer ahora y el tamaño de la hoja */}
+            <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-t border-hairline bg-surface/80 px-2.5 py-1.5 text-xs text-muted">
+              <span className="min-w-0">{toolHint(tool)}</span>
+              <span className="flex flex-shrink-0 items-center gap-2 font-mono">
+                {activePlan.supplyId && (
+                  <span className="truncate font-sans font-semibold text-info-text">
+                    {supplies.find((supply) => supply.id === activePlan.supplyId)?.name}
+                  </span>
+                )}
                 hoja {PLAN_WIDTH} × {height}
               </span>
             </div>
           </div>
+        </div>
 
+        {/* ---------------- Panel de propiedades ---------------- */}
+        <div className="order-3 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-hairline bg-surface">
+          <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-hairline px-3 py-2">
+            <span className="text-xs font-bold uppercase tracking-wide text-muted">Propiedades del elemento</span>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2.5">
           {/* Propiedades del elemento elegido */}
           {selected ? (
             <div className="space-y-3 rounded-2xl border border-accent-line bg-surface p-4">
@@ -1687,107 +1765,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
               </p>
             )
           )}
-        </div>
-
-        {/* ---------------- Herramientas ---------------- */}
-        <div className="flex flex-col gap-3 lg:order-1">
-          <Collapsible
-            id="plan-palette"
-            title="Dibujar y ubicar"
-            summary="Paredes, puertas, ventanas, aberturas y las plantillas eléctricas"
-            description="Elegí una herramienta y trabajá sobre el plano. Con «Terminar» (o Escape) volvés a seleccionar."
-            defaultOpen
-            icon={<MapIcon className="h-4 w-4" />}
-          >
-            <div className="space-y-4">
-              <div>
-                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Seleccionar</p>
-                <button
-                  type="button"
-                  onClick={() => setTool('select')}
-                  aria-pressed={isSelecting}
-                  className={cx(
-                    'flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors',
-                    isSelecting
-                      ? 'border-accent-line bg-accent-soft text-strong'
-                      : 'border-hairline bg-sunken text-soft hover:border-accent-line'
-                  )}
-                >
-                  <MousePointer2 className="h-4 w-4 flex-shrink-0" />
-                  <span className="min-w-0 flex-1 text-sm font-semibold">Seleccionar y mover</span>
-                  <span className="font-mono text-xs text-muted">Esc</span>
-                </button>
-              </div>
-
-              <div>
-                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Estructura del inmueble</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {STRUCTURE_TOOLS.map((structure) => {
-                    const active = tool === structure.type;
-                    return (
-                      <button
-                        key={structure.type}
-                        type="button"
-                        onClick={() => setTool(structure.type)}
-                        aria-pressed={active}
-                        title={structure.hint}
-                        className={cx(
-                          'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-colors',
-                          active
-                            ? 'border-accent-line bg-accent-soft'
-                            : 'border-hairline bg-sunken hover:border-accent-line hover:bg-accent-soft'
-                        )}
-                      >
-                        <svg viewBox="-20 -20 40 40" className="h-9 w-9 text-strong" aria-hidden="true">
-                          <g stroke="currentColor">{structureIcon(structure.type)}</g>
-                        </svg>
-                        <span className={cx('text-xs leading-tight', active ? 'font-bold text-strong' : 'font-semibold text-soft')}>
-                          {structure.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="mt-2 text-xs leading-snug text-muted">
-                  {tool === 'select' ? 'Elegí Pared para empezar la planta.' : toolHint(tool)}
-                </p>
-              </div>
-
-              {symbolsByCategory.map(([category, symbols]) => (
-                <div key={category}>
-                  <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">{category}</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {symbols.map((symbol) => {
-                      const active = tool === `sym:${symbol.type}`;
-                      return (
-                        <button
-                          key={symbol.type}
-                          type="button"
-                          onClick={() => setTool(`sym:${symbol.type}`)}
-                          aria-pressed={active}
-                          title={`Ubicar ${symbol.label}`}
-                          className={cx(
-                            'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-colors',
-                            active
-                              ? 'border-accent-line bg-accent-soft'
-                              : 'border-hairline bg-sunken hover:border-accent-line hover:bg-accent-soft'
-                          )}
-                        >
-                          <svg viewBox="-20 -20 40 40" className="h-9 w-9 text-strong" aria-hidden="true">
-                            <g stroke="currentColor">{renderSymbolShapes(symbol.type, 26)}</g>
-                          </svg>
-                          <span className={cx('text-xs leading-tight', active ? 'font-bold text-strong' : 'font-semibold text-soft')}>
-                            {symbol.label}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Collapsible>
-
+            <div className="border-t border-hairline" />
           <Collapsible
             id="plan-elements"
             title="Elementos del plano"
@@ -2014,6 +1992,104 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
               )}
             </div>
           </Collapsible>
+        </div>
+        </div>
+
+        {/* ---------------- Riel de herramientas ---------------- */}
+        <div className="order-2 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-hairline bg-surface lg:order-1">
+          <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-hairline px-2.5 py-2">
+            <span className="text-xs font-bold uppercase tracking-wide text-muted">Herramientas</span>
+            <HelpTip text="Elegí una herramienta y trabajá sobre el plano. Escape vuelve a seleccionar." />
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2">
+            <div className="space-y-4">
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Seleccionar</p>
+                <button
+                  type="button"
+                  onClick={() => setTool('select')}
+                  aria-pressed={isSelecting}
+                  className={cx(
+                    'flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors',
+                    isSelecting
+                      ? 'border-accent-line bg-accent-soft text-strong'
+                      : 'border-hairline bg-sunken text-soft hover:border-accent-line'
+                  )}
+                >
+                  <MousePointer2 className="h-4 w-4 flex-shrink-0" />
+                  <span className="min-w-0 flex-1 text-sm font-semibold">Seleccionar y mover</span>
+                  <span className="font-mono text-xs text-muted">Esc</span>
+                </button>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Estructura del inmueble</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {STRUCTURE_TOOLS.map((structure) => {
+                    const active = tool === structure.type;
+                    return (
+                      <button
+                        key={structure.type}
+                        type="button"
+                        onClick={() => setTool(structure.type)}
+                        aria-pressed={active}
+                        title={structure.hint}
+                        className={cx(
+                          'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-colors',
+                          active
+                            ? 'border-accent-line bg-accent-soft'
+                            : 'border-hairline bg-sunken hover:border-accent-line hover:bg-accent-soft'
+                        )}
+                      >
+                        <svg viewBox="-20 -20 40 40" className="h-9 w-9 text-strong" aria-hidden="true">
+                          <g stroke="currentColor">{structureIcon(structure.type)}</g>
+                        </svg>
+                        <span className={cx('text-xs leading-tight', active ? 'font-bold text-strong' : 'font-semibold text-soft')}>
+                          {structure.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs leading-snug text-muted">
+                  {tool === 'select' ? 'Elegí Pared para empezar la planta.' : toolHint(tool)}
+                </p>
+              </div>
+
+              {symbolsByCategory.map(([category, symbols]) => (
+                <div key={category}>
+                  <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">{category}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {symbols.map((symbol) => {
+                      const active = tool === `sym:${symbol.type}`;
+                      return (
+                        <button
+                          key={symbol.type}
+                          type="button"
+                          onClick={() => setTool(`sym:${symbol.type}`)}
+                          aria-pressed={active}
+                          title={`Ubicar ${symbol.label}`}
+                          className={cx(
+                            'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-colors',
+                            active
+                              ? 'border-accent-line bg-accent-soft'
+                              : 'border-hairline bg-sunken hover:border-accent-line hover:bg-accent-soft'
+                          )}
+                        >
+                          <svg viewBox="-20 -20 40 40" className="h-9 w-9 text-strong" aria-hidden="true">
+                            <g stroke="currentColor">{renderSymbolShapes(symbol.type, 26)}</g>
+                          </svg>
+                          <span className={cx('text-xs leading-tight', active ? 'font-bold text-strong' : 'font-semibold text-soft')}>
+                            {symbol.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -40,6 +40,13 @@ function AppContent() {
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<ClientRecord | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  /** Pantalla completa del módulo del plano: se sale al cambiar de vista. */
+  const [planFocus, setPlanFocus] = useState(false);
+
+  const handleNavigate = (view: ViewId): void => {
+    if (view !== 'plan') setPlanFocus(false);
+    setActiveView(view);
+  };
 
   useEffect(() => {
     const loadedClients = StorageService.getClients();
@@ -135,7 +142,7 @@ function AppContent() {
           <SupplyView
             client={activeClient}
             onUpdateClient={handleUpdateActiveClient}
-            onNavigateToPanels={() => setActiveView('panels')}
+            onNavigateToPanels={() => handleNavigate('panels')}
           />
         );
       case 'panels':
@@ -143,7 +150,7 @@ function AppContent() {
           <PanelsView
             client={activeClient}
             onUpdateClient={handleUpdateActiveClient}
-            onNavigateToAudit={() => setActiveView('audit')}
+            onNavigateToAudit={() => handleNavigate('audit')}
           />
         );
       case 'diagnostic':
@@ -151,7 +158,7 @@ function AppContent() {
           <DiagnosticView
             client={activeClient}
             onUpdateClient={handleUpdateActiveClient}
-            onNavigateToReport={() => setActiveView('report')}
+            onNavigateToReport={() => handleNavigate('report')}
           />
         );
       case 'audit':
@@ -159,7 +166,7 @@ function AppContent() {
           <AuditView
             client={activeClient}
             onUpdateClient={handleUpdateActiveClient}
-            onNavigateToBalance={() => setActiveView('balance')}
+            onNavigateToBalance={() => handleNavigate('balance')}
           />
         );
       case 'balance':
@@ -169,7 +176,7 @@ function AppContent() {
           <ConsumptionHistoryView
             client={activeClient}
             onUpdateClient={handleUpdateActiveClient}
-            onNavigateToAudit={() => setActiveView('audit')}
+            onNavigateToAudit={() => handleNavigate('audit')}
           />
         );
       case 'budget':
@@ -178,8 +185,8 @@ function AppContent() {
             client={activeClient}
             technician={technician}
             onUpdateClient={handleUpdateActiveClient}
-            onNavigateToPanels={() => setActiveView('panels')}
-            onNavigateToAudit={() => setActiveView('audit')}
+            onNavigateToPanels={() => handleNavigate('panels')}
+            onNavigateToAudit={() => handleNavigate('audit')}
           />
         );
       case 'calculators':
@@ -193,7 +200,15 @@ function AppContent() {
           />
         );
       case 'plan':
-        return <PlanView client={activeClient} onUpdateClient={handleUpdateActiveClient} />;
+        return (
+          <PlanView
+            client={activeClient}
+            onUpdateClient={handleUpdateActiveClient}
+            focus={planFocus}
+            onToggleFocus={() => setPlanFocus((current) => !current)}
+            onGoToSurvey={() => handleNavigate('panels')}
+          />
+        );
       case 'clients':
         return (
           <ClientList
@@ -201,7 +216,7 @@ function AppContent() {
             activeClient={activeClient}
             onSelectClient={(client) => {
               handleSelectClient(client);
-              setActiveView('audit');
+              handleNavigate('audit');
             }}
             onEditClient={(client) => {
               setEditingClient(client);
@@ -259,7 +274,8 @@ function AppContent() {
       <AppShell
         workflow={workflow}
         activeView={activeView}
-        onNavigate={setActiveView}
+        onNavigate={handleNavigate}
+        focus={planFocus}
         activeClient={activeClient}
         clients={clients}
         onSelectClient={handleSelectClient}
@@ -269,7 +285,7 @@ function AppContent() {
         }}
         onOpenNewClientModal={openNewClientModal}
         onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
-        onGoToClients={() => setActiveView('clients')}
+        onGoToClients={() => handleNavigate('clients')}
       >
         {activeClient ? renderView() : noClientContent}
       </AppShell>
