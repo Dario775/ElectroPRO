@@ -191,17 +191,46 @@ export type PlanSymbolType =
   | 'motor';
 
 /**
+ * Elementos de estructura del plano: lo que dibuja la planta del inmueble.
+ * Sin paredes y aberturas, los símbolos flotan y no hay forma de ubicarse.
+ */
+export type PlanStructureType = 'pared' | 'puerta' | 'ventana' | 'abertura';
+
+/** Cómo se dibuja un elemento del plano. */
+export type PlanElementKind = 'symbol' | PlanStructureType;
+
+/**
  * Elemento ubicado en el plano. Las coordenadas están en unidades del lienzo
  * (1000 de ancho por la altura que corresponda), así el plano se escala solo al
  * tamaño de la pantalla.
+ *
+ * Según `kind` se usan unos campos u otros:
+ *  - `symbol` (por omisión): plantilla eléctrica, con `symbol`.
+ *  - `pared`: segmento de `(x, y)` a `(x2, y2)` con `thickness`.
+ *  - `puerta`, `ventana`, `abertura`: van sobre una pared (`wallId`), giradas
+ *    como ella y con `length` de ancho. `hand` es hacia dónde abre la puerta.
  */
 export interface PlanElement {
   id: string;
-  symbol: PlanSymbolType;
+  /** Por omisión, `symbol`: mantiene compatibles los planos ya guardados. */
+  kind?: PlanElementKind;
+  /** Plantilla eléctrica. No aplica a los elementos de estructura. */
+  symbol?: PlanSymbolType;
   label: string;
   x: number;
   y: number;
-  /** Giro en grados (0, 90, 180 o 270). */
+  /** Extremo de la pared (solo `kind: 'pared'`). */
+  x2?: number;
+  y2?: number;
+  /** Ancho de la abertura sobre la pared (puerta, ventana o abertura). */
+  length?: number;
+  /** Espesor de la pared, o de la abertura que la corta. */
+  thickness?: number;
+  /** Pared sobre la que está colocada una abertura. */
+  wallId?: string;
+  /** Lado hacia el que abre la puerta. */
+  hand?: 'izquierda' | 'derecha';
+  /** Giro en grados (0, 90, 180 o 270 para los símbolos; el de la pared para las aberturas). */
   rotation?: number;
   /** Acometida a la que pertenece. */
   supplyId?: string;

@@ -6,12 +6,26 @@ import {
   ImagePlus,
   Info,
   Map as MapIcon,
+  MousePointer2,
   Printer,
   RotateCw,
   Trash2,
 } from 'lucide-react';
-import { ClientPlan, ClientRecord, PlanElement, PlanSymbolType } from '../types/electrical';
-import { PLAN_SYMBOLS, findSymbol, renderSymbolShapes } from './planSymbols';
+import { ClientPlan, ClientRecord, PlanElement, PlanStructureType, PlanSymbolType } from '../types/electrical';
+import {
+  PLAN_SYMBOLS,
+  STRUCTURE_TOOLS,
+  elementKind,
+  elementTransform,
+  elementTypeLabel,
+  findStructure,
+  findSymbol,
+  isStructure,
+  layerOf,
+  renderStructure,
+  renderSymbolShapes,
+  structureIcon,
+} from './planSymbols';
 import { Button, IconButton } from './ui/Button';
 import { Badge, Callout, EmptyState, SectionHeader } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
@@ -23,29 +37,45 @@ import {
   PLAN_SHEETS,
   PLAN_WIDTH,
   clampElements,
+  constrainAngle,
+  countWalls,
   createElement,
+  createOpening,
   createPlan,
+  createWall,
   describePlan,
   elementsFromLoads,
   elementsFromPanels,
+  followWall,
+  isOpening,
+  isWall,
   loadsWithoutElement,
-  nextFreePosition,
+  nearestWall,
   panelsWithoutElement,
   planHeight,
   preparePlanImage,
+  removeElement,
   sheetOf,
+  slideOpeningOnWall,
   snapCoordinate,
+  snapPoint,
+  wallAngle,
+  wallCorners,
+  wallLength,
 } from '../utils/plan';
 import { cx } from '../utils/cx';
 
 /**
  * Módulo «Plano de ubicación».
  *
- * Sirve para ubicar sobre la planta del inmueble —dibujada, o una foto o un
- * plano real como fondo— dónde queda cada tablero, cada toma, cada punto de luz
- * y cada artefacto. Se apoya en las plantillas de símbolos normales de
- * instalación eléctrica y en los datos ya relevados: los tableros y las cargas
- * del cliente se traen y se ubican con un clic.
+ * Sirve para dibujar la planta del inmueble —o usar una foto o el plano real
+ * como fondo— y ubicar sobre ella cada tablero, cada toma, cada punto de luz y
+ * cada artefacto. Para que el plano sirva de verdad para ubicarse, se dibujan
+ * también las **paredes** y sus **aberturas**: puertas, ventanas y pasos.
+ *
+ * Funciona como un tablero de dibujo: se elige una herramienta en la paleta y se
+ * trabaja sobre el lienzo. La planta se arma con paredes y, encima, se apoyan las
+ * aberturas y los símbolos.
  *
  * El lienzo siempre se dibuja en blanco, como una hoja, más allá del tema claro
  * u oscuro de la aplicación: así lo que se ve en pantalla es exactamente lo que
@@ -57,22 +87,42 @@ import { cx } from '../utils/cx';
 /* ------------------------------------------------------------------ */
 
 const INK = '#111827';
+const SOFT_INK = '#6b7280';
 const SELECTION = '#2563eb';
 const GRID_LINE = '#e5e7eb';
 const SHEET_EDGE = '#cbd5e1';
 const BACKGROUND_FILL = '#ffffff';
 const PLAN_FONT = 'system-ui, sans-serif';
+/** Radio para apoyar una abertura sobre una pared al hacer clic. */
+const OPENING_SNAP_RADIUS = 45;
+/** Una pared más corta que esto no se guarda: es un clic suelto, no un trazo. */
+const MIN_WALL_LENGTH = 25;
+
+/**
+ * Herramienta activa. `select` sirve para elegir y mover; las de estructura
+ * dibujan; `sym:` coloca una plantilla eléctrica.
+ */
+type DrawTool = 'select' | PlanStructureType | `sym:${PlanSymbolType}`;
 
 interface DragState {
+  /** Mover el elemento, o estirar uno de los extremos de una pared. */
+  mode: 'move' | 'endpointA' | 'endpointB';
   planId: string;
+  /** Copia del elemento al empezar, para calcular todo desde el original. */
+  origin: PlanElement;
   elementId: string;
   startClientX: number;
   startClientY: number;
-  originX: number;
-  originY: number;
   /** Unidades del lienzo por píxel de pantalla. */
   scale: number;
   height: number;
+}
+
+interface DraftWall {
+  x: number;
+  y: number;
+  x2: number;
+  y2: number;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -95,6 +145,27 @@ function slugify(text: string): string {
   );
 }
 
+function symbolOfTool(tool: DrawTool): PlanSymbolType {
+  return tool.startsWith('sym:') ? (tool.slice(4) as PlanSymbolType) : 'toma';
+}
+
+/** Nombre de la herramienta activa, para la barra del lienzo. */
+function toolLabel(tool: DrawTool): string {
+  if (tool === 'select') return 'Seleccionar';
+  if (tool.startsWith('sym:')) return findSymbol(symbolOfTool(tool)).label;
+  return findStructure(tool as PlanStructureType)?.label ?? 'Dibujar';
+}
+
+/** Qué hacer ahora, en una línea. */
+function toolHint(tool: DrawTool): string {
+  if (tool === 'select') return 'Hacé clic en un elemento para editarlo y arrastralo para moverlo.';
+  if (tool === 'pared') return 'Mantené presionado y arrastrá de una punta a la otra: la pared se engancha con las esquinas y con las horizontales, verticales y diagonales exactas.';
+  if (tool === 'puerta' || tool === 'ventana' || tool === 'abertura') {
+    return 'Hacé clic sobre una pared: la abertura se abre el hueco y queda alineada sola.';
+  }
+  return 'Hacé clic en el plano donde va. Podés ubicar varios seguidos.';
+}
+
 /* ------------------------------------------------------------------ */
 /* Dibujo de un elemento                                               */
 /* ------------------------------------------------------------------ */
@@ -103,14 +174,167 @@ const PlanElementNode: React.FC<{
   element: PlanElement;
   selected: boolean;
   onPointerDown: (event: React.PointerEvent, element: PlanElement) => void;
-}> = ({ element, selected, onPointerDown }) => {
-  const def = findSymbol(element.symbol);
+  onHandlePointerDown: (event: React.PointerEvent, element: PlanElement, handle: 'a' | 'b') => void;
+}> = ({ element, selected, onPointerDown, onHandlePointerDown }) => {
+  const kind = elementKind(element);
+
+  /* --- Pared --- */
+  if (kind === 'pared') {
+    const dx = (element.x2 ?? element.x) - element.x;
+    const dy = (element.y2 ?? element.y) - element.y;
+    const thickness = element.thickness ?? 14;
+    const showLabel = element.label && element.label !== findStructure('pared')?.label;
+
+    return (
+      <g
+        transform={elementTransform(element)}
+        onPointerDown={(event) => onPointerDown(event, element)}
+        className="cursor-grab active:cursor-grabbing"
+      >
+        <line
+          x1={0}
+          y1={0}
+          x2={dx}
+          y2={dy}
+          stroke="transparent"
+          strokeWidth={thickness + 24}
+          strokeLinecap="round"
+          data-export="hide"
+        />
+        {selected && (
+          <line
+            x1={0}
+            y1={0}
+            x2={dx}
+            y2={dy}
+            stroke={SELECTION}
+            strokeWidth={thickness + 12}
+            strokeLinecap="round"
+            opacity={0.22}
+            data-export="hide"
+          />
+        )}
+        {renderStructure(element, { wall: INK, gap: BACKGROUND_FILL })}
+        {showLabel && (
+          <text
+            x={dx / 2}
+            y={dy / 2 - thickness / 2 - 6}
+            textAnchor="middle"
+            fontSize={14}
+            fontFamily={PLAN_FONT}
+            fill={SOFT_INK}
+            stroke="none"
+            pointerEvents="none"
+          >
+            {element.label}
+          </text>
+        )}
+        {selected && (
+          <>
+            <circle
+              cx={0}
+              cy={0}
+              r={9}
+              fill={BACKGROUND_FILL}
+              stroke={SELECTION}
+              strokeWidth={2.5}
+              data-export="hide"
+              className="cursor-move"
+              onPointerDown={(event) => onHandlePointerDown(event, element, 'a')}
+            />
+            <circle
+              cx={dx}
+              cy={dy}
+              r={9}
+              fill={BACKGROUND_FILL}
+              stroke={SELECTION}
+              strokeWidth={2.5}
+              data-export="hide"
+              className="cursor-move"
+              onPointerDown={(event) => onHandlePointerDown(event, element, 'b')}
+            />
+          </>
+        )}
+      </g>
+    );
+  }
+
+  /* --- Puerta, ventana o abertura --- */
+  if (isOpening(element)) {
+    const length = element.length ?? 90;
+    const thickness = element.thickness ?? 14;
+    const half = length / 2;
+    const showLabel = element.label && element.label !== elementTypeLabel({ ...element, label: '' });
+
+    return (
+      <g
+        transform={elementTransform(element)}
+        onPointerDown={(event) => onPointerDown(event, element)}
+        className="cursor-grab active:cursor-grabbing"
+      >
+        <rect
+          x={-half}
+          y={-(thickness + 2) / 2}
+          width={length}
+          height={thickness + 2}
+          fill="transparent"
+          data-export="hide"
+        />
+        {selected && (
+          <rect
+            x={-half - 5}
+            y={-(thickness + 2) / 2 - 5}
+            width={length + 10}
+            height={thickness + 12}
+            rx={4}
+            fill={SELECTION}
+            fillOpacity={0.14}
+            stroke={SELECTION}
+            strokeDasharray="6 4"
+            data-export="hide"
+          />
+        )}
+        {renderStructure(element, { wall: INK, gap: BACKGROUND_FILL })}
+        {showLabel && (
+          <text
+            x={0}
+            y={thickness / 2 + 18}
+            textAnchor="middle"
+            fontSize={13}
+            fontFamily={PLAN_FONT}
+            fill={SOFT_INK}
+            stroke="none"
+            pointerEvents="none"
+          >
+            {element.label}
+          </text>
+        )}
+        {selected && element.wallId && (
+          <line
+            x1={-half}
+            y1={0}
+            x2={half}
+            y2={0}
+            stroke={SELECTION}
+            strokeWidth={1}
+            strokeDasharray="4 6"
+            opacity={0.6}
+            data-export="hide"
+            pointerEvents="none"
+          />
+        )}
+      </g>
+    );
+  }
+
+  /* --- Plantilla eléctrica --- */
+  const def = findSymbol(element.symbol ?? 'toma');
   const hitWidth = Math.max(44, def.size + 26);
   const hitHeight = def.size + 42;
 
   return (
     <g
-      transform={`translate(${element.x} ${element.y}) rotate(${element.rotation ?? 0})`}
+      transform={elementTransform(element)}
       onPointerDown={(event) => onPointerDown(event, element)}
       className="cursor-grab active:cursor-grabbing"
       style={{ color: INK }}
@@ -140,7 +364,7 @@ const PlanElementNode: React.FC<{
           data-export="hide"
         />
       )}
-      {renderSymbolShapes(element.symbol, def.size)}
+      {renderSymbolShapes(element.symbol ?? 'toma', def.size)}
       <text
         y={def.size / 2 + 16}
         textAnchor="middle"
@@ -169,8 +393,11 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
   const [plans, setPlans] = useState<ClientPlan[]>(() => client.plans ?? []);
   const [activePlanId, setActivePlanId] = useState<string>(() => (client.plans ?? [])[0]?.id ?? '');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [tool, setTool] = useState<DrawTool>('select');
   const [snap, setSnap] = useState(true);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [draftWall, setDraftWall] = useState<DraftWall | null>(null);
   const [isNewPlanOpen, setIsNewPlanOpen] = useState(false);
   const [newPlanName, setNewPlanName] = useState('');
   const [newPlanSheet, setNewPlanSheet] = useState(PLAN_SHEETS[0].id);
@@ -182,11 +409,15 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
   const svgRef = useRef<SVGSVGElement | null>(null);
   /** Última versión de los planos: las escrituras y el arrastre la necesitan al día. */
   const plansRef = useRef<ClientPlan[]>(plans);
+  const activePlanIdRef = useRef<string>(activePlanId);
   const clientRef = useRef(client);
   const onUpdateRef = useRef(onUpdateClient);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  /** Trazo de pared en curso: en un ref para no rearmar los listeners por cuadro. */
+  const draftRef = useRef<DraftWall | null>(null);
   clientRef.current = client;
   onUpdateRef.current = onUpdateClient;
+  activePlanIdRef.current = activePlanId;
 
   const supplies = getSupplies(client);
 
@@ -202,13 +433,20 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
   useEffect(() => {
     const next = client.plans ?? [];
     setSelectedId(null);
+    setTool('select');
     setActivePlanId(next[0]?.id ?? '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client.id]);
 
   const activePlan = plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? null;
-  const height = activePlan ? planHeight(activePlan) : 700;
+  const height = activePlan ? planHeight(activePlan) : 707;
   const selected = activePlan?.elements.find((element) => element.id === selectedId) ?? null;
+
+  /** Elementos en orden de pintado: paredes, aberturas y símbolos. */
+  const orderedElements = useMemo(
+    () => (activePlan ? [...activePlan.elements].sort((a, b) => layerOf(a) - layerOf(b)) : []),
+    [activePlan]
+  );
 
   /** Guarda los planos en el cliente. `persist: false` deja el cambio solo en pantalla. */
   const applyPlans = useCallback((next: ClientPlan[], persist = true) => {
@@ -234,54 +472,281 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
     [patchPlan]
   );
 
+  /** Elementos del plano activo, siempre al día. */
+  const currentElements = useCallback((): PlanElement[] => {
+    const plan = plansRef.current.find((candidate) => candidate.id === activePlanIdRef.current);
+    return plan?.elements ?? [];
+  }, []);
+
+  /** Pasa un punto de la pantalla a coordenadas del lienzo. */
+  const clientToPlan = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return null;
+    const scale = PLAN_WIDTH / rect.width;
+    return { x: (clientX - rect.left) * scale, y: (clientY - rect.top) * scale };
+  }, []);
+
+  /** Ajusta un punto del lienzo a la rejilla y a las esquinas de las paredes. */
+  const snapToPlan = useCallback(
+    (x: number, y: number): { x: number; y: number } =>
+      snapPoint(x, y, { grid: snap, corners: wallCorners(currentElements()), height, radius: 30 }),
+    [snap, height, currentElements]
+  );
+
   /* ---------------------------------------------------------------- */
-  /* Arrastre de símbolos                                              */
+  /* Herramientas                                                      */
   /* ---------------------------------------------------------------- */
 
-  const handleElementPointerDown = (event: React.PointerEvent, element: PlanElement): void => {
-    event.stopPropagation();
-    setSelectedId(element.id);
+  /* Escape sale del modo de dibujo: es la salida rápida que espera cualquiera
+     que se haya quedado con una herramienta activa. */
+  useEffect(() => {
+    if (tool === 'select') return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setTool('select');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [tool]);
+
+  /* ---------------------------------------------------------------- */
+  /* Alta de elementos con la herramienta activa                       */
+  /* ---------------------------------------------------------------- */
+
+  const placeSymbol = (point: { x: number; y: number }, symbol: PlanSymbolType): void => {
     if (!activePlan) return;
+    const position = snapToPlan(point.x, point.y);
+    const element = createElement(symbol, findSymbol(symbol).label, position.x, position.y, {
+      supplyId: activePlan.supplyId,
+    });
+    patchElements(activePlan.id, [...currentElements(), element]);
+    setSelectedId(element.id);
+  };
 
+  const placeOpening = (point: { x: number; y: number }, type: Exclude<PlanStructureType, 'pared'>): void => {
+    if (!activePlan) return;
+    const elements = currentElements();
+    const near = nearestWall(elements, point.x, point.y, OPENING_SNAP_RADIUS);
+    const opening = createOpening(type, point.x, point.y, near?.wall, { supplyId: activePlan.supplyId });
+    patchElements(activePlan.id, [...elements, opening]);
+    setSelectedId(opening.id);
+    setMessage(
+      near
+        ? { tone: 'info', text: `Se abrió el hueco en la pared. Arrastrala a lo largo de ella para correrla.` }
+        : {
+            tone: 'info',
+            text: 'La abertura quedó suelta, sin pared. Dibujá una pared y arrastrala encima para que se apoye.',
+          }
+    );
+  };
+
+  const handleCanvasPointerDown = (event: React.PointerEvent): void => {
+    if (!activePlan || busy) return;
+
+    if (tool === 'select') {
+      setSelectedId(null);
+      return;
+    }
+
+    const point = clientToPlan(event.clientX, event.clientY);
+    if (!point) return;
+
+    if (tool === 'pared') {
+      const start = snapToPlan(point.x, point.y);
+      draftRef.current = { x: start.x, y: start.y, x2: start.x, y2: start.y };
+      setDraftWall({ ...draftRef.current });
+      setIsDrawing(true);
+      return;
+    }
+
+    if (tool === 'puerta' || tool === 'ventana' || tool === 'abertura') {
+      placeOpening(point, tool);
+      return;
+    }
+
+    placeSymbol(point, symbolOfTool(tool));
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Trazo de paredes                                                  */
+  /* ---------------------------------------------------------------- */
+
+  useEffect(() => {
+    if (!isDrawing) return;
+
+    const onMove = (event: PointerEvent): void => {
+      const draft = draftRef.current;
+      const point = clientToPlan(event.clientX, event.clientY);
+      if (!draft || !point) return;
+
+      const free = snapPoint(point.x, point.y, {
+        grid: snap,
+        corners: wallCorners(currentElements()),
+        height,
+        radius: 26,
+      });
+      const constrained = constrainAngle(draft.x, draft.y, free.x, free.y);
+      draftRef.current = { ...draft, x2: constrained.x, y2: constrained.y };
+      setDraftWall({ ...draftRef.current });
+    };
+
+    const onUp = (): void => {
+      const draft = draftRef.current;
+      draftRef.current = null;
+      setIsDrawing(false);
+      setDraftWall(null);
+      if (!draft || !activePlan) return;
+
+      const length = Math.hypot(draft.x2 - draft.x, draft.y2 - draft.y);
+      if (length < MIN_WALL_LENGTH) return;
+
+      const wall = createWall(draft.x, draft.y, draft.x2, draft.y2);
+      const elements = currentElements();
+      // Una pared nueva puede pasar por debajo de aberturas que quedaron sueltas:
+      // las que están justo encima se apoyan y toman su espesor.
+      const adopted = elements.map((element) => {
+        if (!isOpening(element) || element.wallId) return element;
+        const radius = (element.thickness ?? wall.thickness ?? 14) / 2 + 8;
+        const near = nearestWall([wall], element.x, element.y, radius);
+        return near
+          ? { ...element, wallId: wall.id, x: near.x, y: near.y, rotation: near.rotation, thickness: wall.thickness }
+          : element;
+      });
+      patchElements(activePlan.id, [...adopted, wall]);
+      setSelectedId(wall.id);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [isDrawing, snap, height, activePlan, clientToPlan, currentElements, patchElements]);
+
+  /* ---------------------------------------------------------------- */
+  /* Arrastre y estirado                                               */
+  /* ---------------------------------------------------------------- */
+
+  const startDrag = (
+    event: React.PointerEvent,
+    element: PlanElement,
+    mode: DragState['mode']
+  ): void => {
+    if (!activePlan) return;
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return;
 
     setDrag({
+      mode,
       planId: activePlan.id,
       elementId: element.id,
+      origin: { ...element },
       startClientX: event.clientX,
       startClientY: event.clientY,
-      originX: element.x,
-      originY: element.y,
       scale: PLAN_WIDTH / rect.width,
       height: planHeight(activePlan),
     });
+  };
+
+  const handleElementPointerDown = (event: React.PointerEvent, element: PlanElement): void => {
+    event.stopPropagation();
+    // Con una herramienta de dibujo activa, cualquier clic sobre el plano dibuja:
+    // así una puerta se apoya sobre la pared aunque el clic caiga encima de ella.
+    if (tool !== 'select') {
+      handleCanvasPointerDown(event);
+      return;
+    }
+    setSelectedId(element.id);
+    startDrag(event, element, 'move');
+  };
+
+  const handleHandlePointerDown = (event: React.PointerEvent, element: PlanElement, handle: 'a' | 'b'): void => {
+    event.stopPropagation();
+    setSelectedId(element.id);
+    startDrag(event, element, handle === 'a' ? 'endpointA' : 'endpointB');
   };
 
   useEffect(() => {
     if (!drag) return;
 
     const onMove = (event: PointerEvent): void => {
-      const dx = (event.clientX - drag.startClientX) * drag.scale;
-      const dy = (event.clientY - drag.startClientY) * drag.scale;
       const plan = plansRef.current.find((candidate) => candidate.id === drag.planId);
       if (!plan) return;
 
-      const elements = plan.elements.map((element) =>
-        element.id === drag.elementId
-          ? {
-              ...element,
-              x: snapCoordinate(drag.originX + dx, PLAN_WIDTH, snap),
-              y: snapCoordinate(drag.originY + dy, drag.height, snap),
-            }
-          : element
-      );
-      patchElements(drag.planId, elements, false);
+      const dx = (event.clientX - drag.startClientX) * drag.scale;
+      const dy = (event.clientY - drag.startClientY) * drag.scale;
+      const origin = drag.origin;
+      const elements = plan.elements;
+
+      if (drag.mode === 'move') {
+        if (isWall(origin)) {
+          // La pared se mueve entera: los dos extremos, y con ella sus aberturas.
+          const x = snapCoordinate(origin.x + dx, PLAN_WIDTH, snap);
+          const y = snapCoordinate(origin.y + dy, drag.height, snap);
+          const moved: PlanElement = {
+            ...origin,
+            x,
+            y,
+            x2: snapCoordinate((origin.x2 ?? origin.x) + (x - origin.x), PLAN_WIDTH, snap),
+            y2: snapCoordinate((origin.y2 ?? origin.y) + (y - origin.y), drag.height, snap),
+          };
+          const next = elements.map((element) => (element.id === origin.id ? moved : element));
+          patchElements(drag.planId, followWall(next, moved), false);
+          return;
+        }
+
+        const wall = origin.wallId ? elements.find((element) => element.id === origin.wallId) : undefined;
+        if (wall && isOpening(origin)) {
+          // Una abertura no se despega de su pared: se corre a lo largo de ella.
+          const slid = slideOpeningOnWall(origin, wall, origin.x + dx, origin.y + dy);
+          patchElements(
+            drag.planId,
+            elements.map((element) => (element.id === origin.id ? slid : element)),
+            false
+          );
+          return;
+        }
+
+        const moved: PlanElement = {
+          ...origin,
+          x: snapCoordinate(origin.x + dx, PLAN_WIDTH, snap),
+          y: snapCoordinate(origin.y + dy, drag.height, snap),
+        };
+        patchElements(
+          drag.planId,
+          elements.map((element) => (element.id === origin.id ? moved : element)),
+          false
+        );
+        return;
+      }
+
+      // Estirar un extremo de la pared
+      const free = snapPoint(origin.x + dx, origin.y + dy, {
+        grid: snap,
+        corners: wallCorners(elements.filter((element) => element.id !== origin.id)),
+        height: drag.height,
+        radius: 26,
+      });
+      const anchor =
+        drag.mode === 'endpointA'
+          ? { x: origin.x2 ?? origin.x, y: origin.y2 ?? origin.y }
+          : { x: origin.x, y: origin.y };
+      const constrained = constrainAngle(anchor.x, anchor.y, free.x, free.y);
+
+      const reshaped: PlanElement =
+        drag.mode === 'endpointA'
+          ? { ...origin, x: constrained.x, y: constrained.y }
+          : { ...origin, x2: constrained.x, y2: constrained.y };
+
+      const next = elements.map((element) => (element.id === origin.id ? reshaped : element));
+      patchElements(drag.planId, followWall(next, reshaped), false);
     };
 
     const onUp = (): void => {
       setDrag(null);
-      // Un solo guardado al soltar: durante el arrastre el cambio queda en pantalla.
+      // Una sola escritura al soltar: durante el arrastre el cambio queda en pantalla.
       onUpdateRef.current({ ...clientRef.current, plans: plansRef.current });
     };
 
@@ -296,7 +761,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
   }, [drag, snap, patchElements]);
 
   /* ---------------------------------------------------------------- */
-  /* Alta, edición y borrado                                           */
+  /* Alta, edición y borrado de planos                                 */
   /* ---------------------------------------------------------------- */
 
   const openNewPlanModal = (): void => {
@@ -343,47 +808,53 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
     setSelectedId(null);
   };
 
-  const handleAddElement = (symbol: PlanSymbolType): void => {
-    if (!activePlan) return;
-    const position = nextFreePosition(activePlan, activePlan.elements.length);
-    const element = createElement(symbol, findSymbol(symbol).label, position.x, position.y, {
-      supplyId: activePlan.supplyId,
-    });
-    patchElements(activePlan.id, [...activePlan.elements, element]);
-    setSelectedId(element.id);
-    setMessage({ tone: 'info', text: `Se ubicó «${element.label}». Arrastralo hasta su lugar.` });
-  };
-
   const handleUpdateElement = (patch: Partial<PlanElement>): void => {
     if (!activePlan || !selected) return;
-    patchElements(
-      activePlan.id,
-      activePlan.elements.map((element) => (element.id === selected.id ? { ...element, ...patch } : element))
+    const updated = activePlan.elements.map((element) =>
+      element.id === selected.id ? { ...element, ...patch } : element
     );
+    // Si se estira o se mueve una pared desde los campos, sus aberturas la siguen.
+    const updatedWall = updated.find((element) => element.id === selected.id);
+    patchElements(activePlan.id, updatedWall && isWall(updatedWall) ? followWall(updated, updatedWall) : updated);
   };
 
   const handleDuplicateElement = (): void => {
     if (!activePlan || !selected) return;
+    const offset = 40;
     const copy: PlanElement = {
       ...selected,
       id: `el_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      x: snapCoordinate(selected.x + 60, PLAN_WIDTH, snap),
-      y: snapCoordinate(selected.y + 60, height, snap),
+      x: snapCoordinate(selected.x + offset, PLAN_WIDTH, snap),
+      y: snapCoordinate(selected.y + offset, height, snap),
       // La copia ya no representa al tablero o la carga originales.
       panelId: undefined,
       loadId: undefined,
     };
+    if (isWall(selected)) {
+      copy.x2 = snapCoordinate((selected.x2 ?? selected.x) + offset, PLAN_WIDTH, snap);
+      copy.y2 = snapCoordinate((selected.y2 ?? selected.y) + offset, height, snap);
+    }
+    if (isOpening(selected)) {
+      // Una abertura duplicada queda suelta, para poder apoyarla en otra pared.
+      copy.wallId = undefined;
+    }
     patchElements(activePlan.id, [...activePlan.elements, copy]);
     setSelectedId(copy.id);
   };
 
   const handleRemoveElement = (elementId: string): void => {
     if (!activePlan) return;
-    patchElements(
-      activePlan.id,
-      activePlan.elements.filter((element) => element.id !== elementId)
-    );
+    const target = activePlan.elements.find((element) => element.id === elementId);
+    const openings =
+      target && isWall(target) ? activePlan.elements.filter((element) => element.wallId === elementId).length : 0;
+    patchElements(activePlan.id, removeElement(activePlan.elements, elementId));
     if (selectedId === elementId) setSelectedId(null);
+    if (openings > 0) {
+      setMessage({
+        tone: 'info',
+        text: `Se borró la pared y ${openings} ${openings === 1 ? 'abertura que tenía' : 'aberturas que tenía'}.`,
+      });
+    }
   };
 
   const handleBringFromSurvey = (): void => {
@@ -447,7 +918,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
       });
       setMessage({
         tone: 'success',
-        text: 'Fondo cargado. Ahora ubicá los símbolos sobre la imagen; podés arrastrarlos en cualquier momento.',
+        text: 'Fondo cargado. Ahora podés dibujar las paredes encima y ubicar los símbolos.',
       });
     } catch {
       setMessage({ tone: 'danger', text: 'No se pudo leer la imagen. Probá con un JPG o un PNG.' });
@@ -461,7 +932,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
   /* Exportar                                                          */
   /* ---------------------------------------------------------------- */
 
-  /** Arma el PNG del plano (encabezado + fondo + símbolos) para bajar o imprimir. */
+  /** Arma el PNG del plano (encabezado + fondo + dibujo) para bajar o imprimir. */
   const buildCanvas = useCallback(async (): Promise<HTMLCanvasElement | null> => {
     const svg = svgRef.current;
     const plan = activePlan;
@@ -607,7 +1078,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
       isOpen={isNewPlanOpen}
       onClose={() => setIsNewPlanOpen(false)}
       title="Nuevo plano"
-      description="Elegí cómo se llama y en qué hoja se dibuja. Después ubicás los símbolos arrastrándolos."
+      description="Elegí cómo se llama y en qué hoja se dibuja. Después dibujás la planta y ubicás los símbolos."
       icon={<MapIcon className="h-4 w-4" />}
       footer={
         <>
@@ -672,13 +1143,13 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
         <SectionHeader
           eyebrow="Módulo"
           title="Plano de ubicación"
-          description="Ubicá en la planta del inmueble dónde queda cada tablero, cada toma y cada artefacto, y entregá el plano junto con el informe."
+          description="Dibujá la planta del inmueble con sus paredes, puertas y ventanas, y ubicá dónde queda cada tablero, cada toma y cada artefacto."
           icon={<MapIcon className="h-4 w-4" />}
         />
         <EmptyState
           icon={<MapIcon className="h-6 w-6" />}
           title="Todavía no hay ningún plano"
-          description="Creá el primero: se arma con los tableros y las cargas que ya cargaste en el relevamiento, y después los acomodás arrastrándolos sobre la planta."
+          description="Creá el primero: podés dibujar la planta desde cero con las paredes y sus aberturas, o cargar una foto del lugar como fondo y marcar encima. Los tableros y las cargas que ya cargaste se ubican con un clic."
           action={
             <Button variant="primary" icon={<MapIcon className="h-4 w-4" />} onClick={openNewPlanModal}>
               Crear el primer plano
@@ -691,13 +1162,18 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
   }
 
   const elementCount = activePlan.elements.length;
+  const wallCount = countWalls(activePlan);
+  const structureCount = activePlan.elements.filter(isStructure).length;
+  const isSelecting = tool === 'select';
+  const selectedIsWall = selected ? isWall(selected) : false;
+  const selectedIsOpening = selected ? isOpening(selected) : false;
 
   return (
     <div className="space-y-4">
       <SectionHeader
         eyebrow="Módulo"
         title="Plano de ubicación"
-        description="Plantillas de tableros, tomas, luces y artefactos para marcar dónde está cada cosa sobre la planta del inmueble."
+        description="Dibujá la planta del inmueble —paredes, puertas, ventanas y aberturas— y ubicá sobre ella los tableros, las tomas y los artefactos."
         icon={<MapIcon className="h-4 w-4" />}
         actions={
           <>
@@ -731,6 +1207,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
             onClick={() => {
               setActivePlanId(plan.id);
               setSelectedId(null);
+              setTool('select');
             }}
             aria-current={plan.id === activePlan.id ? 'true' : undefined}
             title={describePlan(plan)}
@@ -761,9 +1238,10 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
         <div className="flex flex-col gap-4 lg:order-2">
           <div className="overflow-hidden rounded-2xl border border-hairline bg-surface">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline px-3 py-2.5">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-bold text-strong">{activePlan.name}</span>
                 <Badge tone="neutral" className="font-mono">
+                  {wallCount > 0 ? `${wallCount} paredes · ` : ''}
                   {elementCount} {elementCount === 1 ? 'elemento' : 'elementos'}
                 </Badge>
                 {activePlan.supplyId && (
@@ -772,28 +1250,44 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
                   </Badge>
                 )}
               </div>
-              <button
-                type="button"
-                aria-pressed={snap}
-                onClick={() => setSnap((current) => !current)}
-                className={cx(
-                  'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors',
-                  snap ? 'border-accent-line bg-accent-soft text-accent-text' : 'border-edge bg-raised text-muted'
+              <div className="flex items-center gap-2">
+                <span
+                  className={cx(
+                    'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold',
+                    isSelecting ? 'border-hairline bg-raised text-soft' : 'border-accent-line bg-accent-soft text-accent-text'
+                  )}
+                >
+                  {isSelecting ? <MousePointer2 className="h-3.5 w-3.5" /> : <RotateCw className="h-3.5 w-3.5" />}
+                  {toolLabel(tool)}
+                </span>
+                {!isSelecting && (
+                  <Button size="sm" variant="ghost" onClick={() => setTool('select')}>
+                    Terminar (Esc)
+                  </Button>
                 )}
-                title="Ajusta los símbolos a una rejilla para que queden alineados"
-              >
-                <Grid3x3 className="h-3.5 w-3.5" />
-                Rejilla {snap ? 'activada' : 'libre'}
-              </button>
+                <button
+                  type="button"
+                  aria-pressed={snap}
+                  onClick={() => setSnap((current) => !current)}
+                  className={cx(
+                    'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors',
+                    snap ? 'border-accent-line bg-accent-soft text-accent-text' : 'border-edge bg-raised text-muted'
+                  )}
+                  title="Ajusta los trazos a una rejilla y a las esquinas de las paredes"
+                >
+                  <Grid3x3 className="h-3.5 w-3.5" />
+                  Rejilla {snap ? 'activada' : 'libre'}
+                </button>
+              </div>
             </div>
 
             <div className="bg-page p-2 sm:p-3">
               <svg
                 ref={svgRef}
                 viewBox={`0 0 ${PLAN_WIDTH} ${height}`}
-                style={{ aspectRatio: `${PLAN_WIDTH} / ${height}`, touchAction: 'none' }}
+                style={{ aspectRatio: `${PLAN_WIDTH} / ${height}`, touchAction: 'none', cursor: isSelecting ? 'default' : 'crosshair' }}
                 className="block w-full select-none rounded-xl shadow-sm"
-                onPointerDown={() => setSelectedId(null)}
+                onPointerDown={handleCanvasPointerDown}
                 role="img"
                 aria-label={`Plano ${activePlan.name}`}
               >
@@ -840,22 +1334,56 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
                   />
                 )}
 
-                {activePlan.elements.map((element) => (
+                {orderedElements.map((element) => (
                   <PlanElementNode
                     key={element.id}
                     element={element}
                     selected={element.id === selectedId}
                     onPointerDown={handleElementPointerDown}
+                    onHandlePointerDown={handleHandlePointerDown}
                   />
                 ))}
+
+                {/* Trazo de pared en curso */}
+                {draftWall && (
+                  <g data-export="hide" pointerEvents="none">
+                    <line
+                      x1={draftWall.x}
+                      y1={draftWall.y}
+                      x2={draftWall.x2}
+                      y2={draftWall.y2}
+                      stroke={INK}
+                      strokeWidth={14}
+                      strokeLinecap="square"
+                      opacity={0.7}
+                    />
+                    <line
+                      x1={draftWall.x}
+                      y1={draftWall.y}
+                      x2={draftWall.x2}
+                      y2={draftWall.y2}
+                      stroke={SELECTION}
+                      strokeWidth={1.5}
+                      strokeDasharray="6 5"
+                    />
+                    <text
+                      x={(draftWall.x + draftWall.x2) / 2}
+                      y={(draftWall.y + draftWall.y2) / 2 - 16}
+                      textAnchor="middle"
+                      fontSize={16}
+                      fontFamily={PLAN_FONT}
+                      fill={SELECTION}
+                      stroke="none"
+                    >
+                      {Math.round(Math.hypot(draftWall.x2 - draftWall.x, draftWall.y2 - draftWall.y))} u
+                    </text>
+                  </g>
+                )}
               </svg>
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline px-3 py-2 text-xs text-muted">
-              <span>
-                Arrastrá los símbolos para moverlos · hacé clic en uno para editarlo · el fondo es una foto o el plano
-                real del inmueble
-              </span>
+              <span>{toolHint(tool)}</span>
               <span className="font-mono">
                 hoja {PLAN_WIDTH} × {height}
               </span>
@@ -866,7 +1394,10 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
           {selected ? (
             <div className="space-y-3 rounded-2xl border border-accent-line bg-surface p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-bold text-strong">Elemento seleccionado</h3>
+                <h3 className="flex items-center gap-2 text-sm font-bold text-strong">
+                  {elementTypeLabel(selected)}
+                  <Badge tone="neutral">{isStructure(selected) ? 'estructura' : 'plantilla'}</Badge>
+                </h3>
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="ghost" icon={<Copy className="h-3.5 w-3.5" />} onClick={handleDuplicateElement}>
                     Duplicar
@@ -890,14 +1421,96 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
                 </p>
               )}
 
+              {selectedIsWall && (
+                <p className="flex items-center gap-1.5 text-xs text-muted">
+                  <Info className="h-3.5 w-3.5 flex-shrink-0" />
+                  Arrastrá los círculos de las puntas en el plano para estirar la pared, o escribí las coordenadas acá.
+                  Las aberturas que tenga se acomodan solas.
+                </p>
+              )}
+
+              {selectedIsOpening && (
+                <p className="flex items-center gap-1.5 text-xs text-muted">
+                  <Info className="h-3.5 w-3.5 flex-shrink-0" />
+                  {selected.wallId
+                    ? 'Está apoyada sobre una pared: al arrastrarla se corre a lo largo de ella y el hueco se mantiene.'
+                    : 'Está suelta, sin pared. Dibujá una pared debajo y arrastrala encima para que se apoye.'}
+                </p>
+              )}
+
               <div className="grid gap-3 sm:grid-cols-2">
-                <TextField label="Nombre en el plano" value={selected.label} onChange={(value) => handleUpdateElement({ label: value })} />
-                <SelectField
-                  label="Plantilla"
-                  value={selected.symbol}
-                  onChange={(value) => handleUpdateElement({ symbol: value as PlanSymbolType })}
-                  options={PLAN_SYMBOLS.map((symbol) => ({ value: symbol.type, label: symbol.label }))}
+                <TextField
+                  label="Nombre en el plano"
+                  value={selected.label}
+                  onChange={(value) => handleUpdateElement({ label: value })}
+                  hint="Se escribe en el plano. Dejalo como está para los tipos comunes."
                 />
+
+                {!isStructure(selected) && (
+                  <SelectField
+                    label="Plantilla"
+                    value={selected.symbol ?? 'toma'}
+                    onChange={(value) => handleUpdateElement({ symbol: value as PlanSymbolType })}
+                    options={PLAN_SYMBOLS.map((symbol) => ({ value: symbol.type, label: symbol.label }))}
+                  />
+                )}
+
+                {selectedIsWall && (
+                  <>
+                    <NumberField
+                      label="Espesor de la pared"
+                      unit="u"
+                      value={selected.thickness ?? 14}
+                      onChange={(value) => {
+                        if (typeof value === 'number') handleUpdateElement({ thickness: value });
+                      }}
+                      min={2}
+                      max={60}
+                      presets={[8, 14, 20, 30]}
+                      presetsLabel="Frecuentes"
+                      hint="Tabique, mampostería de 15, muro doble…"
+                    />
+                    <div className="flex items-end">
+                      <div className="w-full rounded-xl border border-hairline bg-sunken px-3 py-2.5">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Largo</p>
+                        <p className="mt-1 font-mono text-lg font-bold text-strong">
+                          {wallLength(selected)} <span className="text-sm font-semibold text-muted">u</span>
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted">Ángulo {wallAngle(selected)}°</p>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {selectedIsOpening && (
+                  <>
+                    <NumberField
+                      label="Ancho de la abertura"
+                      unit="u"
+                      value={selected.length ?? 90}
+                      onChange={(value) => {
+                        if (typeof value === 'number') handleUpdateElement({ length: value });
+                      }}
+                      min={10}
+                      max={600}
+                      presets={elementKind(selected) === 'ventana' ? [80, 110, 160, 220] : [70, 90, 110, 160]}
+                      presetsLabel="Frecuentes"
+                      hint="Puerta de 80 a 90, ventana según el ambiente, paso libre lo que pida el uso."
+                    />
+                    <NumberField
+                      label="Espesor de la pared que corta"
+                      unit="u"
+                      value={selected.thickness ?? 14}
+                      onChange={(value) => {
+                        if (typeof value === 'number') handleUpdateElement({ thickness: value });
+                      }}
+                      min={2}
+                      max={60}
+                      hint="Tiene que coincidir con la pared para que el hueco calce."
+                    />
+                  </>
+                )}
+
                 <NumberField
                   label="Posición horizontal"
                   unit="u"
@@ -920,24 +1533,80 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
                   max={height}
                   hint="En unidades de la hoja, de arriba hacia abajo."
                 />
+
+                {selectedIsWall && (
+                  <>
+                    <NumberField
+                      label="Extremo: horizontal"
+                      unit="u"
+                      value={selected.x2 ?? selected.x}
+                      onChange={(value) => {
+                        if (typeof value === 'number') handleUpdateElement({ x2: value });
+                      }}
+                      min={0}
+                      max={PLAN_WIDTH}
+                    />
+                    <NumberField
+                      label="Extremo: vertical"
+                      unit="u"
+                      value={selected.y2 ?? selected.y}
+                      onChange={(value) => {
+                        if (typeof value === 'number') handleUpdateElement({ y2: value });
+                      }}
+                      min={0}
+                      max={height}
+                    />
+                  </>
+                )}
               </div>
 
-              <Field label="Giro del símbolo">
-                <SegmentedControl
-                  size="sm"
-                  ariaLabel="Giro del símbolo"
-                  value={String(selected.rotation ?? 0)}
-                  onChange={(value) => handleUpdateElement({ rotation: Number(value) })}
-                  options={[
-                    { value: '0', label: '0°' },
-                    { value: '90', label: '90°' },
-                    { value: '180', label: '180°' },
-                    { value: '270', label: '270°' },
-                  ]}
-                />
-              </Field>
+              {!selectedIsWall &&
+                (selectedIsOpening ? (
+                  <NumberField
+                    label="Giro del elemento"
+                    unit="°"
+                    value={selected.rotation ?? 0}
+                    onChange={(value) => {
+                      if (typeof value === 'number') handleUpdateElement({ rotation: value });
+                    }}
+                    min={0}
+                    max={359}
+                    step={15}
+                    hint="Las puertas y ventanas apoyadas en una pared toman el giro de la pared: no hace falta tocarlo."
+                  />
+                ) : (
+                  <Field label="Giro del elemento">
+                    <SegmentedControl
+                      size="sm"
+                      ariaLabel="Giro del elemento"
+                      value={String(selected.rotation ?? 0)}
+                      onChange={(value) => handleUpdateElement({ rotation: Number(value) })}
+                      options={[
+                        { value: '0', label: '0°' },
+                        { value: '90', label: '90°' },
+                        { value: '180', label: '180°' },
+                        { value: '270', label: '270°' },
+                      ]}
+                    />
+                  </Field>
+                ))}
 
-              {supplies.length > 1 && (
+              {elementKind(selected) === 'puerta' && (
+                <Field label="Abre hacia" help="Indica de qué lado queda la hoja de la puerta. Sirve para saber si la puerta tapa un tablero.">
+                  <SegmentedControl
+                    size="sm"
+                    ariaLabel="Lado hacia el que abre la puerta"
+                    value={selected.hand ?? 'derecha'}
+                    onChange={(value) => handleUpdateElement({ hand: value as 'izquierda' | 'derecha' })}
+                    options={[
+                      { value: 'izquierda', label: 'Izquierda' },
+                      { value: 'derecha', label: 'Derecha' },
+                    ]}
+                  />
+                </Field>
+              )}
+
+              {supplies.length > 1 && !isStructure(selected) && (
                 <SelectField
                   label="Acometida"
                   value={selected.supplyId ?? ''}
@@ -960,7 +1629,8 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
           ) : (
             elementCount > 0 && (
               <p className="rounded-2xl border border-hairline bg-surface px-4 py-3 text-sm text-muted">
-                Hacé clic en un símbolo del plano para cambiarle el nombre, girarlo o borrarlo.
+                Elegí <strong className="text-soft">Seleccionar</strong> en la paleta y hacé clic en cualquier elemento del
+                plano para cambiarle el nombre, girarlo, estirarlo o borrarlo.
               </p>
             )
           )}
@@ -970,31 +1640,95 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
         <div className="flex flex-col gap-3 lg:order-1">
           <Collapsible
             id="plan-palette"
-            title="Plantillas para ubicar"
-            summary="Tableros, tomas, luces, puesta a tierra y artefactos"
-            description="Elegí una plantilla y se ubica en el plano. Después la arrastrás hasta su lugar."
+            title="Dibujar y ubicar"
+            summary="Paredes, puertas, ventanas, aberturas y las plantillas eléctricas"
+            description="Elegí una herramienta y trabajá sobre el plano. Con «Terminar» (o Escape) volvés a seleccionar."
             defaultOpen
             icon={<MapIcon className="h-4 w-4" />}
           >
             <div className="space-y-4">
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Seleccionar</p>
+                <button
+                  type="button"
+                  onClick={() => setTool('select')}
+                  aria-pressed={isSelecting}
+                  className={cx(
+                    'flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors',
+                    isSelecting
+                      ? 'border-accent-line bg-accent-soft text-strong'
+                      : 'border-hairline bg-sunken text-soft hover:border-accent-line'
+                  )}
+                >
+                  <MousePointer2 className="h-4 w-4 flex-shrink-0" />
+                  <span className="min-w-0 flex-1 text-sm font-semibold">Seleccionar y mover</span>
+                  <span className="font-mono text-xs text-muted">Esc</span>
+                </button>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Estructura del inmueble</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {STRUCTURE_TOOLS.map((structure) => {
+                    const active = tool === structure.type;
+                    return (
+                      <button
+                        key={structure.type}
+                        type="button"
+                        onClick={() => setTool(structure.type)}
+                        aria-pressed={active}
+                        title={structure.hint}
+                        className={cx(
+                          'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-colors',
+                          active
+                            ? 'border-accent-line bg-accent-soft'
+                            : 'border-hairline bg-sunken hover:border-accent-line hover:bg-accent-soft'
+                        )}
+                      >
+                        <svg viewBox="-20 -20 40 40" className="h-9 w-9 text-strong" aria-hidden="true">
+                          <g stroke="currentColor">{structureIcon(structure.type)}</g>
+                        </svg>
+                        <span className={cx('text-xs leading-tight', active ? 'font-bold text-strong' : 'font-semibold text-soft')}>
+                          {structure.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs leading-snug text-muted">
+                  {tool === 'select' ? 'Elegí Pared para empezar la planta.' : toolHint(tool)}
+                </p>
+              </div>
+
               {symbolsByCategory.map(([category, symbols]) => (
                 <div key={category}>
                   <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">{category}</p>
                   <div className="grid grid-cols-2 gap-2">
-                    {symbols.map((symbol) => (
-                      <button
-                        key={symbol.type}
-                        type="button"
-                        onClick={() => handleAddElement(symbol.type)}
-                        title={`Ubicar ${symbol.label}`}
-                        className="flex flex-col items-center gap-1.5 rounded-xl border border-hairline bg-sunken px-2 py-2.5 text-center transition-colors hover:border-accent-line hover:bg-accent-soft"
-                      >
-                        <svg viewBox="-20 -20 40 40" className="h-9 w-9 text-strong" aria-hidden="true">
-                          <g stroke="currentColor">{renderSymbolShapes(symbol.type, 26)}</g>
-                        </svg>
-                        <span className="text-xs font-semibold leading-tight text-soft">{symbol.label}</span>
-                      </button>
-                    ))}
+                    {symbols.map((symbol) => {
+                      const active = tool === `sym:${symbol.type}`;
+                      return (
+                        <button
+                          key={symbol.type}
+                          type="button"
+                          onClick={() => setTool(`sym:${symbol.type}`)}
+                          aria-pressed={active}
+                          title={`Ubicar ${symbol.label}`}
+                          className={cx(
+                            'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-colors',
+                            active
+                              ? 'border-accent-line bg-accent-soft'
+                              : 'border-hairline bg-sunken hover:border-accent-line hover:bg-accent-soft'
+                          )}
+                        >
+                          <svg viewBox="-20 -20 40 40" className="h-9 w-9 text-strong" aria-hidden="true">
+                            <g stroke="currentColor">{renderSymbolShapes(symbol.type, 26)}</g>
+                          </svg>
+                          <span className={cx('text-xs leading-tight', active ? 'font-bold text-strong' : 'font-semibold text-soft')}>
+                            {symbol.label}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -1003,8 +1737,8 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
 
           <Collapsible
             id="plan-elements"
-            title="Elementos ubicados"
-            summary="La lista de lo que ya está en el plano"
+            title="Elementos del plano"
+            summary="La lista de lo que ya está dibujado y ubicado"
             description="Sirve para encontrar y borrar un elemento sin buscarlo en el dibujo."
             icon={<Grid3x3 className="h-4 w-4" />}
             badge={
@@ -1015,11 +1749,12 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
           >
             {elementCount === 0 ? (
               <p className="text-sm text-muted">
-                Todavía no ubicaste nada. Empezá por las plantillas de arriba: un tablero y su puesta a tierra.
+                Todavía no hay nada en el plano. Empezá dibujando una pared con la herramienta «Pared», o cargá una foto
+                del lugar como fondo.
               </p>
             ) : (
-              <ul className="max-h-72 space-y-1 overflow-y-auto">
-                {activePlan.elements.map((element) => (
+              <ul className="max-h-80 space-y-1 overflow-y-auto">
+                {orderedElements.map((element) => (
                   <li key={element.id}>
                     <div
                       className={cx(
@@ -1029,13 +1764,25 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
                     >
                       <button
                         type="button"
-                        onClick={() => setSelectedId(element.id)}
+                        onClick={() => {
+                          setSelectedId(element.id);
+                          setTool('select');
+                        }}
                         className="flex min-w-0 flex-1 items-center gap-2 text-left"
                       >
-                        <svg viewBox="-20 -20 40 40" className="h-6 w-6 flex-shrink-0 text-strong" aria-hidden="true">
-                          <g stroke="currentColor">{renderSymbolShapes(element.symbol, 28)}</g>
-                        </svg>
+                        {isStructure(element) ? (
+                          <svg viewBox="-20 -20 40 40" className="h-6 w-6 flex-shrink-0 text-strong" aria-hidden="true">
+                            <g stroke="currentColor">
+                              {structureIcon(elementKind(element) as PlanStructureType)}
+                            </g>
+                          </svg>
+                        ) : (
+                          <svg viewBox="-20 -20 40 40" className="h-6 w-6 flex-shrink-0 text-strong" aria-hidden="true">
+                            <g stroke="currentColor">{renderSymbolShapes(element.symbol ?? 'toma', 28)}</g>
+                          </svg>
+                        )}
                         <span className="min-w-0 flex-1 truncate text-xs font-semibold text-soft">{element.label}</span>
+                        {element.wallId && <Badge tone="neutral">en pared</Badge>}
                         {(element.panelId || element.loadId) && <Badge tone="info">relevado</Badge>}
                       </button>
                       <IconButton
@@ -1159,6 +1906,12 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
                 onChange={(value) => patchPlan(activePlan.id, { notes: value })}
                 placeholder="Referencias, escala, aclaraciones para el cliente…"
               />
+              <p className="text-xs leading-snug text-muted">
+                El plano tiene {wallCount} {wallCount === 1 ? 'pared' : 'paredes'} y {structureCount - wallCount}{' '}
+                {structureCount - wallCount === 1 ? 'abertura' : 'aberturas'} dibujadas, más{' '}
+                {elementCount - structureCount} {elementCount - structureCount === 1 ? 'símbolo' : 'símbolos'}. Hay{' '}
+                {PLAN_SYMBOLS.length} plantillas eléctricas disponibles en la paleta.
+              </p>
               <Button
                 variant="danger"
                 size="sm"
@@ -1174,13 +1927,13 @@ export const PlanView: React.FC<PlanViewProps> = ({ client, onUpdateClient }) =>
             id="plan-background"
             title="Fondo del plano"
             summary={activePlan.imageDataUrl ? 'Con imagen de fondo' : 'Sin imagen: hoja en blanco'}
-            description="Cargá una foto del lugar o el plano real, y ubicá los símbolos encima."
+            description="Cargá una foto del lugar o el plano real, y dibujá o ubicá los símbolos encima."
             icon={<ImagePlus className="h-4 w-4" />}
           >
             <div className="space-y-3">
               <p className="text-xs leading-snug text-muted">
                 Lo más cómodo es una foto bien perpendicular de la planta, o el plano del arquitecto. La imagen se achica
-                sola para ocupar poco lugar en el equipo.
+                sola para ocupar poco lugar en el equipo, y las paredes que dibujes quedan encima.
               </p>
               <input
                 ref={fileInputRef}

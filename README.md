@@ -23,7 +23,7 @@ Verificado en este repositorio:
 | Contraste WCAG AA en tema claro y oscuro | `node contrast.mjs` | ✅ 52 pares en verde |
 | Lógica del recorrido (progreso y siguiente paso) | `npx tsx check-workflow.ts` | ✅ 11 escenarios (incluye dos acometidas) |
 | Catálogo de productos y marcas | `npx tsx check-catalog.ts` | ✅ integridad + alta, edición y borrado |
-| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 79 comprobaciones |
+| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 143 comprobaciones |
 | Render de las 14 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
 | Render de la aplicación completa | `npx tsx render-check.tsx` | ✅ marca, navegación y estado inicial |
 | Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
@@ -160,7 +160,7 @@ cuando hacen falta y no cuentan para el progreso (ver *Módulos* más abajo).
 | **Presupuesto & Materiales** | Presupuesto generado automáticamente desde tableros, cargas y diagnóstico; **catálogo de 90 productos por marca** (filtrá por marca, categoría o búsqueda y agregá con un clic), markup, impuestos, descuentos, estados y PDF |
 | **Calculadoras Eléctricas** | 1) Dimensionado de conductores, 2) Caída de tensión, 3) Breaker + cable, 4) Banco de capacitores (corrección de cos φ), 5) Ley de Ohm |
 | **Reporte** | Vista previa e informe técnico PDF: datos del cliente y suministro, tabla de fases, observaciones, recomendaciones, anexo de diagnóstico y firmas |
-| **Plano de ubicación** (módulo) | Ubicación de tableros, tomas, luces y artefactos sobre la planta del inmueble con plantillas de símbolos; admite una foto o el plano real como fondo y se baja en PNG o se imprime |
+| **Plano de ubicación** (módulo) | Dibujo de la planta del inmueble (paredes, puertas, ventanas y aberturas) y ubicación de tableros, tomas, luces y artefactos con plantillas de símbolos; admite una foto o el plano real como fondo y se baja en PNG o se imprime |
 | **Clientes** (módulo) | Cartera de clientes, alta/edición y **exportar/importar copia de seguridad en JSON** |
 
 ---
@@ -308,12 +308,38 @@ mediciones y confirmación en el sitio).
 
 ## Módulo: plano de ubicación
 
-Sirve para responder **dónde queda cada cosa**: se marca sobre la planta del inmueble dónde está el tablero, dónde la
-jabalina de puesta a tierra, por dónde pasan las tomas y qué artefacto hay en cada ambiente. Es un módulo aparte
-(`PlanView`), no un paso del relevamiento, porque se usa tanto antes de presupuestar como después, y también para
-explicarle el trabajo al cliente.
+Sirve para responder **dónde queda cada cosa**. Se dibuja la planta del inmueble —paredes, puertas, ventanas y
+aberturas— o se usa una foto o el plano real como fondo, y sobre eso se ubica cada tablero, cada toma, cada punto de
+luz y cada artefacto. Es un módulo aparte (`PlanView`), no un paso del relevamiento, porque se usa tanto antes de
+presupuestar como después, y también para explicarle el trabajo al cliente.
 
-### Plantillas de símbolos
+### Estructura del inmueble
+
+Sin paredes no hay forma de ubicarse: los símbolos quedarían flotando. Por eso el módulo incluye las cuatro
+herramientas de estructura, que se dibujan directamente sobre el lienzo:
+
+| Herramienta | Cómo se usa | Qué queda guardado |
+|---|---|---|
+| **Pared** | Se mantiene presionado y se arrastra de una punta a la otra | `kind: 'pared'` con sus dos extremos (`x, y` → `x2, y2`) y su `thickness` |
+| **Puerta** | Un clic sobre una pared | `kind: 'puerta'`, con `length` (ancho), `hand` (lado hacia el que abre) y `wallId` |
+| **Ventana** | Un clic sobre una pared | `kind: 'ventana'`, con `length` y `wallId` |
+| **Abertura** | Un clic sobre una pared, para un paso libre | `kind: 'abertura'`, con `length` y `wallId` |
+
+- Las **aberturas no se pegan a mano**: al hacer clic sobre una pared, la abertura se proyecta sobre el segmento, toma
+  el giro y el espesor de esa pared y guarda su `wallId`. Después se arrastra **a lo largo** de la pared, sin
+  despegarse ni salirse de las puntas.
+- Al **mover o estirar una pared**, sus aberturas la siguen y conservan su lugar relativo (`followWall`). Al **borrar
+  una pared** se van sus aberturas, para no dejar puertas fantasma.
+- Las paredes se **enganchan entre sí**: el extremo que se suelta cerca de otra pared o de su esquina se pega a esa
+  esquina, así los recintos cierran. Además, un trazo a menos de 8° de una horizontal, vertical o diagonal exacta se
+  endereza solo.
+- **Orden de pintado fijo** (`PLAN_LAYERS`): primero las paredes, después las aberturas que las cortan y al final los
+  símbolos. El hueco de una puerta se hace pintando encima de la pared con el color de la hoja, sin calcular
+  intersecciones: es simple, y como el orden no depende de cuándo se creó cada cosa, el hueco se ve siempre.
+- Con una pared seleccionada aparecen **dos círculos en las puntas** para estirarla, además de los campos numéricos
+  (extremos, espesor y largo calculado) en el panel del elemento.
+
+### Plantillas de símbolos eléctricos
 
 `src/components/planSymbols.tsx` dibuja **14 plantillas en SVG** dentro de una caja de 32 × 32 centrada en el origen,
 así se escalan y se giran sin perder nitidez. Se eligen de una paleta agrupada por rubro:
@@ -327,14 +353,20 @@ así se escalan y se giran sin perder nitidez. Se eligen de una paleta agrupada 
 
 ### Cómo se usa
 
+Se trabaja como en un tablero de dibujo: **se elige una herramienta en la paleta y se trabaja sobre el lienzo**. La
+barra del plano muestra la herramienta activa, y con «Terminar» (o **Escape**) se vuelve a seleccionar.
+
 | Acción | Cómo |
 |---|---|
 | **Crear un plano** | «Nuevo plano»: nombre, proporción de hoja (A4 horizontal, A4 vertical o cuadrada), acometida y, si querés, ubicar de una vez los tableros y las cargas ya relevados |
-| **Ubicar un símbolo** | Un clic en la plantilla: aparece en la hoja y queda seleccionado |
-| **Moverlo** | Se arrastra con el dedo o el mouse. Con la rejilla activada los símbolos se alinean cada 25 unidades |
-| **Editarlo** | Al seleccionarlo se abre su panel: nombre en el plano, plantilla, posición, giro (0°/90°/180°/270°), acometida y notas |
+| **Dibujar la planta** | Herramienta «Pared»: mantener presionado y arrastrar. El largo se ve mientras se dibuja y el trazo se engancha con las esquinas y se endereza en horizontales, verticales y diagonales |
+| **Abrir un hueco** | Herramientas «Puerta», «Ventana» o «Abertura»: un clic sobre la pared. Queda alineada, con el hueco hecho y su ancho según el tipo; se arrastra a lo largo de la pared para correrla |
+| **Ubicar un símbolo** | Un clic en la plantilla de la paleta y después un clic en el plano, dónde va. Se pueden ubicar varios seguidos sin volver a elegir |
+| **Moverlo** | Se arrastra con el dedo o el mouse. Con la rejilla activada los elementos se alinean cada 25 unidades; las paredes mueven sus aberturas y las aberturas se corren por su pared |
+| **Estirar una pared** | Se la selecciona y se arrastran los círculos de las puntas; las aberturas se acomodan solas |
+| **Editarlo** | Al seleccionarlo se abre su panel: nombre en el plano, plantilla (símbolos) o espesor y extremos (paredes), ancho y lado de apertura (puertas y ventanas), posición, giro, acometida y notas |
 | **Traer del relevamiento** | La lista muestra los tableros y las cargas que todavía no están en ningún plano, con «Ubicar» por ítem o «Ubicar todo». Cada elemento queda vinculado a su tablero (`panelId`) o a su artefacto (`loadId`) |
-| **Fondo real** | Se carga una foto o el plano del arquitecto: la imagen se reduce sola (1400 px de ancho, JPEG) para ocupar poco lugar y la hoja toma su proporción |
+| **Fondo real** | Se carga una foto o el plano del arquitecto: la imagen se reduce sola (1400 px de ancho, JPEG) para ocupar poco lugar, la hoja toma su proporción y las paredes que dibujes quedan encima |
 | **Entregarlo** | «Descargar PNG» (al doble de resolución, con encabezado de plano, cliente, acometida y fecha) o «Imprimir» (A4 apaisado) |
 
 ### Decisiones de diseño
@@ -352,16 +384,23 @@ así se escalan y se giran sin perder nitidez. Se eligen de una paleta agrupada 
   tanto la lista de «traer del relevamiento» como la de elementos se filtran por ella. Es la forma más clara de
   mostrar qué depende de cada medidor.
 - Los planos se guardan junto con el cliente (`ClientRecord.plans`), así que entran en la copia de seguridad JSON sin
-  ningún cambio.
+  ningún cambio. `PlanElement.kind` es opcional y vale `symbol` cuando falta, de modo que **los planos guardados antes
+  de que existieran las paredes se siguen abriendo igual**.
+- Los planos de ejemplo del cliente «Supermercado El Trébol» traen la planta dibujada (cuatro paredes, puerta de
+  entrada, vidriera, ventanas y el paso entre el salón y el depósito), para que se vea el uso real del módulo.
 
 ### Verificación
 
-`.devtools/check-plan.ts` comprueba 79 casos: que exista una plantilla por cada tipo de símbolo, la geometría de la
-hoja (A4 horizontal por omisión, 1000 × 707 unidades), el ajuste a la rejilla y el recorte dentro del lienzo, el
-vínculo tablero/carga → elemento (incluida la deduplicación: un tablero ya ubicado no se ofrece otra vez), el resumen
-del plano, que el módulo no altere el recorrido de 7 pasos, que el lienzo se dibuje de verdad (SVG de 1000 × 707, una
-posición por elemento, las 14 plantillas en la paleta y sin franja de etapa) y que los planos del cliente de
-demostración apunten a tableros y cargas existentes y de la acometida correcta.
+`.devtools/check-plan.ts` comprueba 143 casos: que exista una plantilla por cada tipo de símbolo y una herramienta por
+cada tipo de estructura, la geometría de la hoja (A4 horizontal por omisión, 1000 × 707 unidades), el ajuste a la
+rejilla y el recorte dentro del lienzo, la geometría de las paredes (largo, ángulo, distancia y proyección sobre el
+segmento), el apoyado de una abertura sobre una pared (alineación, espesor heredado, deslizamiento sin salirse de las
+puntas y seguimiento al mover o estirar la pared), el borrado en cascada de las aberturas, el enganche de esquinas y el
+enderezado de trazos, el orden de pintado, el vínculo tablero/carga → elemento (incluida la deduplicación: un tablero
+ya ubicado no se ofrece otra vez), el resumen del plano, que el módulo no altere el recorrido de 7 pasos, que el lienzo
+se dibuje de verdad (SVG de 1000 × 707, el espesor de las paredes, el arco de la puerta, las 14 plantillas y las cuatro
+herramientas en la paleta y sin franja de etapa) y que los planos del cliente de demostración tengan la planta dibujada,
+con cada abertura apoyada y alineada con una pared existente del mismo plano.
 
 ---
 
@@ -489,8 +528,9 @@ Todo se guarda en `localStorage` del navegador:
 | `electropro_active_currency_v1` | Moneda activa (USD/ARS) |
 | `electropro_usd_ars_rate_v1` | Cotización USD → ARS |
 
-- `StorageService.getClients()` **siembra un cliente de ejemplo** la primera vez y completa datos faltantes de
-  registros antiguos (tableros por defecto, presupuesto inicial), actuando como migración.
+- `StorageService.getClients()` **siembra dos clientes de ejemplo** la primera vez (una vivienda y un supermercado con
+  dos acometidas y sus planos) y completa datos faltantes de registros antiguos (tableros por defecto, presupuesto
+  inicial, planes y acometidas), actuando como migración.
 - El botón de restablecer datos de ejemplo ejecuta `localStorage.clear()` y **borra todo**: antes de usarlo,
   exporta una copia desde la pestaña **Clientes** (genera `ElectroPro_CopiaSeguridad_<fecha>.json`).
 - Los datos son locales al navegador: no se sincronizan entre dispositivos ni sobreviven al borrado del
@@ -527,6 +567,11 @@ Todo se guarda en `localStorage` del navegador:
 11. **El plano no llega todavía al informe PDF**: el módulo exporta el PNG y lo imprime, pero `pdfReportService.ts`
     no lo inserta en el informe técnico del cliente. Es el paso natural siguiente: agregar el PNG del plano (o de
     cada acometida) como anexo del informe, ya que el archivo se guarda como data URL dentro del propio cliente.
-12. **El plano no dibuja canalizaciones ni circuitos**: solo ubica símbolos. Falta poder trazar el recorrido de cada
-    circuito desde el tablero (polilíneas con su rótulo `C-1`, `C-2`…) para que el plano sirva también como esquema
-    de cañerías, y vincular cada trazo con el circuito del relevamiento.
+12. **El plano no traza canalizaciones ni circuitos**: dibuja la planta (paredes, puertas, ventanas y aberturas) y
+    ubica los símbolos, pero falta el recorrido de cada circuito desde el tablero (polilíneas con su rótulo `C-1`,
+    `C-2`…) para que sirva también como esquema de cañerías, vinculado al circuito del relevamiento.
+13. **El plano no tiene escala real**: los largos de pared se muestran en unidades del lienzo. Falta poder declarar el
+    ancho real de la hoja (en metros) para que los largos y las distancias salgan en metros o centímetros y el PNG
+    impreso sirva para medir sobre el papel.
+14. **El plano no entra todavía en el informe PDF**: el módulo exporta el PNG y lo imprime, pero `pdfReportService.ts`
+    no inserta el plano ni sus anexos en el informe técnico del cliente.
