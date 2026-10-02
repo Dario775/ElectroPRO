@@ -19,6 +19,7 @@ import { useCurrency } from '../context/CurrencyContext';
 import { Button } from './ui/Button';
 import { Callout, SectionHeader } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
+import { describeSupply, getSupplies } from '../utils/supplies';
 
 interface ReportPreviewProps {
   client: ClientRecord;
@@ -28,6 +29,7 @@ interface ReportPreviewProps {
 
 export const ReportPreview: React.FC<ReportPreviewProps> = ({ client, technician, onUpdateClient }) => {
   const { format, activeCurrency, usdToArsRate } = useCurrency();
+  const supplies = getSupplies(client);
   const [newRecommendation, setNewRecommendation] = useState('');
   const [downloadSuccess, setDownloadSuccess] = useState(false);
 
@@ -225,13 +227,26 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ client, technician
             <span className="font-bold text-accent-text uppercase text-xs tracking-wider block">
               Parámetros de Suministro
             </span>
-            <div className="font-bold text-strong">{client.serviceType}</div>
-            <div className="text-soft">
-              Tensión: {client.nominalVoltage}V (L-N) / {client.lineVoltage}V (L-L)
-            </div>
-            <div className="text-muted">
-              Breaker Principal: {client.mainBreakerAmps}A | Tarifa: {format(client.kwhCost, client.currency)}/kWh
-            </div>
+            {supplies.length > 1 ? (
+              <ul className="space-y-0.5">
+                {supplies.map((supply) => (
+                  <li key={supply.id} className="text-soft">
+                    <strong className="text-strong">{supply.name}</strong>: {describeSupply(supply)}
+                    {supply.meterNumber ? ` · medidor ${supply.meterNumber}` : ''}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <>
+                <div className="font-bold text-strong">{client.serviceType}</div>
+                <div className="text-soft">
+                  Tensión: {client.nominalVoltage}V (L-N) / {client.lineVoltage}V (L-L)
+                </div>
+                <div className="text-muted">
+                  Breaker Principal: {client.mainBreakerAmps}A | Tarifa: {format(client.kwhCost, client.currency)}/kWh
+                </div>
+              </>
+            )}
           </div>
         </div>
 

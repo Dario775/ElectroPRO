@@ -35,6 +35,7 @@ import { cx } from '../utils/cx';
 import { Button } from './ui/Button';
 import { Badge, Callout, EmptyState, SectionHeader, Stat } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
+import { getSupplies, loadsOfSupply, supplyOfLoad } from '../utils/supplies';
 import { Field, NumberField, SegmentedControl, SelectField, TextField } from './ui/Form';
 import { Modal } from './ui/Modal';
 
@@ -224,6 +225,9 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
   const [customCircuit, setCustomCircuit] = useState('');
   const [customPanelId, setCustomPanelId] = useState<string>(client.panels?.[0]?.id || 'panel_main');
   const [selectedPanelFilter, setSelectedPanelFilter] = useState<string>('all');
+  const [selectedSupplyFilter, setSelectedSupplyFilter] = useState<string>('all');
+
+  const supplies = getSupplies(client);
 
   const summary = calculatePhaseBalance(
     client.loads,
@@ -254,8 +258,9 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
     return matchesCategory && matchesSearch;
   });
 
-  // Filtered loads by selected panel
+  // Filtrado de cargas por acometida y por tablero
   const displayedLoads = client.loads.filter((load) => {
+    if (selectedSupplyFilter !== 'all' && supplyOfLoad(client, load).id !== selectedSupplyFilter) return false;
     if (selectedPanelFilter === 'all') return true;
     const loadPanelId = load.panelId || client.panels?.[0]?.id || 'panel_main';
     return loadPanelId === selectedPanelFilter;
@@ -641,32 +646,58 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
           />
         ) : (
           <div className="space-y-4">
-            {/* Filtro por tablero */}
+            {/* Filtros por acometida y tablero */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted">
                 Mostrando <strong className="font-mono text-strong">{displayedLoads.length}</strong> de{' '}
                 {client.loads.length} equipos
               </p>
-              {client.panels && client.panels.length > 1 && (
-                <label className="flex items-center gap-2 text-xs font-semibold text-muted">
-                  Ver solo el tablero
-                  <select
-                    value={selectedPanelFilter}
-                    onChange={(e) => setSelectedPanelFilter(e.target.value)}
-                    className="h-9 rounded-xl border border-field-line bg-sunken px-2.5 text-xs font-bold text-strong focus:border-accent focus:outline-none"
-                  >
-                    <option value="all">Todos ({client.loads.length})</option>
-                    {client.panels.map((p) => {
-                      const count = client.loads.filter((l) => (l.panelId || client.panels?.[0]?.id) === p.id).length;
-                      return (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({count})
+              <div className="flex flex-wrap items-center gap-3">
+                {supplies.length > 1 && (
+                  <label className="flex items-center gap-2 text-xs font-semibold text-muted">
+                    Acometida
+                    <select
+                      value={selectedSupplyFilter}
+                      onChange={(e) => {
+                        setSelectedSupplyFilter(e.target.value);
+                        setSelectedPanelFilter('all');
+                      }}
+                      className="h-9 rounded-xl border border-field-line bg-sunken px-2.5 text-xs font-bold text-strong focus:border-accent focus:outline-none"
+                    >
+                      <option value="all">Todas ({client.loads.length})</option>
+                      {supplies.map((supply) => (
+                        <option key={supply.id} value={supply.id}>
+                          {supply.name} ({loadsOfSupply(client, supply.id).length})
                         </option>
-                      );
-                    })}
-                  </select>
-                </label>
-              )}
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {client.panels && client.panels.length > 1 && (
+                  <label className="flex items-center gap-2 text-xs font-semibold text-muted">
+                    Ver solo el tablero
+                    <select
+                      value={selectedPanelFilter}
+                      onChange={(e) => setSelectedPanelFilter(e.target.value)}
+                      className="h-9 rounded-xl border border-field-line bg-sunken px-2.5 text-xs font-bold text-strong focus:border-accent focus:outline-none"
+                    >
+                      <option value="all">Todos</option>
+                      {client.panels
+                        .filter(
+                          (p) => selectedSupplyFilter === 'all' || (p.supplyId || supplies[0].id) === selectedSupplyFilter
+                        )
+                        .map((p) => {
+                          const count = client.loads.filter((l) => (l.panelId || client.panels?.[0]?.id) === p.id).length;
+                          return (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({count})
+                            </option>
+                          );
+                        })}
+                    </select>
+                  </label>
+                )}
+              </div>
             </div>
 
             <div className="space-y-3">

@@ -35,6 +35,7 @@ import { useCurrency } from '../context/CurrencyContext';
 import { Button } from './ui/Button';
 import { Badge, SectionHeader } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
+import { getSupplies, loadsOfSupply } from '../utils/supplies';
 
 interface ConsumptionHistoryViewProps {
   client: ClientRecord;
@@ -55,25 +56,37 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [tempHistory, setTempHistory] = useState<MonthlyConsumptionRecord[]>([]);
 
-  // Compute live audit projected consumption from client loads
+  /**
+   * Cada acometida tiene su medidor y su factura. Si el inmueble tiene más de
+   * una, se elige cuál se está analizando; el filtro afecta a las facturas, al
+   * gráfico y a la comparación con la auditoría de cargas.
+   */
+  const supplies = useMemo(() => getSupplies(client), [client]);
+  const [supplyId, setSupplyId] = useState<string>(() => supplies[0].id);
+  const supply = supplies.find((candidate) => candidate.id === supplyId) ?? supplies[0];
+  const multiSupply = supplies.length > 1;
+
+  // Compute live audit projected consumption from the loads of this supply
   const auditSummary = useMemo(() => {
+    const loads = multiSupply ? loadsOfSupply(client, supply.id) : client.loads;
     return calculatePhaseBalance(
-      client.loads,
-      client.serviceType,
-      client.nominalVoltage,
-      client.lineVoltage,
-      client.kwhCost,
-      client.fixedCharge
+      loads,
+      supply.serviceType,
+      supply.nominalVoltage,
+      supply.lineVoltage,
+      supply.kwhCost,
+      supply.fixedCharge
     );
-  }, [client]);
+  }, [client, multiSupply, supply]);
 
   const projectedMonthlyKwh = auditSummary.totalMonthlyKwh;
 
   // Retrieve or generate 12-month initial realistic history
   const rawHistory: MonthlyConsumptionRecord[] = useMemo(() => {
-    if (client.consumptionHistory && client.consumptionHistory.length > 0) {
-      return client.consumptionHistory;
-    }
+    const all = client.consumptionHistory ?? [];
+    const own = multiSupply ? all.filter((record) => (record.supplyId || supplies[0].id) === supply.id) : all;
+    if (own.length > 0) return own;
+
     const baseKwh = projectedMonthlyKwh > 0 ? projectedMonthlyKwh : 450;
     const currentYear = new Date().getFullYear();
     const currentMonthIdx = new Date().getMonth();
@@ -85,21 +98,20 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
       const isCurrent = i === 0;
 
       const seasonalFactor = 1.0 + Math.sin((targetMonthIdx / 12) * Math.PI * 2) * 0.12 + (Math.random() * 0.05 - 0.025);
-      const kwhVal = isCurrent
-        ? Math.round(baseKwh)
-        : Math.round(baseKwh * seasonalFactor);
+      const kwhVal = isCurrent ? Math.round(baseKwh) : Math.round(baseKwh * seasonalFactor);
 
       generated.push({
         month: MONTH_NAMES[targetMonthIdx],
         year: targetYear,
         kwh: kwhVal,
-        cost: parseFloat((kwhVal * client.kwhCost + client.fixedCharge).toFixed(2)),
+        cost: parseFloat((kwhVal * supply.kwhCost + supply.fixedCharge).toFixed(2)),
         isProjected: isCurrent,
+        supplyId: supply.id,
         notes: isCurrent ? 'Auditoría Actual' : 'Factura compañía eléctrica',
       });
     }
     return generated;
-  }, [client.consumptionHistory, projectedMonthlyKwh, client.kwhCost, client.fixedCharge]);
+  }, [client.consumptionHistory, multiSupply, supplies, supply, projectedMonthlyKwh]);
 
   // Sliced data based on 6 or 12 months
   const displayData = useMemo(() => {
@@ -148,9 +160,15 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
 
   // Save edit modal
   const handleSaveEdit = () => {
+    // Se reemplazan solo las facturas de esta acometida: las de las demás se
+    // conservan, porque cada medidor factura por separado.
+    const otherSupplies = (client.consumptionHistory ?? []).filter(
+      (record) => (record.supplyId || supplies[0].id) !== supply.id
+    );
+
     onUpdateClient({
       ...client,
-      consumptionHistory: tempHistory,
+      consumptionHistory: [...otherSupplies, ...tempHistory.map((record) => ({ ...record, supplyId: supply.id }))],
     });
     setIsEditing(false);
   };
@@ -176,8 +194,9 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
         month: MONTH_NAMES[targetMonthIdx],
         year: targetYear,
         kwh: kwhVal,
-        cost: parseFloat((kwhVal * client.kwhCost + client.fixedCharge).toFixed(2)),
+        cost: parseFloat((kwhVal * supply.kwhCost + supply.fixedCharge).toFixed(2)),
         isProjected: isCurrent,
+        supplyId: supply.id,
         notes: isCurrent ? 'Auditoría Actual' : 'Factura compañía eléctrica',
       });
     }
@@ -243,10 +262,28 @@ export const ConsumptionHistoryView: React.FC<ConsumptionHistoryViewProps> = ({
       <SectionHeader
         eyebrow="Paso 4 · Relevamiento"
         title="Historial de facturación"
-        description="Cargá los kWh de las últimas facturas y comparalos con lo que consume el inmueble según las cargas relevadas. Si la factura cobra mucho más de lo que corresponde, suele haber una fuga a tierra o un medidor descalibrado."
+        description={
+          multiSupply
+            ? `Cada acometida tiene su medidor y su factura, así que se analizan por separado. Ahora estás viendo «${supply.name}»${supply.meterNumber ? ` (medidor ${supply.meterNumber})` : ''}.`
+            : 'Cargá los kWh de las últimas facturas y comparalos con lo que consume el inmueble según las cargas relevadas. Si la factura cobra mucho más de lo que corresponde, suele haber una fuga a tierra o un medidor descalibrado.'
+        }
         icon={<BarChart3 className="h-4 w-4" />}
         actions={
           <>
+            {multiSupply && (
+              <select
+                aria-label="Elegir acometida"
+                value={supply.id}
+                onChange={(event) => setSupplyId(event.target.value)}
+                className="h-10 rounded-xl border border-field-line bg-sunken px-3 text-sm font-semibold text-strong focus:border-accent focus:outline-none"
+              >
+                {supplies.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+            )}
             {onNavigateToAudit && (
               <Button variant="secondary" icon={<Zap className="h-4 w-4" />} onClick={onNavigateToAudit}>
                 Ver las cargas

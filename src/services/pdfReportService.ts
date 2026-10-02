@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { ClientRecord, TechnicianProfile, PhaseBalanceSummary, SupportedCurrency } from '../types/electrical';
 import { calculatePhaseBalance, calculateCurrent, calculateMonthlyKwh, formatCurrency } from '../utils/electricalMath';
 import { analyzeInstallation } from '../utils/diagnosticEngine';
+import { getSupplies } from '../utils/supplies';
 
 export function generateTechnicalReportPDF(
   client: ClientRecord,
@@ -118,22 +119,41 @@ export function generateTechnicalReportPDF(
 
   // Col 2
   const col2X = margin + 98;
-  doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
-  doc.text(`Tipo de Suministro: `, col2X, currentY + 12);
-  doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-  doc.setFont('helvetica', 'bold');
-  doc.text(`${client.serviceType}`, col2X + 28, currentY + 12);
+  const supplies = getSupplies(client);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
-  doc.text(`Tensión Nominal: `, col2X, currentY + 17);
-  doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-  doc.text(`${client.nominalVoltage}V (L-N) / ${client.lineVoltage}V (L-L)`, col2X + 26, currentY + 17);
+  if (supplies.length > 1) {
+    // Inmueble con varias acometidas: se detalla cada una, porque cada medidor
+    // tiene su tarifa y su térmica.
+    doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
+    doc.text(`Acometidas (${supplies.length}): `, col2X, currentY + 12);
 
-  doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
-  doc.text(`Breaker Principal: `, col2X, currentY + 22);
-  doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-  doc.text(`${client.mainBreakerAmps} A  |  Tarifa: ${formatCurrency(client.kwhCost * factor, effectiveCurrency)}/kWh`, col2X + 26, currentY + 22);
+    doc.setFontSize(7);
+    supplies.slice(0, 3).forEach((supply, index) => {
+      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+      const detail = `${supply.name}: ${supply.serviceType.split(' ')[0]} ${supply.nominalVoltage}/${supply.lineVoltage} V · térmica ${supply.mainBreakerAmps} A${
+        supply.meterNumber ? ` · medidor ${supply.meterNumber}` : ''
+      }`;
+      doc.text(detail, col2X + 2, currentY + 16 + index * 4);
+    });
+    doc.setFontSize(7.5);
+  } else {
+    doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
+    doc.text(`Tipo de Suministro: `, col2X, currentY + 12);
+    doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${client.serviceType}`, col2X + 28, currentY + 12);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
+    doc.text(`Tensión Nominal: `, col2X, currentY + 17);
+    doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+    doc.text(`${client.nominalVoltage}V (L-N) / ${client.lineVoltage}V (L-L)`, col2X + 26, currentY + 17);
+
+    doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
+    doc.text(`Breaker Principal: `, col2X, currentY + 22);
+    doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+    doc.text(`${client.mainBreakerAmps} A  |  Tarifa: ${formatCurrency(client.kwhCost * factor, effectiveCurrency)}/kWh`, col2X + 26, currentY + 22);
+  }
 
   currentY += 32;
 

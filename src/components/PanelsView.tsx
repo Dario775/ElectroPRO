@@ -20,7 +20,8 @@ import {
   Flame,
   GitBranch,
 } from 'lucide-react';
-import { ClientRecord, ElectricalPanel, ApplianceLoad, PanelMeasurements, PanelType } from '../types/electrical';
+import { ClientRecord, ElectricalPanel, ApplianceLoad, PanelMeasurements, PanelType, ServiceSupply } from '../types/electrical';
+import { describeSupply, getSupplies } from '../utils/supplies';
 import { WIRE_GAUGES } from '../utils/electricalMath';
 import { Button } from './ui/Button';
 import { Badge, Callout, SectionHeader } from './ui/Card';
@@ -44,6 +45,13 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
   const [editingPanel, setEditingPanel] = useState<ElectricalPanel | null>(null);
   const [reassignLoadModal, setReassignLoadModal] = useState<ApplianceLoad | null>(null);
   const [targetPanelForReassign, setTargetPanelForReassign] = useState<string>('');
+  /** Acometida que se está mirando: 'all' o el id de una. */
+  const [supplyFilter, setSupplyFilter] = useState<string>('all');
+
+  const supplies = useMemo(() => getSupplies(client), [client]);
+  const primarySupply = supplies[0];
+  const supplyOf = (panel: ElectricalPanel): ServiceSupply =>
+    supplies.find((supply) => supply.id === panel.supplyId) ?? primarySupply;
 
   // Default panels list fallback if none
   const panels: ElectricalPanel[] = useMemo(() => {
@@ -55,6 +63,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       name: 'Tablero Principal (TP-01)',
       type: 'principal',
       location: 'Pilar / Acometida Entrada',
+      supplyId: primarySupply.id,
       mainBreakerAmps: client.mainBreakerAmps || 40,
       mainBreakerPoles: client.serviceType === 'Trifásico (3F+N)' ? '3P+N' : client.serviceType === 'Bifásico (2F+N)' ? '2P' : '1P+N',
       mainBreakerCurve: 'C',
@@ -80,7 +89,13 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       },
     };
     return [defaultMain];
-  }, [client]);
+  }, [client, primarySupply]);
+
+  /** Tableros según el filtro de acometida. */
+  const visiblePanels = useMemo(
+    () => (supplyFilter === 'all' ? panels : panels.filter((panel) => supplyOf(panel).id === supplyFilter)),
+    [panels, supplyFilter, supplies]
+  );
 
   // Set active selected panel default
   const activePanel = useMemo(() => {
@@ -88,8 +103,8 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       const found = panels.find((p) => p.id === selectedPanelId);
       if (found) return found;
     }
-    return panels[0];
-  }, [panels, selectedPanelId]);
+    return visiblePanels[0] ?? panels[0];
+  }, [panels, visiblePanels, selectedPanelId]);
 
   // Panel metrics calculations
   const panelAnalytics = useMemo(() => {
@@ -361,13 +376,32 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       <SectionHeader
         eyebrow="Paso 2 · Relevamiento"
         title="Tableros y protecciones"
-        description="Cargá los tableros del inmueble, sus protecciones y cómo se conectan entre ellos. De acá salen el esquema del tablero, el control de capacidad y las advertencias de seguridad."
+        description={
+          supplies.length > 1
+            ? `El inmueble tiene ${supplies.length} acometidas. Cargá los tableros de cada una, sus protecciones y cómo se conectan entre ellos.`
+            : 'Cargá los tableros del inmueble, sus protecciones y cómo se conectan entre ellos. De acá salen el esquema del tablero, el control de capacidad y las advertencias de seguridad.'
+        }
         icon={<Layers className="h-4 w-4" />}
         actions={
           <>
             <Badge tone="neutral">
               {panels.length} {panels.length === 1 ? 'tablero' : 'tableros'}
             </Badge>
+            {supplies.length > 1 && (
+              <select
+                aria-label="Filtrar por acometida"
+                value={supplyFilter}
+                onChange={(event) => setSupplyFilter(event.target.value)}
+                className="h-10 rounded-xl border border-field-line bg-sunken px-3 text-sm font-semibold text-strong focus:border-accent focus:outline-none"
+              >
+                <option value="all">Todas las acometidas</option>
+                {supplies.map((supply) => (
+                  <option key={supply.id} value={supply.id}>
+                    {supply.name}
+                  </option>
+                ))}
+              </select>
+            )}
             {onNavigateToAudit && (
               <Button variant="secondary" icon={<Zap className="h-4 w-4" />} onClick={onNavigateToAudit}>
                 Ver las cargas
@@ -385,8 +419,14 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
         id="panels-map"
         title="Esquema del inmueble"
         icon={<GitBranch className="h-4 w-4" />}
-        description="Cómo se conectan el medidor y los tableros entre sí, de la acometida hacia adentro. Sirve para saber de dónde le llega la energía a cada tablero."
-        summary={`${panels.length} ${panels.length === 1 ? 'tablero' : 'tableros'} · ${client.serviceType} · ${client.nominalVoltage} V`}
+        description={
+          supplies.length > 1
+            ? 'Cada acometida tiene su medidor y su árbol de tableros. Acá se ven todos juntos; con el filtro de arriba podés mirar una sola.'
+            : 'Cómo se conectan el medidor y los tableros entre sí, de la acometida hacia adentro. Sirve para saber de dónde le llega la energía a cada tablero.'
+        }
+        summary={`${panels.length} ${panels.length === 1 ? 'tablero' : 'tableros'} · ${
+          supplies.length > 1 ? `${supplies.length} acometidas` : `${client.serviceType} · ${client.nominalVoltage} V`
+        }`}
       >
         {/* Tree / Flow Visualizer */}
         <div className="p-4 rounded-xl bg-sunken border border-hairline/80 overflow-x-auto">
@@ -398,10 +438,14 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
               </div>
               <strong className="text-xs text-strong block">Medidor / Red</strong>
               <span className="text-xs text-muted block font-mono">
-                {client.serviceType.split(' ')[0]}
+                {(supplyFilter === 'all' ? primarySupply : supplyOf(visiblePanels[0] ?? activePanel)).serviceType.split(' ')[0]}
               </span>
               <span className="text-xs text-success-text font-bold block mt-1">
-                Acometida
+                {supplyFilter === 'all' && supplies.length === 1
+                  ? 'Acometida'
+                  : supplyFilter === 'all'
+                  ? `${supplies.length} acometidas`
+                  : supplyOf(visiblePanels[0] ?? activePanel).name}
               </span>
             </div>
 
@@ -413,7 +457,9 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
 
             {/* Panels Flow Columns */}
             <div className="flex-1 flex items-start gap-4">
-              {panelAnalytics.map((item) => {
+              {panelAnalytics
+                .filter((item) => supplyFilter === 'all' || supplyOf(item.panel).id === supplyFilter)
+                .map((item) => {
                 const p = item.panel;
                 const isSelected = p.id === activePanel.id;
                 const isOverloaded = item.capacityUtilization > 100;
@@ -440,6 +486,15 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                         {p.type}
                       </span>
 
+                      {/* Acometida del tablero, cuando el inmueble tiene más de una */}
+                      {supplies.length > 1 && supplyFilter === 'all' && (
+                        <span className="truncate rounded bg-raised px-1.5 py-0.5 text-xs font-semibold text-soft">
+                          {supplyOf(p).name}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
                       {/* Status indicator */}
                       {isOverloaded ? (
                         <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-danger-soft text-danger-text border border-danger-line animate-pulse">
@@ -1005,6 +1060,16 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                   onChange={(value) => updatePanelField({ location: value })}
                   placeholder="Pasillo planta baja, pilar de acometida…"
                   hint="Sirve para que cualquiera encuentre el tablero."
+                />
+                <SelectField
+                  label="Acometida a la que pertenece"
+                  value={editingPanel.supplyId || primarySupply.id}
+                  onChange={(value) => updatePanelField({ supplyId: value })}
+                  options={supplies.map((supply) => ({
+                    value: supply.id,
+                    label: `${supply.name} — ${describeSupply(supply)}`,
+                  }))}
+                  help="Define de qué medidor y de qué tarifa depende este tablero. Es lo que permite manejar un inmueble con dos acometidas."
                 />
                 {editingPanel.type !== 'principal' && (
                   <SelectField

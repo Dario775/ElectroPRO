@@ -1,5 +1,6 @@
 import { ClientRecord, FieldMeasurements } from '../types/electrical';
 import { calculatePhaseBalance } from './electricalMath';
+import { allSuppliesVerified, getSupplies, hasAnyMeasurements, loadsOfSupply } from './supplies';
 
 /**
  * Modelo del flujo de trabajo.
@@ -68,44 +69,54 @@ export interface WorkflowProgress {
   percent: number;
 }
 
-/** ¿Hay alguna medición de campo cargada? */
-function hasFieldMeasurements(client: ClientRecord): boolean {
-  const measurements: FieldMeasurements | undefined = client.diagnosticMeasurements;
-  if (!measurements) return false;
-  const numeric: Array<number | undefined> = [
-    measurements.vL1N,
-    measurements.iL1,
-    measurements.iNeutro,
-    measurements.groundResistanceOhms,
-  ];
-  return numeric.some((value) => typeof value === 'number' && value > 0) || measurements.hasGroundRod === true;
-}
-
 function pluralize(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
 /**
- * Estado del paso de balance de fases, calculado con el desbalance real entre
- * fases: el paso se marca terminado cuando el reparto está dentro de tolerancia,
- * no cuando el usuario simplemente lo miró.
+ * Estado del paso de balance de fases.
+ *
+ * El desbalance se evalúa **por acometida**, porque las fases de dos medidores
+ * distintos no se compensan entre sí. El paso se marca terminado cuando todas
+ * las acometidas con cargas suficientes están dentro de tolerancia.
  */
-function balanceStatus(client: ClientRecord, loads: number): { status: StepStatus; badge?: string; pendingHint: string } {
-  if (!client || loads < 2) {
+function balanceStatus(client: ClientRecord | null): { status: StepStatus; badge?: string; pendingHint: string } {
+  if (!client) {
+    return { status: 'pendiente', pendingHint: 'Cargá primero las cargas del inmueble.' };
+  }
+
+  const evaluated = getSupplies(client)
+    .map((supply) => ({ supply, loads: loadsOfSupply(client, supply.id) }))
+    .filter((entry) => entry.loads.length >= 2)
+    .map((entry) => ({
+      supply: entry.supply,
+      summary: calculatePhaseBalance(
+        entry.loads,
+        entry.supply.serviceType,
+        entry.supply.nominalVoltage,
+        entry.supply.lineVoltage
+      ),
+    }));
+
+  if (evaluated.length === 0) {
     return {
       status: 'pendiente',
       pendingHint: 'Necesitás al menos dos cargas cargadas para poder repartirlas entre fases.',
     };
   }
 
-  const summary = calculatePhaseBalance(client.loads, client.serviceType, client.nominalVoltage, client.lineVoltage);
-  const unbalance = summary.unbalancePercent;
-  const balanced = summary.unbalanceStatus === 'excelente' || summary.unbalanceStatus === 'aceptable';
+  const worst = evaluated.reduce((a, b) => (b.summary.unbalancePercent > a.summary.unbalancePercent ? b : a));
+  const balanced = evaluated.every(
+    (entry) => entry.summary.unbalanceStatus === 'excelente' || entry.summary.unbalanceStatus === 'aceptable'
+  );
 
   return {
     status: balanced ? 'listo' : 'en-curso',
-    badge: `${unbalance.toFixed(1)}%`,
-    pendingHint: `El desbalance entre fases es del ${unbalance.toFixed(1)}% (conviene que no pase del 5%). Movete a la vista de balance para repartir mejor las cargas.`,
+    badge: `${worst.summary.unbalancePercent.toFixed(1)}%`,
+    pendingHint:
+      evaluated.length > 1
+        ? `El desbalance llega al ${worst.summary.unbalancePercent.toFixed(1)}% en «${worst.supply.name}» (conviene que no pase del 5%). Cada acometida se balancea por separado.`
+        : `El desbalance entre fases es del ${worst.summary.unbalancePercent.toFixed(1)}% (conviene que no pase del 5%). Movete a la vista de balance para repartir mejor las cargas.`,
   };
 }
 
@@ -116,8 +127,10 @@ export function buildWorkflow(client: ClientRecord | null): WorkflowGroup[] {
   const monthlyRecords = client?.consumptionHistory?.length ?? 0;
   const budgets = (client?.budgets ?? []).filter((budget) => budget.items.length > 0);
   const hasBudgetItems = budgets.length > 0;
-  const measurements = client ? hasFieldMeasurements(client) : false;
-  const balance = client ? balanceStatus(client, loads) : { status: 'pendiente' as StepStatus, pendingHint: 'Cargá primero las cargas del inmueble.' };
+  const measurements = client ? hasAnyMeasurements(client) : false;
+  const supplies = client ? getSupplies(client) : [];
+  const suppliesVerified = client ? allSuppliesVerified(client) : false;
+  const balance = balanceStatus(client);
 
   return [
     {
@@ -128,13 +141,21 @@ export function buildWorkflow(client: ClientRecord | null): WorkflowGroup[] {
       steps: [
         {
           id: 'supply',
-          label: 'Suministro y acometida',
-          title: 'Suministro y acometida',
+          label: supplies.length > 1 ? 'Suministros y acometidas' : 'Suministro y acometida',
+          title: supplies.length > 1 ? 'Suministros y acometidas' : 'Suministro y acometida',
           description:
-            'Lo primero al llegar: qué suministro hay (monofásico, bifásico o trifásico), con qué tensiones y qué térmica general. Todo lo demás se calcula a partir de esto.',
-          pendingHint: 'Confirmá en el lugar el tipo de acometida, las tensiones y la térmica general del inmueble.',
-          status: client?.supplyVerified ? 'listo' : 'pendiente',
-          badge: client?.supplyVerified ? 'verificado' : undefined,
+            'Lo primero al llegar: cuántas acometidas tiene el inmueble y, en cada una, el tipo de suministro, las tensiones y la térmica general. Todo lo demás se calcula a partir de esto.',
+          pendingHint:
+            supplies.length > 1
+              ? 'Confirmá en el lugar las tensiones y la térmica general de cada acometida.'
+              : 'Confirmá en el lugar el tipo de acometida, las tensiones y la térmica general del inmueble.',
+          status: suppliesVerified ? 'listo' : 'pendiente',
+          badge:
+            supplies.length > 1
+              ? `${supplies.filter((supply) => supply.verified).length}/${supplies.length}`
+              : suppliesVerified
+              ? 'verificado'
+              : undefined,
         },
         {
           id: 'panels',

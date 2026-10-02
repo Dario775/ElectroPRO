@@ -258,6 +258,27 @@ npx tsx render-views.tsx     # renderiza las 13 pantallas con datos reales y det
 npx tsx render-check.tsx     # renderiza la aplicación completa (marca, navegación, estado inicial)
 ```
 
+### Suministros múltiples (varias acometidas)
+
+Un inmueble puede tener **más de una acometida**: un supermercado suele tener una para el sector de ventas y otra para
+el depósito, cada una con su medidor, su tarifa y sus tableros. `ClientRecord.supplies` guarda la lista
+(`ServiceSupply`: nombre, tipo de suministro, tensiones, térmica general, N° de medidor, ubicación, tarifa, moneda,
+mediciones y confirmación en el sitio).
+
+- **La primera de la lista es la principal** y sus datos se copian a los campos del cliente (`serviceType`,
+  `nominalVoltage`, `lineVoltage`, `mainBreakerAmps`, `kwhCost`, `fixedCharge`). Así todo el código que ya usaba esos
+  campos sigue funcionando, y `normalizeClient` mantiene la correspondencia. Los clientes guardados antes de este
+  cambio se migran solos: se les crea una acometida principal con lo que tenían.
+- Cada **tablero** se asigna a una acometida (`supplyId`) y cada **factura** también (`MonthlyConsumptionRecord.supplyId`),
+  porque cada medidor factura por separado.
+- Cada acometida tiene **sus propias mediciones de campo** y se verifica por separado. El paso «Suministro» del
+  recorrido se completa cuando **todas** están confirmadas.
+- **El balance de fases y el diagnóstico se calculan por acometida**: las fases de dos medidores distintos no se
+  compensan entre sí, así que mezclarlas daría un resultado falso. Las vistas de balance, mediciones, historial,
+  tableros y cargas tienen un selector de acometida.
+- El **informe** (pantalla y PDF) detalla cada acometida con su medidor cuando hay más de una.
+- El cliente de ejemplo «Supermercado El Trébol» trae dos acometidas para ver el caso funcionando.
+
 ---
 
 ## Motor de cálculo

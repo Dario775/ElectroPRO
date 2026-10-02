@@ -1,5 +1,6 @@
 import { ClientRecord, TechnicianProfile, ApplianceLoad } from '../types/electrical';
 import { BudgetGeneratorService } from './budgetGeneratorService';
+import { normalizeClient } from '../utils/supplies';
 
 const STORAGE_KEY_CLIENTS = 'electropro_clients_v1';
 const STORAGE_KEY_ACTIVE_CLIENT = 'electropro_active_client_id_v1';
@@ -324,6 +325,281 @@ const INITIAL_SAMPLE_CLIENT: ClientRecord = {
   ],
 };
 
+/**
+ * Segundo cliente de ejemplo: un supermercado con DOS acometidas (sector de
+ * ventas y depósito), cada una con su medidor, su tarifa y sus tableros. Es el
+ * caso que muestra cómo se maneja un inmueble con más de un suministro.
+ */
+const INITIAL_MARKET_CLIENT: ClientRecord = {
+  id: 'client_sample_02',
+  clientName: 'Supermercado El Trébol S.R.L.',
+  documentId: 'CUIT 30-71234567-9',
+  phone: '+54 9 11 4444-1234',
+  email: 'mantenimiento@eltrebol.com.ar',
+  address: 'Av. Rivadavia 12400, Ramos Mejía, Buenos Aires',
+  supplies: [
+    {
+      id: 'sup_ventas',
+      name: 'Sector ventas',
+      serviceType: 'Trifásico (3F+N)',
+      nominalVoltage: 220,
+      lineVoltage: 380,
+      mainBreakerAmps: 100,
+      meterNumber: '30547821',
+      location: 'Pilar sobre la vereda',
+      kwhCost: 118.5,
+      fixedCharge: 12500,
+      currency: 'ARS',
+      verified: true,
+      verifiedAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+      measurements: {
+        vL1N: 219,
+        vL2N: 223,
+        vL3N: 218,
+        vL1L2: 379,
+        iL1: 62,
+        iL2: 48,
+        iL3: 51,
+        iNeutro: 14,
+        groundResistanceOhms: 9,
+        hasDifferentialBreaker: true,
+        hasGroundRod: true,
+        hasSurgeProtector: true,
+        panelThermalSigns: false,
+        conductorCondition: 'bueno',
+        installationAgeYears: 9,
+        mainFeederCaliber: '2 AWG',
+        farthestOutletVoltage: 213,
+      },
+      notes: 'Medidor junto al pilar, con llave de corte de la distribuidora.',
+    },
+    {
+      id: 'sup_deposito',
+      name: 'Sector depósito',
+      serviceType: 'Trifásico (3F+N)',
+      nominalVoltage: 220,
+      lineVoltage: 380,
+      mainBreakerAmps: 63,
+      meterNumber: '30547822',
+      location: 'Contrafrente, acceso por pasillo de carga',
+      kwhCost: 118.5,
+      fixedCharge: 12500,
+      currency: 'ARS',
+      verified: true,
+      verifiedAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+      measurements: {
+        vL1N: 221,
+        vL2N: 220,
+        vL3N: 222,
+        iL1: 34,
+        iL2: 31,
+        iL3: 12,
+        iNeutro: 21,
+        groundResistanceOhms: 41,
+        hasDifferentialBreaker: false,
+        hasGroundRod: true,
+        hasSurgeProtector: false,
+        panelThermalSigns: true,
+        conductorCondition: 'regular',
+        installationAgeYears: 18,
+        mainFeederCaliber: '6 AWG',
+        farthestOutletVoltage: 208,
+      },
+      notes: 'Acometida del depósito y las cámaras frigoríficas. Sin diferencial: es la prioridad del plan de trabajo.',
+    },
+  ],
+  serviceType: 'Trifásico (3F+N)',
+  nominalVoltage: 220,
+  lineVoltage: 380,
+  mainBreakerAmps: 100,
+  kwhCost: 118.5,
+  fixedCharge: 12500,
+  currency: 'ARS',
+  notes: 'Dos suministros independientes: uno para el salón de ventas y otro para el depósito, con cámaras frigoríficas.',
+  technicianNotes:
+    'En el tablero del depósito hay bornes con marcas de calor y la puesta a tierra mide 41 Ω. La acometida de ventas está en buen estado, con DPS instalado.',
+  recommendations: [
+    'Instalar disyuntor diferencial de 30 mA en el tablero del depósito.',
+    'Rehacer la puesta a tierra del depósito: la medición de 41 Ω supera el máximo recomendado.',
+    'Reajustar y reemplazar los bornes con marcas de calor del tablero de cámaras.',
+  ],
+  consumptionHistory: [
+    { month: 'Ene', year: 2026, kwh: 3100, cost: 379850, supplyId: 'sup_ventas', notes: 'Facturado' },
+    { month: 'Feb', year: 2026, kwh: 3250, cost: 397750, supplyId: 'sup_ventas', notes: 'Facturado' },
+    { month: 'Mar', year: 2026, kwh: 2980, cost: 365630, supplyId: 'sup_ventas', notes: 'Facturado' },
+    { month: 'Ene', year: 2026, kwh: 1450, cost: 184275, supplyId: 'sup_deposito', notes: 'Facturado' },
+    { month: 'Feb', year: 2026, kwh: 1520, cost: 192620, supplyId: 'sup_deposito', notes: 'Facturado' },
+    { month: 'Mar', year: 2026, kwh: 1610, cost: 203285, supplyId: 'sup_deposito', notes: 'Facturado' },
+  ],
+  panels: [
+    {
+      id: 'panel_ventas',
+      name: 'Tablero Ventas (TV-01)',
+      type: 'principal',
+      location: 'Sala de ventas, detrás de las cajas',
+      supplyId: 'sup_ventas',
+      mainBreakerAmps: 100,
+      mainBreakerPoles: '3P+N',
+      mainBreakerCurve: 'C',
+      mainBreakerKACapacity: 10,
+      hasDifferential: true,
+      differentialAmps: 63,
+      differentialSensitivityMa: 30,
+      differentialPoles: '4P',
+      hasSurgeProtector: true,
+      hasGroundBar: true,
+      hasIsolatedNeutralBar: true,
+      totalDinModules: 36,
+      usedDinModules: 22,
+      feederGauge: '2 AWG',
+      feederMaterial: 'copper',
+      feederLengthMeters: 12,
+      physicalCondition: 'bueno',
+      hasHotSpots: false,
+      isLabeled: true,
+      measurements: { vL1N: 219, vL2N: 223, vL3N: 218, iL1: 62, iL2: 48, iL3: 51, iNeutro: 14, panelTempC: 34 },
+      notes: 'Con descargador de sobretensiones Tipo 2 y circuitos rotulados.',
+    },
+    {
+      id: 'panel_deposito',
+      name: 'Tablero Depósito y Cámaras (TD-01)',
+      type: 'principal',
+      location: 'Depósito, junto a la puerta de carga',
+      supplyId: 'sup_deposito',
+      mainBreakerAmps: 63,
+      mainBreakerPoles: '3P+N',
+      mainBreakerCurve: 'D',
+      mainBreakerKACapacity: 6,
+      hasDifferential: false,
+      hasSurgeProtector: false,
+      hasGroundBar: true,
+      hasIsolatedNeutralBar: false,
+      totalDinModules: 24,
+      usedDinModules: 14,
+      feederGauge: '6 AWG',
+      feederMaterial: 'copper',
+      feederLengthMeters: 25,
+      physicalCondition: 'regular',
+      hasHotSpots: true,
+      isLabeled: false,
+      measurements: { vL1N: 221, vL2N: 220, vL3N: 222, iL1: 34, iL2: 31, iL3: 12, iNeutro: 21, panelTempC: 52 },
+      notes: 'Bornes con marcas de calor en la fase L1. Falta rotulación y protección diferencial.',
+    },
+  ],
+  loads: [
+    {
+      id: 'load_m1',
+      name: 'Cámaras frigoríficas (3 motores)',
+      category: 'Refrigeración',
+      quantity: 3,
+      nominalPower: 1500,
+      powerUnit: 'W',
+      powerWatts: 1500,
+      powerFactor: 0.85,
+      voltage: 220,
+      systemPhase: '1F',
+      assignedPhase: 'L1',
+      circuitName: 'C-1 Cámaras',
+      panelId: 'panel_deposito',
+      breakerRatingAmps: 20,
+      hoursPerDay: 16,
+      daysPerMonth: 30,
+    },
+    {
+      id: 'load_m2',
+      name: 'Iluminación de depósito y pasillos',
+      category: 'Iluminación',
+      quantity: 24,
+      nominalPower: 36,
+      powerUnit: 'W',
+      powerWatts: 36,
+      powerFactor: 0.92,
+      voltage: 220,
+      systemPhase: '1F',
+      assignedPhase: 'L2',
+      circuitName: 'C-2 Iluminación depósito',
+      panelId: 'panel_deposito',
+      breakerRatingAmps: 15,
+      hoursPerDay: 12,
+      daysPerMonth: 30,
+    },
+    {
+      id: 'load_m3',
+      name: 'Autoelevador eléctrico (carga)',
+      category: 'Motores y Bombas',
+      quantity: 1,
+      nominalPower: 3,
+      powerUnit: 'kW',
+      powerWatts: 3000,
+      powerFactor: 0.9,
+      voltage: 380,
+      systemPhase: '2F',
+      assignedPhase: 'L1-L2',
+      circuitName: 'C-3 Cargador autoelevador',
+      panelId: 'panel_deposito',
+      breakerRatingAmps: 32,
+      hoursPerDay: 6,
+      daysPerMonth: 26,
+    },
+    {
+      id: 'load_m4',
+      name: 'Iluminación y climatización de salón',
+      category: 'Climatización',
+      quantity: 6,
+      nominalPower: 3500,
+      powerUnit: 'W',
+      powerWatts: 3500,
+      powerFactor: 0.9,
+      voltage: 220,
+      systemPhase: '1F',
+      assignedPhase: 'L1',
+      circuitName: 'C-4 Clima salón',
+      panelId: 'panel_ventas',
+      breakerRatingAmps: 25,
+      hoursPerDay: 10,
+      daysPerMonth: 30,
+    },
+    {
+      id: 'load_m5',
+      name: 'Heladeras exhibidoras y freezers',
+      category: 'Refrigeración',
+      quantity: 8,
+      nominalPower: 450,
+      powerUnit: 'W',
+      powerWatts: 450,
+      powerFactor: 0.88,
+      voltage: 220,
+      systemPhase: '1F',
+      assignedPhase: 'L2',
+      circuitName: 'C-5 Exhibidoras',
+      panelId: 'panel_ventas',
+      breakerRatingAmps: 20,
+      hoursPerDay: 18,
+      daysPerMonth: 30,
+    },
+    {
+      id: 'load_m6',
+      name: 'Cajas registradoras y balanzas',
+      category: 'Electrónica y Cómputo',
+      quantity: 5,
+      nominalPower: 150,
+      powerUnit: 'W',
+      powerWatts: 150,
+      powerFactor: 0.92,
+      voltage: 220,
+      systemPhase: '1F',
+      assignedPhase: 'L3',
+      circuitName: 'C-6 Cajas',
+      panelId: 'panel_ventas',
+      breakerRatingAmps: 15,
+      hoursPerDay: 12,
+      daysPerMonth: 30,
+    },
+  ],
+  createdAt: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
+  updatedAt: new Date().toISOString(),
+};
+
 export const StorageService = {
   // --- CLIENT RECORDS ---
   getClients(): ClientRecord[] {
@@ -331,7 +607,7 @@ export const StorageService = {
       const raw = localStorage.getItem(STORAGE_KEY_CLIENTS);
       if (!raw) {
         // Seed with sample client
-        const initial = [INITIAL_SAMPLE_CLIENT];
+        const initial = [INITIAL_SAMPLE_CLIENT, INITIAL_MARKET_CLIENT];
         localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(initial));
         return initial;
       }
@@ -394,19 +670,21 @@ export const StorageService = {
             updatedClient = { ...updatedClient, currency: 'ARS' };
           }
 
-          return updatedClient;
+          // Migración a acometidas múltiples: garantiza que cada cliente tenga
+          // al menos una, y que sus tableros y facturas estén asignados.
+          return normalizeClient(updatedClient);
         });
       }
-      return [INITIAL_SAMPLE_CLIENT];
+      return [INITIAL_SAMPLE_CLIENT, INITIAL_MARKET_CLIENT];
     } catch (e) {
       console.error('Failed reading clients from storage:', e);
-      return [INITIAL_SAMPLE_CLIENT];
+      return [INITIAL_SAMPLE_CLIENT, INITIAL_MARKET_CLIENT];
     }
   },
 
   saveClients(clients: ClientRecord[]): void {
     try {
-      localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(clients));
+      localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(clients.map((client) => normalizeClient(client))));
     } catch (e) {
       console.error('Failed saving clients:', e);
     }
@@ -420,7 +698,7 @@ export const StorageService = {
   saveClient(client: ClientRecord): void {
     const clients = this.getClients();
     const index = clients.findIndex((c) => c.id === client.id);
-    const updated = { ...client, updatedAt: new Date().toISOString() };
+    const updated = normalizeClient({ ...client, updatedAt: new Date().toISOString() });
 
     if (index >= 0) {
       clients[index] = updated;

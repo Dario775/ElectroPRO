@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Scale,
   Sparkles,
@@ -20,6 +20,7 @@ import {
 } from '../utils/electricalMath';
 import { Button } from './ui/Button';
 import { Badge, Callout, SectionHeader } from './ui/Card';
+import { getSupplies, loadsOfSupply } from '../utils/supplies';
 import { Collapsible } from './ui/Collapsible';
 
 interface PhaseBalanceViewProps {
@@ -30,21 +31,32 @@ interface PhaseBalanceViewProps {
 export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUpdateClient }) => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const supplies = getSupplies(client);
+  const [supplyId, setSupplyId] = useState<string>(() => supplies[0].id);
+  const supply = supplies.find((candidate) => candidate.id === supplyId) ?? supplies[0];
+
+  /**
+   * El balance se calcula con las cargas de UNA acometida: las fases de dos
+   * medidores distintos no se compensan entre sí, así que mezclarlas daría un
+   * resultado falso.
+   */
+  const supplyLoads = useMemo(() => loadsOfSupply(client, supply.id), [client, supply.id]);
+
   const summary = calculatePhaseBalance(
-    client.loads,
-    client.serviceType,
-    client.nominalVoltage,
-    client.lineVoltage,
-    client.kwhCost,
-    client.fixedCharge
+    supplyLoads,
+    supply.serviceType,
+    supply.nominalVoltage,
+    supply.lineVoltage,
+    supply.kwhCost,
+    supply.fixedCharge
   );
 
-  const isThreePhase = client.serviceType === 'Trifásico (3F+N)';
-  const isTwoPhase = client.serviceType === 'Bifásico (2F+N)';
-  const isSinglePhase = client.serviceType === 'Monofásico (1F+N)';
+  const isThreePhase = supply.serviceType === 'Trifásico (3F+N)';
+  const isTwoPhase = supply.serviceType === 'Bifásico (2F+N)';
+  const isSinglePhase = supply.serviceType === 'Monofásico (1F+N)';
 
   // Calculate max capacity based on main breaker or max phase amps
-  const maxRefAmps = Math.max(client.mainBreakerAmps || 50, summary.maxAmps * 1.15 || 50);
+  const maxRefAmps = Math.max(supply.mainBreakerAmps || 50, summary.maxAmps * 1.15 || 50);
 
   const l1Percent = Math.min(100, Math.round((summary.phaseL1Amps / maxRefAmps) * 100));
   const l2Percent = Math.min(100, Math.round((summary.phaseL2Amps / maxRefAmps) * 100));
@@ -52,19 +64,22 @@ export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUp
 
   // Run automatic load balancing algorithm
   const handleAutoBalance = () => {
-    const balancedLoads = autoBalanceLoads(client.loads, client.serviceType, client.nominalVoltage);
+    const balancedInSupply = autoBalanceLoads(supplyLoads, supply.serviceType, supply.nominalVoltage);
+    const balancedById = new Map(balancedInSupply.map((load) => [load.id, load]));
+    const balancedLoads = client.loads.map((load) => balancedById.get(load.id) ?? load);
+
     const newSummary = calculatePhaseBalance(
-      balancedLoads,
-      client.serviceType,
-      client.nominalVoltage,
-      client.lineVoltage,
-      client.kwhCost,
-      client.fixedCharge
+      autoBalanceLoads(supplyLoads, supply.serviceType, supply.nominalVoltage),
+      supply.serviceType,
+      supply.nominalVoltage,
+      supply.lineVoltage,
+      supply.kwhCost,
+      supply.fixedCharge
     );
 
     onUpdateClient({ ...client, loads: balancedLoads });
     setSuccessMessage(
-      `¡Balanceo exitoso! Desbalance reducido a ${newSummary.unbalancePercent}% (Neutral: ${newSummary.neutralAmps}A)`
+      `¡Balanceo exitoso en ${supply.name}! Desbalance reducido a ${newSummary.unbalancePercent}% (Neutral: ${newSummary.neutralAmps}A)`
     );
     setTimeout(() => setSuccessMessage(null), 6000);
   };
@@ -95,23 +110,45 @@ export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUp
       <SectionHeader
         eyebrow="Etapa 2 · Analizar"
         title="Balance de fases"
-        description="Mirá cuánta corriente queda en cada fase y cuánta vuelve por el neutro. Repartir bien las cargas evita que los cables se calienten, que la tensión caiga despareja y que salte la térmica principal sin motivo."
+        description={
+          supplies.length > 1
+            ? `El inmueble tiene ${supplies.length} acometidas y cada una se balancea por separado: las fases de dos medidores distintos no se compensan entre sí. Elegí la acometida que querés analizar.`
+            : 'Mirá cuánta corriente queda en cada fase y cuánta vuelve por el neutro. Repartir bien las cargas evita que los cables se calienten, que la tensión caiga despareja y que salte la térmica principal sin motivo.'
+        }
         icon={<Scale className="h-4 w-4" />}
         actions={
           <>
-            <Badge tone="accent">{client.serviceType}</Badge>
-            {!isSinglePhase && (
-              <Button
-                variant="primary"
-                icon={<Sparkles className="h-4 w-4" />}
-                onClick={handleAutoBalance}
+            {supplies.length > 1 && (
+              <select
+                aria-label="Elegir acometida"
+                value={supply.id}
+                onChange={(event) => setSupplyId(event.target.value)}
+                className="h-10 rounded-xl border border-field-line bg-sunken px-3 text-sm font-semibold text-strong focus:border-accent focus:outline-none"
               >
+                {supplies.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <Badge tone="accent">{supply.serviceType}</Badge>
+            {!isSinglePhase && (
+              <Button variant="primary" icon={<Sparkles className="h-4 w-4" />} onClick={handleAutoBalance}>
                 Repartir automáticamente
               </Button>
             )}
           </>
         }
       />
+
+      {supplies.length > 1 && (
+        <Callout tone="info" title={`Analizando «${supply.name}»`}>
+          {supplyLoads.length} circuitos asignados a esta acometida
+          {supply.meterNumber ? ` · medidor ${supply.meterNumber}` : ''}. Para ver la otra acometida, cambiala en el
+          selector de arriba.
+        </Callout>
+      )}
 
       {successMessage && <Callout tone="success">{successMessage}</Callout>}
 
@@ -124,7 +161,7 @@ export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUp
               Instalación Monofásica (1 Fase + Neutro)
             </span>
             La totalidad de los circuitos están conectados a la única fase de servicio L1 ({summary.phaseL1Amps}A). No se
-            requiere balanceo entre fases, pero asegúrate de que el disyuntor principal ({client.mainBreakerAmps}A) y el
+            requiere balanceo entre fases, pero asegúrate de que el disyuntor principal de esta acometida ({supply.mainBreakerAmps}A) y el
             calibre de la acometida soporten la corriente simultánea total.
           </div>
         </div>
@@ -204,7 +241,7 @@ export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUp
                 Distribución de Corriente y Potencia por Fase
               </span>
               <span className="text-xs text-muted font-mono">
-                Capacidad Base: <strong className="text-strong">{client.mainBreakerAmps}A</strong>
+                Capacidad Base: <strong className="text-strong">{supply.mainBreakerAmps}A</strong>
               </span>
             </div>
 
@@ -289,7 +326,7 @@ export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUp
                   <div className="font-mono text-xs">
                     <strong
                       className={`text-sm ${
-                        summary.neutralAmps > (client.mainBreakerAmps || 50) * 0.7
+                        summary.neutralAmps > (supply.mainBreakerAmps || 50) * 0.7
                           ? 'text-danger-text font-bold'
                           : 'text-strong'
                       }`}
@@ -322,7 +359,7 @@ export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUp
         summary={
           isSinglePhase
             ? 'No aplica: el suministro es monofásico'
-            : `${client.loads.length} circuitos · desbalance actual ${summary.unbalancePercent.toFixed(1)} %`
+            : `${supplyLoads.length} circuitos de ${supply.name} · desbalance ${summary.unbalancePercent.toFixed(1)} %`
         }
         badge={
           <Badge tone={summary.unbalanceStatus === 'excelente' || summary.unbalanceStatus === 'aceptable' ? 'success' : 'warning'}>
@@ -346,11 +383,11 @@ export const PhaseBalanceView: React.FC<PhaseBalanceViewProps> = ({ client, onUp
               </tr>
             </thead>
             <tbody className="divide-y divide-hairline/60">
-              {client.loads.map((load, idx) => {
+              {supplyLoads.map((load, idx) => {
                 const totalWatts = load.powerWatts * load.quantity;
                 const current = calculateCurrent(
                   totalWatts,
-                  load.voltage || client.nominalVoltage,
+                  load.voltage || supply.nominalVoltage,
                   load.powerFactor,
                   load.systemPhase
                 );

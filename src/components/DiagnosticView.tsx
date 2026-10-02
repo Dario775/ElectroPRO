@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ClipboardCheck,
   ShieldAlert,
@@ -26,6 +26,7 @@ import { Button } from './ui/Button';
 import { Collapsible } from './ui/Collapsible';
 import { NumberField, SelectField, SwitchField } from './ui/Form';
 import { cx } from '../utils/cx';
+import { getSupplies, loadsOfSupply, panelsOfSupply, upsertSupply } from '../utils/supplies';
 
 interface DiagnosticViewProps {
   client: ClientRecord;
@@ -38,33 +39,56 @@ export const DiagnosticView: React.FC<DiagnosticViewProps> = ({
   onUpdateClient,
   onNavigateToReport,
 }) => {
+  const supplies = getSupplies(client);
+  const [supplyId, setSupplyId] = useState<string>(() => supplies[0].id);
+  const supply = supplies.find((candidate) => candidate.id === supplyId) ?? supplies[0];
+
+  /** Mediciones de la acometida elegida. */
   const [measurements, setMeasurements] = useState<FieldMeasurements>(
-    client.diagnosticMeasurements || {
+    supply.measurements || {
       ...DEFAULT_MEASUREMENTS,
-      vL1N: client.nominalVoltage || 120,
-      vL2N: client.nominalVoltage || 120,
-      vL3N: client.nominalVoltage || 120,
+      vL1N: supply.nominalVoltage || 220,
+      vL2N: supply.nominalVoltage || 220,
+      vL3N: supply.nominalVoltage || 220,
     }
   );
 
   const [copiedSuccess, setCopiedSuccess] = useState(false);
   const [completedTasks, setCompletedTasks] = useState<Record<string, boolean>>({});
 
-  const isThreePhase = client.serviceType === 'Trifásico (3F+N)';
-  const isTwoPhase = client.serviceType === 'Bifásico (2F+N)';
-  const isSinglePhase = client.serviceType === 'Monofásico (1F+N)';
+  const isThreePhase = supply.serviceType === 'Trifásico (3F+N)';
+  const isTwoPhase = supply.serviceType === 'Bifásico (2F+N)';
+  const isSinglePhase = supply.serviceType === 'Monofásico (1F+N)';
 
-  // Run systematic analysis
-  const diagnostic = analyzeInstallation(client, measurements);
+  // El diagnóstico se evalúa sobre la acometida elegida: sus tensiones, sus
+  // cargas y sus mediciones. Mezclar dos medidores daría un resultado falso.
+  const supplyClient = useMemo(
+    () => ({ ...client, ...supply, loads: loadsOfSupply(client, supply.id), panels: panelsOfSupply(client, supply.id) }),
+    [client, supply]
+  );
 
-  // Update measurement field and persist in client record
+  const diagnostic = analyzeInstallation(supplyClient, measurements);
+
+  /** Al cambiar de acometida se recargan sus mediciones. */
+  const selectSupply = (nextId: string): void => {
+    const next = supplies.find((candidate) => candidate.id === nextId);
+    setSupplyId(nextId);
+    setMeasurements(
+      next?.measurements || {
+        ...DEFAULT_MEASUREMENTS,
+        vL1N: next?.nominalVoltage || 220,
+        vL2N: next?.nominalVoltage || 220,
+        vL3N: next?.nominalVoltage || 220,
+      }
+    );
+    setCompletedTasks({});
+  };
+
+  // Update measurement field and persist in the selected supply
   const handleUpdateField = <K extends keyof FieldMeasurements>(key: K, value: FieldMeasurements[K]) => {
     const updated = { ...measurements, [key]: value };
     setMeasurements(updated);
-    onUpdateClient({
-      ...client,
-      diagnosticMeasurements: updated,
-    });
+    onUpdateClient(upsertSupply(client, { ...supply, measurements: updated }));
   };
 
   // Toggle task completion
@@ -128,11 +152,29 @@ export const DiagnosticView: React.FC<DiagnosticViewProps> = ({
       <SectionHeader
         eyebrow="Paso 3 · Relevamiento"
         title="Diagnóstico y plan de trabajo"
-        description="Con las mediciones de campo y la inspección visual, el programa evalúa el estado de la instalación y arma el plan de trabajo ordenado por prioridad: qué hay que resolver primero y qué puede esperar."
+        description={
+          supplies.length > 1
+            ? `Cada acometida tiene sus propias mediciones y su propio diagnóstico. Elegí cuál estás midiendo: ahora estás en «${supply.name}».`
+            : 'Con las mediciones de campo y la inspección visual, el programa evalúa el estado de la instalación y arma el plan de trabajo ordenado por prioridad: qué hay que resolver primero y qué puede esperar.'
+        }
         icon={<ClipboardCheck className="h-4 w-4" />}
         actions={
           <>
-            <Badge tone="accent">{client.serviceType}</Badge>
+            {supplies.length > 1 && (
+              <select
+                aria-label="Elegir acometida"
+                value={supply.id}
+                onChange={(event) => selectSupply(event.target.value)}
+                className="h-10 rounded-xl border border-field-line bg-sunken px-3 text-sm font-semibold text-strong focus:border-accent focus:outline-none"
+              >
+                {supplies.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <Badge tone="accent">{supply.serviceType}</Badge>
             <Button variant="primary" icon={<Send className="h-4 w-4" />} onClick={handleTransferToReport}>
               Pasar al informe
             </Button>
@@ -242,16 +284,16 @@ export const DiagnosticView: React.FC<DiagnosticViewProps> = ({
         icon={<Sliders className="h-4 w-4" />}
         description="Cargá lo que mediste con el multímetro, la pinza y el telurómetro. Cada dato alimenta el índice de seguridad y el plan de trabajo, que se actualizan mientras escribís."
         summary={
-          client.diagnosticMeasurements
+          supply.measurements
             ? `${measurements.vL1N} V en L1 · ${measurements.iL1} A en L1 · ${measurements.groundResistanceOhms} Ω de puesta a tierra`
             : 'Todavía no cargaste las mediciones: abrí este bloque para completarlas'
         }
         badge={
-          <Badge tone={client.diagnosticMeasurements ? 'success' : 'warning'}>
-            {client.diagnosticMeasurements ? 'cargadas' : 'falta'}
+          <Badge tone={supply.measurements ? 'success' : 'warning'}>
+            {supply.measurements ? 'cargadas' : 'falta'}
           </Badge>
         }
-        defaultOpen={!client.diagnosticMeasurements}
+        defaultOpen={!supply.measurements}
       >
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">

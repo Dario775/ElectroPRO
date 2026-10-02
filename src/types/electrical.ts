@@ -92,6 +92,8 @@ export interface DiagnosticResult {
 export interface MonthlyConsumptionRecord {
   month: string; // e.g. "Ene", "Feb", "Mar", etc.
   year?: number;
+  /** Acometida que facturó este consumo (cada medidor factura aparte). */
+  supplyId?: string;
   kwh: number;
   cost?: number;
   isProjected?: boolean;
@@ -121,6 +123,8 @@ export interface ElectricalPanel {
   name: string; // ej. "Tablero General (TG-01)", "Tablero Seccional Planta Alta"
   type: PanelType;
   location: string; // ej. "Pilar de entrada", "Pasillo principal", "Garaje / Taller"
+  /** Acometida a la que pertenece este tablero. */
+  supplyId?: string;
   parentPanelId?: string; // id del tablero aguas arriba para mapeo jerárquico
 
   // Protección general de cabecera
@@ -165,6 +169,36 @@ export interface ElectricalPanel {
 
 export type SupportedCurrency = 'USD' | 'ARS';
 
+/**
+ * Acometida o suministro del cliente.
+ *
+ * Un inmueble puede tener más de uno: un supermercado suele tener una acometida
+ * para el sector de ventas y otra para el depósito, cada una con su medidor, su
+ * tarifa y sus tableros. Cada tablero y cada factura se asocian a un suministro.
+ */
+export interface ServiceSupply {
+  id: string;
+  /** Nombre para reconocerla: «Sector ventas», «Depósito», «Local 2». */
+  name: string;
+  serviceType: 'Monofásico (1F+N)' | 'Bifásico (2F+N)' | 'Trifásico (3F+N)';
+  nominalVoltage: number;
+  lineVoltage: number;
+  mainBreakerAmps: number;
+  /** N° de suministro o de medidor que figura en la factura. */
+  meterNumber?: string;
+  /** Dónde está: sector, dirección o pilar. */
+  location?: string;
+  kwhCost: number;
+  fixedCharge: number;
+  currency: SupportedCurrency;
+  /** El técnico confirmó estos datos en el sitio. */
+  verified?: boolean;
+  verifiedAt?: string;
+  /** Mediciones de campo tomadas en este suministro. */
+  measurements?: FieldMeasurements;
+  notes?: string;
+}
+
 export interface ClientRecord {
   id: string;
   clientName: string;
@@ -172,6 +206,12 @@ export interface ClientRecord {
   phone: string;
   email?: string;
   address: string;
+  /**
+   * Acometidas del cliente. Siempre hay al menos una; la primera es la
+   * principal. Los campos de suministro de abajo reflejan la principal, para no
+   * tener que reescribir todo el código que ya los usaba.
+   */
+  supplies?: ServiceSupply[];
   serviceType: 'Monofásico (1F+N)' | 'Bifásico (2F+N)' | 'Trifásico (3F+N)';
   nominalVoltage: number; // e.g. 120 or 220 or 230
   lineVoltage: number; // e.g. 240 or 380 or 440
