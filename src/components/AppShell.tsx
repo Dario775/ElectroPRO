@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowRight, CheckCircle2, CircleAlert } from 'lucide-react';
-import { ViewId, WorkflowGroup, findGroupOfStep, findNextStep, getProgress } from '../utils/workflow';
+import { ViewId, WorkflowGroup, findGroupOfStep, findNextStep, getProgress, isModuleView } from '../utils/workflow';
 import { TopBar, TopBarProps } from './TopBar';
 import { WorkflowRail, WorkflowSidebar } from './WorkflowNav';
 import { Button } from './ui/Button';
@@ -88,7 +88,7 @@ const MobileNextBar: React.FC<{ workflow: WorkflowGroup[]; activeView: ViewId; o
   onNavigate,
 }) => {
   const nextStep = findNextStep(workflow);
-  if (!nextStep || nextStep.id === activeView || activeView === 'clients') return null;
+  if (!nextStep || nextStep.id === activeView || isModuleView(activeView)) return null;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-hairline bg-surface/95 px-3 py-2.5 backdrop-blur-md lg:hidden">
@@ -124,7 +124,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         <WorkflowSidebar {...navProps} />
 
         <main className="min-w-0 flex-1 py-4 pb-24 lg:pb-10">
-          {activeView !== 'clients' && (
+          {!isModuleView(activeView) && (
             <ContextBar workflow={workflow} activeView={activeView} onNavigate={onNavigate} />
           )}
           {children}

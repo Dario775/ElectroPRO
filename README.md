@@ -18,11 +18,14 @@ Verificado en este repositorio:
 | Comprobación | Comando | Resultado |
 |---|---|---|
 | Tipos (modo `strict`) | `npm run lint` | ✅ 0 errores (TypeScript 7.0.2) |
-| Build de producción | `npm run build` | ✅ 2455 módulos → `dist/` |
-| Sistema de diseño (tokens, tamaños, fuentes) | `node check-ui.mjs` | ✅ 24 archivos revisados, sin incumplimientos |
+| Build de producción | `npm run build` | ✅ 2473 módulos → `dist/` |
+| Sistema de diseño (tokens, tamaños, fuentes) | `node check-ui.mjs` | ✅ 29 archivos revisados, sin incumplimientos |
 | Contraste WCAG AA en tema claro y oscuro | `node contrast.mjs` | ✅ 52 pares en verde |
-| Lógica del recorrido (progreso y siguiente paso) | `npx tsx check-workflow.ts` | ✅ 6 escenarios |
-| Render de las 11 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
+| Lógica del recorrido (progreso y siguiente paso) | `npx tsx check-workflow.ts` | ✅ 11 escenarios (incluye dos acometidas) |
+| Catálogo de productos y marcas | `npx tsx check-catalog.ts` | ✅ integridad + alta, edición y borrado |
+| Módulo del plano de ubicación | `npx tsx check-plan.ts` | ✅ 68 comprobaciones |
+| Render de las 14 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
+| Render de la aplicación completa | `npx tsx render-check.tsx` | ✅ marca, navegación y estado inicial |
 | Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
 | Pruebas automatizadas del proyecto | — | ❌ No existen todavía |
 
@@ -78,7 +81,10 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
     ├── data/defaultAppliances.ts  Catálogo semilla de ~50 artefactos por categoría
     ├── utils/
     │   ├── electricalMath.ts      Motor de cálculo eléctrico (funciones puras)
-    │   └── diagnosticEngine.ts    Evaluación de seguridad y plan de acción
+    │   ├── diagnosticEngine.ts    Evaluación de seguridad y plan de acción
+    │   ├── supplies.ts            Acometidas múltiples: normalización y consultas por suministro
+    │   ├── workflow.ts            Etapas, pasos, módulos y progreso del recorrido
+    │   └── plan.ts                Geometría del plano: hojas, rejilla y vínculo con el relevamiento
     ├── services/
     │   ├── storageService.ts      Persistencia en localStorage + datos de ejemplo + migraciones
     │   ├── budgetGeneratorService.ts  Generación automática de presupuestos y catálogo de materiales
@@ -94,6 +100,8 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
         ├── BudgetView.tsx         Presupuestos, materiales y estados
         ├── CalculatorsView.tsx    5 calculadoras eléctricas
         ├── ReportPreview.tsx      Vista previa e impresión del informe
+        ├── PlanView.tsx           Módulo: plano de ubicación (lienzo, plantillas y PNG)
+        ├── planSymbols.tsx        Plantillas de símbolos eléctricos dibujadas en SVG
         ├── ClientList.tsx         Cartera de clientes + copia de seguridad JSON
         ├── ClientModal.tsx        Alta/edición de cliente y datos tarifarios
         └── SettingsModal.tsx      Perfil del técnico, moneda y datos de ejemplo
@@ -139,7 +147,10 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
 
 ## Funcionalidades
 
-| Pestaña | Qué resuelve |
+Todas las pantallas son pasos del recorrido salvo las marcadas como **(módulo)**, que son herramientas que se usan
+cuando hacen falta y no cuentan para el progreso (ver *Módulos* más abajo).
+
+| Pantalla | Qué resuelve |
 |---|---|
 | **Auditoría de Cargas** | Alta de artefactos desde catálogo o manual, normalización a vatios, corriente y consumo mensual, costo proyectado y verificación contra el breaker principal |
 | **Balance de Fases** | Reparto de cargas por fase, desbalance NEMA, corriente de neutro y **auto-balanceo** automático de cargas entre L1/L2/L3 |
@@ -149,7 +160,8 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
 | **Presupuesto & Materiales** | Presupuesto generado automáticamente desde tableros, cargas y diagnóstico; **catálogo de 90 productos por marca** (filtrá por marca, categoría o búsqueda y agregá con un clic), markup, impuestos, descuentos, estados y PDF |
 | **Calculadoras Eléctricas** | 1) Dimensionado de conductores, 2) Caída de tensión, 3) Breaker + cable, 4) Banco de capacitores (corrección de cos φ), 5) Ley de Ohm |
 | **Reporte** | Vista previa e informe técnico PDF: datos del cliente y suministro, tabla de fases, observaciones, recomendaciones, anexo de diagnóstico y firmas |
-| **Clientes** | Cartera de clientes, alta/edición y **exportar/importar copia de seguridad en JSON** |
+| **Plano de ubicación** (módulo) | Ubicación de tableros, tomas, luces y artefactos sobre la planta del inmueble con plantillas de símbolos; admite una foto o el plano real como fondo y se baja en PNG o se imprime |
+| **Clientes** (módulo) | Cartera de clientes, alta/edición y **exportar/importar copia de seguridad en JSON** |
 
 ---
 
@@ -180,6 +192,18 @@ pinza y el telurómetro, después se recorre el inmueble cargando los artefactos
 - En escritorio la navegación es una barra lateral con el progreso y el botón de siguiente paso; en móvil son dos
   filas de botones (etapas arriba, pasos de la etapa activa abajo) más una barra inferior con la acción siguiente.
 - La franja de contexto de cada vista indica la etapa, si el paso está completo y qué falta concretamente.
+
+### Módulos: lo que no es un paso
+
+Hay dos pantallas que **no son pasos del recorrido** y por eso no se completan ni cuentan para el progreso: el **plano
+de ubicación** y la **gestión de clientes**. Se usan en cualquier momento, así que viven en su propia lista
+(`APP_MODULES` en `src/utils/workflow.ts`), separadas de las etapas por una línea en el menú lateral.
+
+- El módulo se distingue del paso en los tipos: `ViewId = StepId | ModuleId`, con `isModuleView()` para consultarlo.
+- Al entrar en un módulo **no se muestra la franja de contexto** (no hay etapa ni "falta completar"), y en móvil la
+  segunda fila de botones pasa a mostrar los módulos en lugar de los pasos de la etapa.
+- Agregar un módulo es una línea en `APP_MODULES` más su vista: no toca el progreso, el próximo paso ni el estado de
+  ningún cliente.
 
 ### Tema claro y oscuro
 
@@ -254,7 +278,8 @@ node check-ui.mjs            # sin clases de color crudas, sin fuentes a mano, s
 node contrast.mjs            # contraste WCAG AA de los tokens en ambos temas
 npx tsx check-workflow.ts    # progreso y siguiente paso del recorrido
 npx tsx check-catalog.ts     # integridad del catálogo + alta, edición, borrado y restauración
-npx tsx render-views.tsx     # renderiza las 13 pantallas con datos reales y detecta errores
+npx tsx check-plan.ts        # módulo del plano: plantillas, hoja, rejilla y vínculo con el relevamiento
+npx tsx render-views.tsx     # renderiza las 14 pantallas con datos reales y detecta errores
 npx tsx render-check.tsx     # renderiza la aplicación completa (marca, navegación, estado inicial)
 ```
 
@@ -278,6 +303,64 @@ mediciones y confirmación en el sitio).
   tableros y cargas tienen un selector de acometida.
 - El **informe** (pantalla y PDF) detalla cada acometida con su medidor cuando hay más de una.
 - El cliente de ejemplo «Supermercado El Trébol» trae dos acometidas para ver el caso funcionando.
+
+---
+
+## Módulo: plano de ubicación
+
+Sirve para responder **dónde queda cada cosa**: se marca sobre la planta del inmueble dónde está el tablero, dónde la
+jabalina de puesta a tierra, por dónde pasan las tomas y qué artefacto hay en cada ambiente. Es un módulo aparte
+(`PlanView`), no un paso del relevamiento, porque se usa tanto antes de presupuestar como después, y también para
+explicarle el trabajo al cliente.
+
+### Plantillas de símbolos
+
+`src/components/planSymbols.tsx` dibuja **14 plantillas en SVG** dentro de una caja de 32 × 32 centrada en el origen,
+así se escalan y se giran sin perder nitidez. Se eligen de una paleta agrupada por rubro:
+
+| Rubro | Plantillas |
+|---|---|
+| Tableros y medición | Tablero principal · Tablero seccional · Medidor / acometida |
+| Puntos y llaves | Tomacorriente · Toma especial / fuerza · Punto de luz · Llave / interruptor · Combinación llave + toma |
+| Puesta a tierra | Jabalina / puesta a tierra · Caja de paso |
+| Artefactos | Aire acondicionado · Termotanque · Bomba · Motor / fuerza |
+
+### Cómo se usa
+
+| Acción | Cómo |
+|---|---|
+| **Crear un plano** | «Nuevo plano»: nombre, proporción de hoja (A4 horizontal, A4 vertical o cuadrada), acometida y, si querés, ubicar de una vez los tableros y las cargas ya relevados |
+| **Ubicar un símbolo** | Un clic en la plantilla: aparece en la hoja y queda seleccionado |
+| **Moverlo** | Se arrastra con el dedo o el mouse. Con la rejilla activada los símbolos se alinean cada 25 unidades |
+| **Editarlo** | Al seleccionarlo se abre su panel: nombre en el plano, plantilla, posición, giro (0°/90°/180°/270°), acometida y notas |
+| **Traer del relevamiento** | La lista muestra los tableros y las cargas que todavía no están en ningún plano, con «Ubicar» por ítem o «Ubicar todo». Cada elemento queda vinculado a su tablero (`panelId`) o a su artefacto (`loadId`) |
+| **Fondo real** | Se carga una foto o el plano del arquitecto: la imagen se reduce sola (1400 px de ancho, JPEG) para ocupar poco lugar y la hoja toma su proporción |
+| **Entregarlo** | «Descargar PNG» (al doble de resolución, con encabezado de plano, cliente, acometida y fecha) o «Imprimir» (A4 apaisado) |
+
+### Decisiones de diseño
+
+- **El lienzo se dibuja siempre en blanco, como una hoja**, más allá del tema claro u oscuro de la aplicación: así lo
+  que se ve en pantalla es exactamente lo que sale en el PNG y en la impresión, y no hay que duplicar los colores de
+  los símbolos para dos temas.
+- Las coordenadas se guardan **en unidades del lienzo (1000 de ancho)** y no en píxeles de pantalla: el plano se
+  adapta solo a cualquier tamaño de ventana y, al imprimir, no se deforma.
+- **El arrastre no escribe en el almacenamiento en cada cuadro**: mientras se mueve, el cambio vive en pantalla, y al
+  soltar se guarda una sola vez. Importa cuando el plano tiene una imagen de fondo de varios cientos de kB.
+- El plano **no duplica los datos del relevamiento**: los elementos traídos guardan el `panelId` o el `loadId`, así
+  que si mañana se corrige la potencia de una carga, el plano sigue apuntando a la carga correcta.
+- Si el inmueble tiene **varias acometidas**, conviene un plano por sector: al crear el plano se elige la acometida y
+  tanto la lista de «traer del relevamiento» como la de elementos se filtran por ella. Es la forma más clara de
+  mostrar qué depende de cada medidor.
+- Los planos se guardan junto con el cliente (`ClientRecord.plans`), así que entran en la copia de seguridad JSON sin
+  ningún cambio.
+
+### Verificación
+
+`.devtools/check-plan.ts` comprueba 68 casos: que exista una plantilla por cada tipo de símbolo, la geometría de la
+hoja (A4 horizontal por omisión, 1000 × 707 unidades), el ajuste a la rejilla y el recorte dentro del lienzo, el
+vínculo tablero/carga → elemento (incluida la deduplicación: un tablero ya ubicado no se ofrece otra vez), el resumen
+del plano, que el módulo no altere el recorrido de 7 pasos y que los planos del cliente de demostración apunten a
+tableros y cargas existentes y de la acometida correcta.
 
 ---
 
@@ -399,7 +482,7 @@ Todo se guarda en `localStorage` del navegador:
 
 | Clave | Contenido |
 |---|---|
-| `electropro_clients_v1` | Lista de clientes con todo su trabajo de auditoría |
+| `electropro_clients_v1` | Lista de clientes con todo su trabajo de auditoría (incluye sus acometidas y sus planos de ubicación) |
 | `electropro_active_client_id_v1` | Cliente activo |
 | `electropro_technician_profile_v1` | Perfil del técnico |
 | `electropro_active_currency_v1` | Moneda activa (USD/ARS) |
@@ -440,3 +523,9 @@ Todo se guarda en `localStorage` del navegador:
    incrustada en el frontend queda expuesta: cualquier función de IA necesita un backend o un proxy.
 10. **Sin backend**: no hay sincronización entre dispositivos ni trabajo en equipo; evaluar exportación/importación
     como vía de traspaso mientras tanto.
+11. **El plano no llega todavía al informe PDF**: el módulo exporta el PNG y lo imprime, pero `pdfReportService.ts`
+    no lo inserta en el informe técnico del cliente. Es el paso natural siguiente: agregar el PNG del plano (o de
+    cada acometida) como anexo del informe, ya que el archivo se guarda como data URL dentro del propio cliente.
+12. **El plano no dibuja canalizaciones ni circuitos**: solo ubica símbolos. Falta poder trazar el recorrido de cada
+    circuito desde el tablero (polilíneas con su rótulo `C-1`, `C-2`…) para que el plano sirva también como esquema
+    de cañerías, y vincular cada trazo con el circuito del relevamiento.

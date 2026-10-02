@@ -169,6 +169,66 @@ export interface ElectricalPanel {
 
 export type SupportedCurrency = 'USD' | 'ARS';
 
+/* ------------------------------------------------------------------ *
+ * Plano de ubicación                                                  *
+ * ------------------------------------------------------------------ */
+
+/** Plantillas de símbolos que se pueden ubicar en el plano. */
+export type PlanSymbolType =
+  | 'tablero'
+  | 'tablero_seccional'
+  | 'medidor'
+  | 'toma'
+  | 'toma_especial'
+  | 'luminaria'
+  | 'llave'
+  | 'combinacion'
+  | 'puesta_tierra'
+  | 'caja_derivacion'
+  | 'aire'
+  | 'termotanque'
+  | 'bomba'
+  | 'motor';
+
+/**
+ * Elemento ubicado en el plano. Las coordenadas están en unidades del lienzo
+ * (1000 de ancho por la altura que corresponda), así el plano se escala solo al
+ * tamaño de la pantalla.
+ */
+export interface PlanElement {
+  id: string;
+  symbol: PlanSymbolType;
+  label: string;
+  x: number;
+  y: number;
+  /** Giro en grados (0, 90, 180 o 270). */
+  rotation?: number;
+  /** Acometida a la que pertenece. */
+  supplyId?: string;
+  /** Tablero del relevamiento que representa, si corresponde. */
+  panelId?: string;
+  /** Carga del relevamiento que representa, si corresponde. */
+  loadId?: string;
+  notes?: string;
+}
+
+/** Un plano del inmueble: una planta, un sector o una acometida. */
+export interface ClientPlan {
+  id: string;
+  name: string;
+  /** Acometida a la que corresponde el plano, si es de una en particular. */
+  supplyId?: string;
+  /** Imagen del plano real como fondo (data URL, ya reducida). */
+  imageDataUrl?: string;
+  /** Relación ancho/alto de la imagen de fondo, para no deformarla. */
+  aspect?: number;
+  elements: PlanElement[];
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+
 /**
  * Acometida o suministro del cliente.
  *
@@ -212,6 +272,8 @@ export interface ClientRecord {
    * tener que reescribir todo el código que ya los usaba.
    */
   supplies?: ServiceSupply[];
+  /** Planos de ubicación del inmueble (plantas, sectores o por acometida). */
+  plans?: ClientPlan[];
   serviceType: 'Monofásico (1F+N)' | 'Bifásico (2F+N)' | 'Trifásico (3F+N)';
   nominalVoltage: number; // e.g. 120 or 220 or 230
   lineVoltage: number; // e.g. 240 or 380 or 440

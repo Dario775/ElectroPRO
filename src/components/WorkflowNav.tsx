@@ -1,7 +1,16 @@
 import React, { useState } from 'react';
-import { ArrowRight, Check, CheckCircle2, ChevronDown, Users } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, ChevronDown, Map, Users } from 'lucide-react';
 import { cx } from '../utils/cx';
-import { GroupId, ViewId, WorkflowGroup, WorkflowProgress, WorkflowStep, findGroupOfStep } from '../utils/workflow';
+import {
+  APP_MODULES,
+  GroupId,
+  ModuleId,
+  ViewId,
+  WorkflowGroup,
+  WorkflowProgress,
+  WorkflowStep,
+  findGroupOfStep,
+} from '../utils/workflow';
 import { Badge, ProgressBar } from './ui/Card';
 import { Button } from './ui/Button';
 
@@ -12,7 +21,16 @@ import { Button } from './ui/Button';
  * estás aparece abierta con sus pasos, y las otras quedan plegadas con su
  * resumen. Así se ve de un vistazo el recorrido completo sin tener los ocho
  * pasos en pantalla a la vez.
+ *
+ * Abajo, separados por una línea, van los módulos: herramientas que no son
+ * pasos del recorrido y se usan cuando hacen falta.
  */
+
+/** Ícono de cada módulo, para reconocerlo de un vistazo en el menú. */
+const MODULE_ICONS: Record<ModuleId, React.ReactNode> = {
+  plan: <Map className="h-4 w-4 flex-shrink-0 text-muted" />,
+  clients: <Users className="h-4 w-4 flex-shrink-0 text-muted" />,
+};
 
 export interface WorkflowNavProps {
   workflow: WorkflowGroup[];
@@ -163,20 +181,23 @@ export const WorkflowSidebar: React.FC<WorkflowNavProps> = ({
           })}
         </nav>
 
-        {/* Clientes: no es un paso del recorrido */}
-        <div className="border-t border-hairline pt-3">
-          <button
-            type="button"
-            onClick={() => onNavigate('clients')}
-            aria-current={activeView === 'clients' ? 'page' : undefined}
-            className={cx(
-              'flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors',
-              activeView === 'clients' ? 'bg-accent-soft font-bold text-strong' : 'text-soft hover:bg-raised'
-            )}
-          >
-            <Users className="h-4 w-4 flex-shrink-0 text-muted" />
-            Clientes y copias de seguridad
-          </button>
+        {/* Módulos: no son pasos del recorrido */}
+        <div className="space-y-0.5 border-t border-hairline pt-3">
+          {APP_MODULES.map((module) => (
+            <button
+              key={module.id}
+              type="button"
+              onClick={() => onNavigate(module.id)}
+              aria-current={activeView === module.id ? 'page' : undefined}
+              className={cx(
+                'flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors',
+                activeView === module.id ? 'bg-accent-soft font-bold text-strong' : 'text-soft hover:bg-raised'
+              )}
+            >
+              {MODULE_ICONS[module.id]}
+              {module.label}
+            </button>
+          ))}
         </div>
       </div>
     </aside>
@@ -189,13 +210,14 @@ export const WorkflowSidebar: React.FC<WorkflowNavProps> = ({
 
 export const WorkflowRail: React.FC<WorkflowNavProps> = ({ workflow, activeView, onNavigate, progress }) => {
   const activeGroup = findGroupOfStep(workflow, activeView as WorkflowStep['id']) ?? workflow[0];
+  const inModule = APP_MODULES.find((module) => module.id === activeView);
 
   return (
     <div className="sticky top-0 z-20 border-b border-hairline bg-surface/95 backdrop-blur-md lg:hidden">
       {/* Etapas */}
       <div className="flex items-center gap-2 overflow-x-auto px-3 pb-1.5 pt-2 scrollbar-none">
         {workflow.map((group) => {
-          const active = group.id === activeGroup.id;
+          const active = !inModule && group.id === activeGroup.id;
           const done = group.steps.filter((step) => step.status === 'listo').length;
           return (
             <button
@@ -222,26 +244,45 @@ export const WorkflowRail: React.FC<WorkflowNavProps> = ({ workflow, activeView,
         </span>
       </div>
 
-      {/* Pasos de la etapa activa */}
+      {/* Pasos de la etapa activa, o los módulos si estamos en uno */}
       <div className="flex items-center gap-2 overflow-x-auto px-3 pb-2 scrollbar-none">
-        {activeGroup.steps.map((step) => {
-          const active = activeView === step.id;
-          return (
-            <button
-              key={step.id}
-              type="button"
-              onClick={() => onNavigate(step.id)}
-              aria-current={active ? 'step' : undefined}
-              className={cx(
-                'flex flex-shrink-0 items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors',
-                active ? 'border-accent-line bg-accent-soft text-strong' : 'border-hairline bg-surface text-muted'
-              )}
-            >
-              <DoneMark done={step.status === 'listo'} />
-              {step.label}
-            </button>
-          );
-        })}
+        {inModule
+          ? APP_MODULES.map((module) => {
+              const active = activeView === module.id;
+              return (
+                <button
+                  key={module.id}
+                  type="button"
+                  onClick={() => onNavigate(module.id)}
+                  aria-current={active ? 'page' : undefined}
+                  className={cx(
+                    'flex flex-shrink-0 items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors',
+                    active ? 'border-accent-line bg-accent-soft text-strong' : 'border-hairline bg-surface text-muted'
+                  )}
+                >
+                  {MODULE_ICONS[module.id]}
+                  {module.label}
+                </button>
+              );
+            })
+          : activeGroup.steps.map((step) => {
+              const active = activeView === step.id;
+              return (
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() => onNavigate(step.id)}
+                  aria-current={active ? 'step' : undefined}
+                  className={cx(
+                    'flex flex-shrink-0 items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors',
+                    active ? 'border-accent-line bg-accent-soft text-strong' : 'border-hairline bg-surface text-muted'
+                  )}
+                >
+                  <DoneMark done={step.status === 'listo'} />
+                  {step.label}
+                </button>
+              );
+            })}
       </div>
     </div>
   );

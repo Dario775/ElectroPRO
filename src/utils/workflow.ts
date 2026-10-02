@@ -25,11 +25,49 @@ export type StepId =
 export type GroupId = 'relevar' | 'analizar' | 'presupuestar' | 'entregar';
 
 /**
- * Vistas de la aplicación: los pasos del recorrido más la gestión de clientes,
- * que no es un paso sino el lugar donde se administran las fichas y las copias
- * de seguridad.
+ * Módulos: herramientas que no son pasos del recorrido y no se completan nunca,
+ * pero que se usan en cualquier momento del trabajo (el plano de ubicación, la
+ * gestión de clientes). Van aparte de las etapas para no ensuciar el progreso.
  */
-export type ViewId = StepId | 'clients';
+export type ModuleId = 'plan' | 'clients';
+
+export interface AppModule {
+  id: ModuleId;
+  label: string;
+  title: string;
+  description: string;
+}
+
+export const APP_MODULES: AppModule[] = [
+  {
+    id: 'plan',
+    label: 'Plano de ubicación',
+    title: 'Plano de ubicación',
+    description:
+      'Ubicá los tableros, las tomas y los artefactos sobre la planta del inmueble usando plantillas, y bajá el plano para el cliente.',
+  },
+  {
+    id: 'clients',
+    label: 'Clientes y copias de seguridad',
+    title: 'Clientes y copias de seguridad',
+    description: 'Fichas de clientes, datos del técnico y respaldo de todo el trabajo guardado en este equipo.',
+  },
+];
+
+/**
+ * Vistas de la aplicación: los pasos del recorrido más los módulos, que no son
+ * pasos sino herramientas que se usan en cualquier momento.
+ */
+export type ViewId = StepId | ModuleId;
+
+/** ¿La vista es un módulo (y no un paso del recorrido)? */
+export function isModuleView(view: ViewId): view is ModuleId {
+  return APP_MODULES.some((module) => module.id === view);
+}
+
+export function findModule(view: ViewId): AppModule | undefined {
+  return APP_MODULES.find((module) => module.id === view);
+}
 
 /**
  * - `pendiente`: falta información para poder avanzar.

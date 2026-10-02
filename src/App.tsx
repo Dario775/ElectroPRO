@@ -11,6 +11,7 @@ import { CalculatorsView } from './components/CalculatorsView';
 import { ReportPreview } from './components/ReportPreview';
 import { ClientList } from './components/ClientList';
 import { ClientModal } from './components/ClientModal';
+import { PlanView } from './components/PlanView';
 import { SettingsModal } from './components/SettingsModal';
 import { ClientRecord, TechnicianProfile } from './types/electrical';
 import { StorageService, DEFAULT_TECHNICIAN } from './services/storageService';
@@ -191,6 +192,8 @@ function AppContent() {
             onUpdateClient={handleUpdateActiveClient}
           />
         );
+      case 'plan':
+        return <PlanView client={activeClient} onUpdateClient={handleUpdateActiveClient} />;
       case 'clients':
         return (
           <ClientList
