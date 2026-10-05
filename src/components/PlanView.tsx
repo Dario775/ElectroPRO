@@ -5,6 +5,7 @@ import {
   Copy,
   Download,
   FlipHorizontal2,
+  CornerUpRight,
   FlipVertical2,
   Grid3x3,
   ImagePlus,
@@ -25,13 +26,22 @@ import {
   Undo2,
   X,
 } from 'lucide-react';
-import { ClientPlan, ClientRecord, PlanElement, PlanElementKind, PlanStructureType, PlanSymbolType } from '../types/electrical';
+import {
+  ClientPlan,
+  ClientRecord,
+  PlanElement,
+  PlanElementKind,
+  PlanStructureType,
+  PlanSymbolType,
+  PlanWallStyle,
+} from '../types/electrical';
 import {
   PLAN_SYMBOLS,
   STRUCTURE_TOOLS,
   ANNOTATION_TOOLS,
   DEFAULT_COTA_OFFSET,
   DEFAULT_TEXT_SIZE,
+  symbolSize,
   elementKind,
   elementTransform,
   elementTypeLabel,
@@ -42,6 +52,8 @@ import {
   isStructure,
   layerOf,
   renderStructure,
+  renderWallOutline,
+  type StructureColors,
   renderSymbolShapes,
   renderTool,
   shortLabel,
@@ -63,6 +75,19 @@ import {
   cotaLength,
   cotaTextPoint,
   createCota,
+  createRoom,
+  hasSwing,
+  sideOfWall,
+  resizeOpening,
+  handleOfCorner,
+  resizeRoom,
+  roomAtCorner,
+  roomOfWalls,
+  type RoomBounds,
+  type RoomHandle,
+  joinCorners,
+  linkedEnds,
+  moveLinkedEnds,
   createElement,
   createOpening,
   createPlan,
@@ -155,8 +180,22 @@ const MIN_WALL_LENGTH = 25;
 /** Un trazo de medición, cota o escala más corto que esto no se toma. */
 const MIN_TWO_POINT_LENGTH = 12;
 /** Límites del zoom del lienzo. */
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 10;
+/** Tamaño mínimo y máximo de un símbolo, en unidades del lienzo. */
+const SYMBOL_MIN_SIZE = 12;
+const SYMBOL_MAX_SIZE = 160;
+/** Tiradores de la caja de una habitación: cuatro esquinas y cuatro lados. */
+const ROOM_HANDLES: Array<RoomHandle & { cursor: string }> = [
+  { sx: -1, sy: -1, cursor: 'nwse-resize' },
+  { sx: 0, sy: -1, cursor: 'ns-resize' },
+  { sx: 1, sy: -1, cursor: 'nesw-resize' },
+  { sx: 1, sy: 0, cursor: 'ew-resize' },
+  { sx: 1, sy: 1, cursor: 'nwse-resize' },
+  { sx: 0, sy: 1, cursor: 'ns-resize' },
+  { sx: -1, sy: 1, cursor: 'nesw-resize' },
+  { sx: -1, sy: 0, cursor: 'ew-resize' },
+];
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 40;
 
 /**
  * Herramienta activa. `select` sirve para elegir y mover; las de estructura y
@@ -167,6 +206,7 @@ type DrawTool =
   | 'select'
   | 'medir'
   | 'escala'
+  | 'habitacion'
   | Exclude<PlanElementKind, 'symbol'>
   | `sym:${PlanSymbolType}`;
 
@@ -174,14 +214,34 @@ type DrawTool =
  * Orden de las herramientas, que es el de las teclas: `1` selecciona y del `2`
  * al `9` van las demás, en el orden en que aparecen en el riel.
  */
+/** Herramientas que abren un hueco sobre una pared: puertas, ventana y paso libre. */
+function isOpeningTool(tool: DrawTool): tool is Exclude<PlanStructureType, 'pared'> {
+  return (
+    tool === 'puerta' ||
+    tool === 'puerta_doble' ||
+    tool === 'puerta_corrediza' ||
+    tool === 'ventana' ||
+    tool === 'abertura'
+  );
+}
+
 const TOOL_ORDER: DrawTool[] = ['select', 'pared', 'puerta', 'ventana', 'abertura', 'cota', 'texto', 'medir', 'escala'];
 
 interface DragState {
   /** Mover el elemento (o la selección entera), o estirar una de sus puntas. */
-  mode: 'move' | 'endpointA' | 'endpointB';
+  mode: 'move' | 'endpointA' | 'endpointB' | 'resize' | 'room' | 'openingA' | 'openingB';
+  /** Habitación que se está estirando y desde qué esquina o lado (modo `room`). */
+  room?: RoomBounds;
+  roomHandle?: RoomHandle;
   planId: string;
   /** Copia del elemento al empezar, para calcular todo desde el original. */
   origin: PlanElement;
+  /**
+   * Todos los elementos del plano al empezar. El desplazamiento del arrastre es
+   * acumulado desde el inicio, así que se aplica siempre sobre esta base: si se
+   * aplicara sobre el estado ya movido, el elemento correría cada vez más rápido.
+   */
+  base: PlanElement[];
   elementId: string;
   /** Qué elementos se están moviendo: puede ser la selección completa. */
   ids: string[];
@@ -231,17 +291,22 @@ export const SHORTCUT_GROUPS: Array<{ title: string; items: Array<{ keys: string
       { keys: ['3'], what: 'Puerta' },
       { keys: ['4'], what: 'Ventana' },
       { keys: ['5'], what: 'Abertura' },
+      { keys: ['Clic en pared'], what: 'La puerta abre hacia el lado donde hagas clic; bisagra y lado se espejan en el panel' },
       { keys: ['6'], what: 'Cota: mide y escribe el largo' },
       { keys: ['7'], what: 'Texto: una nota en el plano' },
       { keys: ['8'], what: 'Medir entre dos puntos, sin dejar nada dibujado' },
       { keys: ['9'], what: 'Escala: calibrar sobre una distancia conocida' },
+      { keys: ['R'], what: 'Habitación: 4 paredes de una vez, arrastrando de esquina a esquina' },
+      { keys: ['U'], what: 'Unir esquinas de las paredes seleccionadas' },
+      { keys: ['Mayús', 'estirar'], what: 'Al estirar una habitación desde una esquina, conserva las proporciones' },
       { keys: ['V'], what: 'Volver a seleccionar' },
       { keys: ['G'], what: 'Encender o apagar la rejilla' },
       { keys: ['O'], what: 'Orto: trabar el trazo en horizontal y vertical' },
       { keys: ['F'], what: 'Pantalla completa' },
       { keys: ['Rueda'], what: 'Acercar y alejar donde está el puntero' },
       { keys: ['Espacio', 'arrastrar'], what: 'Desplazar el plano' },
-      { keys: ['Z'], what: 'Ajustar el plano a la ventana' },
+      { keys: ['Z'], what: 'Encuadrar todo lo dibujado (zoom extensión)' },
+      { keys: ['A'], what: 'Mostrar la hoja entera' },
       { keys: ['Esc'], what: 'Terminar la herramienta, deseleccionar o salir de pantalla completa' },
       { keys: ['?'], what: 'Mostrar esta ayuda' },
     ],
@@ -277,6 +342,7 @@ function toolLabel(tool: DrawTool): string {
   if (tool === 'select') return 'Seleccionar';
   if (tool === 'medir') return 'Medir';
   if (tool === 'escala') return 'Escala';
+  if (tool === 'habitacion') return 'Habitación';
   if (tool.startsWith('sym:')) return findSymbol(symbolOfTool(tool)).label;
   return findTool(tool as Exclude<PlanElementKind, 'symbol'>)?.label ?? 'Dibujar';
 }
@@ -289,8 +355,11 @@ function toolHint(tool: DrawTool): string {
   if (tool === 'pared') {
     return 'Clic en cada punta: la pared sigue encadenada desde donde terminó. Esc o Enter terminan. Se engancha con las esquinas y se endereza sola.';
   }
-  if (tool === 'puerta' || tool === 'ventana' || tool === 'abertura') {
-    return 'Hacé clic sobre una pared: la abertura se abre el hueco y queda alineada sola.';
+  if (tool === 'habitacion') {
+    return 'Arrastrá de una esquina a la opuesta: se dibujan las 4 paredes juntas, ya unidas en las esquinas.';
+  }
+  if (isOpeningTool(tool)) {
+    return 'Hacé clic sobre una pared: la abertura se abre el hueco y queda alineada sola. Las puertas abren hacia el lado donde hagas clic.';
   }
   if (tool === 'cota') {
     return 'Arrastrá de una punta a la otra: la cota mide y escribe el largo. Con la escala cargada, en metros.';
@@ -315,9 +384,17 @@ const PlanElementNode: React.FC<{
   element: PlanElement;
   selected: boolean;
   onPointerDown: (event: React.PointerEvent, element: PlanElement) => void;
-  onHandlePointerDown: (event: React.PointerEvent, element: PlanElement, handle: 'a' | 'b') => void;
-}> = ({ element, selected, onPointerDown, onHandlePointerDown }) => {
+  onHandlePointerDown: (event: React.PointerEvent, element: PlanElement, handle: 'a' | 'b' | 'size') => void;
+  wallStyle: PlanWallStyle;
+  hatchId: string;
+}> = ({ element, selected, onPointerDown, onHandlePointerDown, wallStyle, hatchId }) => {
   const kind = elementKind(element);
+  const colors: StructureColors = {
+    wall: INK,
+    gap: BACKGROUND_FILL,
+    wallStyle,
+    wallFill: wallStyle === 'hachurado' ? `url(#${hatchId})` : BACKGROUND_FILL,
+  };
 
   /* --- Pared --- */
   if (kind === 'pared') {
@@ -354,7 +431,7 @@ const PlanElementNode: React.FC<{
             data-export="hide"
           />
         )}
-        {renderStructure(element, { wall: INK, gap: BACKGROUND_FILL })}
+        {renderStructure(element, colors)}
         {selected && (
           <>
             <circle
@@ -419,7 +496,34 @@ const PlanElementNode: React.FC<{
             data-export="hide"
           />
         )}
-        {renderStructure(element, { wall: INK, gap: BACKGROUND_FILL })}
+        {renderStructure(element, colors)}
+        {selected && (
+          <>
+            {/* Tiradores en las dos puntas del hueco: estiran el ancho sobre la pared */}
+            <circle
+              cx={-half}
+              cy={0}
+              r={8}
+              fill={BACKGROUND_FILL}
+              stroke={SELECTION}
+              strokeWidth={2.5}
+              data-export="hide"
+              className="cursor-ew-resize"
+              onPointerDown={(event) => onHandlePointerDown(event, element, 'a')}
+            />
+            <circle
+              cx={half}
+              cy={0}
+              r={8}
+              fill={BACKGROUND_FILL}
+              stroke={SELECTION}
+              strokeWidth={2.5}
+              data-export="hide"
+              className="cursor-ew-resize"
+              onPointerDown={(event) => onHandlePointerDown(event, element, 'b')}
+            />
+          </>
+        )}
         {selected && element.wallId && (
           <line
             x1={-half}
@@ -523,9 +627,12 @@ const PlanElementNode: React.FC<{
   }
 
   /* --- Plantilla eléctrica --- */
-  const def = findSymbol(element.symbol ?? 'toma');
-  const hitWidth = Math.max(44, def.size + 26);
-  const hitHeight = def.size + 42;
+  const size = symbolSize(element);
+  const hitWidth = Math.max(44, size + 26);
+  const hitHeight = size + 42;
+  // El tirador de tamaño va en la esquina de la caja, así se ve a cualquier escala.
+  const handleX = size / 2 + 8;
+  const handleY = size / 2 + 8;
 
   return (
     <g
@@ -542,6 +649,7 @@ const PlanElementNode: React.FC<{
         width={hitWidth}
         height={hitHeight}
         fill="transparent"
+        stroke="none"
         data-export="hide"
       />
       {selected && (
@@ -559,7 +667,22 @@ const PlanElementNode: React.FC<{
           data-export="hide"
         />
       )}
-      {renderSymbolShapes(element.symbol ?? 'toma', def.size)}
+      {renderSymbolShapes(element.symbol ?? 'toma', size)}
+      {selected && (
+        <rect
+          x={handleX - 6}
+          y={handleY - 6}
+          width={12}
+          height={12}
+          rx={2}
+          fill={BACKGROUND_FILL}
+          stroke={SELECTION}
+          strokeWidth={2.5}
+          data-export="hide"
+          className="cursor-nwse-resize"
+          onPointerDown={(event) => onHandlePointerDown(event, element, 'size')}
+        />
+      )}
     </g>
   );
 };
@@ -611,11 +734,11 @@ const PlanLabel: React.FC<{
     anchorX = (element.x + (element.x2 ?? element.x)) / 2;
     anchorY = (element.y + (element.y2 ?? element.y)) / 2 - (element.thickness ?? 14) / 2 - 8;
   } else if (isOpening(element)) {
-    if (!label || label === findTool(kind as 'puerta' | 'ventana' | 'abertura')?.label) return null;
+    if (!label || label === findTool(kind as Exclude<PlanStructureType, 'pared'>)?.label) return null;
     anchorY = element.y + (element.thickness ?? 14) / 2 + 20;
   } else {
     if (!label || label === findSymbol(element.symbol ?? 'toma').label) return null;
-    anchorY = element.y + findSymbol(element.symbol ?? 'toma').size / 2 + 18;
+    anchorY = element.y + symbolSize(element) / 2 + 18;
   }
 
   // Ancho aproximado del texto, para no dejarlo salir de la hoja.
@@ -702,10 +825,26 @@ const DraftOverlay: React.FC<{
   chain: boolean;
 }> = ({ tool, draft, plan, ortho }) => {
   const measurement = measureBetween({ x: draft.x, y: draft.y }, { x: draft.x2, y: draft.y2 });
-  const label = `${formatLength(plan, measurement.distance)} · ${measurement.angle}°${ortho ? ' · orto' : ''}`;
+  const label =
+    tool === 'habitacion'
+      ? `${formatLength(plan, Math.abs(draft.x2 - draft.x))} × ${formatLength(plan, Math.abs(draft.y2 - draft.y))}`
+      : `${formatLength(plan, measurement.distance)} · ${measurement.angle}°${ortho ? ' · orto' : ''}`;
 
   return (
     <g data-export="hide" pointerEvents="none">
+      {tool === 'habitacion' && (
+        <rect
+          x={Math.min(draft.x, draft.x2)}
+          y={Math.min(draft.y, draft.y2)}
+          width={Math.abs(draft.x2 - draft.x)}
+          height={Math.abs(draft.y2 - draft.y)}
+          fill={SELECTION}
+          fillOpacity={0.06}
+          stroke={INK}
+          strokeWidth={14}
+          opacity={0.7}
+        />
+      )}
       {tool === 'pared' && (
         <line
           x1={draft.x}
@@ -718,16 +857,18 @@ const DraftOverlay: React.FC<{
           opacity={0.7}
         />
       )}
-      <line
-        x1={draft.x}
-        y1={draft.y}
-        x2={draft.x2}
-        y2={draft.y2}
-        stroke={tool === 'pared' ? SELECTION : MEASURE}
-        strokeWidth={1.8}
-        strokeDasharray="7 5"
-      />
-      <circle cx={draft.x} cy={draft.y} r={4.5} fill={tool === 'pared' ? SELECTION : MEASURE} />
+      {tool !== 'habitacion' && (
+        <line
+          x1={draft.x}
+          y1={draft.y}
+          x2={draft.x2}
+          y2={draft.y2}
+          stroke={tool === 'pared' ? SELECTION : MEASURE}
+          strokeWidth={1.8}
+          strokeDasharray="7 5"
+        />
+      )}
+      <circle cx={draft.x} cy={draft.y} r={4.5} fill={tool === 'pared' || tool === 'habitacion' ? SELECTION : MEASURE} />
       <MeasureLabel x={(draft.x + draft.x2) / 2} y={(draft.y + draft.y2) / 2} text={label} />
     </g>
   );
@@ -929,6 +1070,15 @@ export const PlanView: React.FC<PlanViewProps> = ({
     [activePlan]
   );
 
+  /** Si lo seleccionado son justo las 4 paredes de una habitación, su caja y tiradores. */
+  const wallStyle: PlanWallStyle = activePlan?.wallStyle ?? 'relleno';
+  const hatchId = `plan-hatch-${activePlan?.id ?? 'x'}`;
+
+  const roomSelection = useMemo(
+    () => (activePlan && selectedIds.length === 4 ? roomOfWalls(activePlan.elements, selectedIds) : null),
+    [activePlan, selectedIds]
+  );
+
   /**
    * Qué se dibuja según las capas encendidas.
    *
@@ -1111,10 +1261,61 @@ export const PlanView: React.FC<PlanViewProps> = ({
     [zoomAt]
   );
 
-  /** Vuelve a la vista que muestra la hoja entera. */
-  const zoomToFit = useCallback((): void => {
+  /** Vuelve a la vista que muestra la hoja entera (ZOOM TODO). */
+  const zoomToSheet = useCallback((): void => {
     setView({ zoom: 1, panX: 0, panY: 0 });
   }, []);
+
+  /**
+   * Encuadra todo lo dibujado en la ventana, con un pequeño margen (ZOOM
+   * EXTENSIÓN de AutoCAD). Si todavía no hay nada dibujado, muestra la hoja.
+   */
+  const zoomToFit = useCallback((): void => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    const metrics = viewMetrics();
+    const elements = currentElements().filter((element) => {
+      const kind = elementKind(element);
+      if (kind === 'symbol') return visible.simbolos;
+      if (kind === 'cota' || kind === 'texto') return visible.anotaciones;
+      return visible.estructura;
+    });
+    if (!rect || !metrics || elements.length === 0) {
+      zoomToSheet();
+      return;
+    }
+
+    // Caja de lo dibujado, con aire para el espesor, el tamaño de los símbolos y las cotas corridas.
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const element of elements) {
+      const pad = Math.max(element.thickness ?? 0, element.offset ?? 0, 30);
+      const points = [
+        { x: element.x, y: element.y },
+        { x: element.x2 ?? element.x, y: element.y2 ?? element.y },
+      ];
+      for (const point of points) {
+        minX = Math.min(minX, point.x - pad);
+        maxX = Math.max(maxX, point.x + pad);
+        minY = Math.min(minY, point.y - pad);
+        maxY = Math.max(maxY, point.y + pad);
+      }
+    }
+
+    const boxWidth = Math.max(1, maxX - minX);
+    const boxHeight = Math.max(1, maxY - minY);
+    const viewWidth = rect.width / metrics.baseScale;
+    const viewHeight = rect.height / metrics.baseScale;
+    const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(viewWidth / boxWidth, viewHeight / boxHeight) * 0.92));
+    const centerX = (rect.width / 2 - metrics.offsetX) / metrics.baseScale;
+    const centerY = (rect.height / 2 - metrics.offsetY) / metrics.baseScale;
+    setView({
+      zoom,
+      panX: centerX - ((minX + maxX) / 2) * zoom,
+      panY: centerY - ((minY + maxY) / 2) * zoom,
+    });
+  }, [viewMetrics, currentElements, visible, zoomToSheet]);
 
   /** Ajusta un punto del plano a las paredes, sus puntos medios y la rejilla. */
   const snapToPlan = useCallback(
@@ -1294,6 +1495,19 @@ export const PlanView: React.FC<PlanViewProps> = ({
       zoomToFit();
       return;
     }
+    if (tecla === 'r' || tecla === 'R') {
+      setTool('habitacion');
+      setChainStart(null);
+      return;
+    }
+    if (tecla === 'u' || tecla === 'U') {
+      handleJoinCorners();
+      return;
+    }
+    if (tecla === 'a' || tecla === 'A') {
+      zoomToSheet();
+      return;
+    }
     if (tecla === 'f' || tecla === 'F') {
       onToggleFocus?.();
       return;
@@ -1356,15 +1570,21 @@ export const PlanView: React.FC<PlanViewProps> = ({
     });
     patchElements(activePlan.id, [...currentElements(), element]);
     setSelectedIds([element.id]);
+    // Se coloca de a uno: después se puede mover sin crear otro encima.
+    setTool('select');
   };
 
   const placeOpening = (point: { x: number; y: number }, type: Exclude<PlanStructureType, 'pared'>): void => {
     if (!activePlan) return;
     const elements = currentElements();
     const near = nearestWall(elements, point.x, point.y, OPENING_SNAP_RADIUS);
-    const opening = createOpening(type, point.x, point.y, near?.wall, { supplyId: activePlan.supplyId });
+    // La hoja abre hacia el lado de la pared donde se hizo clic.
+    const swing = near && hasSwing(type) ? { hand: sideOfWall(near.wall, point.x, point.y) } : {};
+    const opening = createOpening(type, point.x, point.y, near?.wall, { supplyId: activePlan.supplyId, ...swing });
     patchElements(activePlan.id, [...elements, opening]);
     setSelectedIds([opening.id]);
+    // Se coloca de a uno: para otra puerta o ventana se elige de nuevo la herramienta.
+    setTool('select');
     setMessage(
       near
         ? { tone: 'info', text: `Se abrió el hueco en la pared. Arrastrala a lo largo de ella para correrla.` }
@@ -1381,6 +1601,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
     const element = createText(position.x, position.y, 'Nota');
     patchElements(activePlan.id, [...currentElements(), element]);
     setSelectedIds([element.id]);
+    setTool('select');
     setMessage({
       tone: 'info',
       text: 'Escribí la nota en «Nombre en el plano», en el panel de la derecha.',
@@ -1435,7 +1656,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       return;
     }
 
-    if (tool === 'pared' || tool === 'cota' || tool === 'medir' || tool === 'escala') {
+    if (tool === 'pared' || tool === 'habitacion' || tool === 'cota' || tool === 'medir' || tool === 'escala') {
       // Con la pared encadenada, el trazo sigue desde la punta anterior.
       const start =
         tool === 'pared' && chainStart ? chainStart : snapToPlan(Math.max(0, raw.x), Math.max(0, raw.y));
@@ -1448,7 +1669,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
     const point = clientToPlan(event.clientX, event.clientY);
     if (!point) return;
 
-    if (tool === 'puerta' || tool === 'ventana' || tool === 'abertura') {
+    if (isOpeningTool(tool)) {
       placeOpening(point, tool);
       return;
     }
@@ -1473,7 +1694,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
       if (!draft || !point) return;
 
       const free = snapToPlan(point.x, point.y);
-      const constrained = constrainDraft(draft.x, draft.y, free.x, free.y);
+      // La habitación es un rectángulo: sus lados ya son rectos, no se endereza.
+      const constrained = tool === 'habitacion' ? free : constrainDraft(draft.x, draft.y, free.x, free.y);
       draftRef.current = { ...draft, x2: constrained.x, y2: constrained.y };
       setDraftWall({ ...draftRef.current });
     };
@@ -1498,12 +1720,26 @@ export const PlanView: React.FC<PlanViewProps> = ({
         return;
       }
 
+      if (tool === 'habitacion') {
+        if (Math.abs(draft.x2 - draft.x) < MIN_WALL_LENGTH || Math.abs(draft.y2 - draft.y) < MIN_WALL_LENGTH) return;
+        const walls = createRoom({ x: draft.x, y: draft.y }, { x: draft.x2, y: draft.y2 });
+        patchElements(activePlan.id, [...currentElements(), ...walls]);
+        setSelectedIds(walls.map((wall) => wall.id));
+        setTool('select');
+        setMessage({
+          tone: 'success',
+          text: 'Habitación dibujada: son 4 paredes unidas. Al estirar una esquina, las dos paredes se mueven juntas.',
+        });
+        return;
+      }
+
       if (length < MIN_TWO_POINT_LENGTH) return;
 
       if (tool === 'cota') {
         const cota = createCota({ x: draft.x, y: draft.y }, { x: draft.x2, y: draft.y2 });
         patchElements(activePlan.id, [...currentElements(), cota]);
         setSelectedIds([cota.id]);
+        setTool('select');
         return;
       }
 
@@ -1534,7 +1770,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
   const startDrag = (
     event: React.PointerEvent,
     element: PlanElement,
-    mode: DragState['mode']
+    mode: DragState['mode'],
+    extra: Pick<DragState, 'room' | 'roomHandle'> = {}
   ): void => {
     if (!activePlan) return;
 
@@ -1547,11 +1784,13 @@ export const PlanView: React.FC<PlanViewProps> = ({
       planId: activePlan.id,
       elementId: element.id,
       origin: { ...element },
+      base: currentElements(),
       ids: mode === 'move' ? selectedIds : [element.id],
       startClientX: event.clientX,
       startClientY: event.clientY,
       scale: planScale(),
       height: planHeight(activePlan),
+      ...extra,
     });
   };
 
@@ -1584,10 +1823,35 @@ export const PlanView: React.FC<PlanViewProps> = ({
     startDrag(event, element, 'move');
   };
 
-  const handleHandlePointerDown = (event: React.PointerEvent, element: PlanElement, handle: 'a' | 'b'): void => {
+  const handleHandlePointerDown = (event: React.PointerEvent, element: PlanElement, handle: 'a' | 'b' | 'size'): void => {
     event.stopPropagation();
     setSelectedIds([element.id]);
-    startDrag(event, element, handle === 'a' ? 'endpointA' : 'endpointB');
+
+    /* La esquina de una habitación rectangular la estira entera, con lo opuesto
+       fijo. Con Alt se suelta solo esa punta de pared. */
+    if (handle !== 'size' && isWall(element) && !event.altKey) {
+      const corner = handle === 'a' ? { x: element.x, y: element.y } : { x: element.x2 ?? element.x, y: element.y2 ?? element.y };
+      const room = roomAtCorner(currentElements(), corner.x, corner.y);
+      if (room) {
+        startDrag(event, element, 'room', { room, roomHandle: handleOfCorner(room, corner.x, corner.y) });
+        return;
+      }
+    }
+
+    if (isOpening(element)) {
+      startDrag(event, element, handle === 'a' ? 'openingA' : 'openingB');
+      return;
+    }
+
+    startDrag(event, element, handle === 'a' ? 'endpointA' : handle === 'b' ? 'endpointB' : 'resize');
+  };
+
+  /** Tirador de la caja de una habitación seleccionada (esquinas y lados). */
+  const handleRoomHandlePointerDown = (event: React.PointerEvent, room: RoomBounds, roomHandle: RoomHandle): void => {
+    event.stopPropagation();
+    const first = currentElements().find((element) => element.id === room.wallIds[0]);
+    if (!first) return;
+    startDrag(event, first, 'room', { room, roomHandle });
   };
 
   /* Recuadro de selección ------------------------------------------- */
@@ -1683,7 +1947,10 @@ export const PlanView: React.FC<PlanViewProps> = ({
         setView((current) => ({ ...current, panX: current.panX - event.deltaY / metrics.baseScale }));
         return;
       }
-      zoomAt(event.clientX, event.clientY, event.deltaY < 0 ? 1.15 : 1 / 1.15);
+      // Zoom proporcional al giro: una muesca de rueda acerca ~1,2×, y un
+      // trackpad (muchos giros chicos) acerca suave, sin saltos.
+      const pixels = event.deltaMode === 1 ? event.deltaY * 33 : event.deltaMode === 2 ? event.deltaY * 400 : event.deltaY;
+      zoomAt(event.clientX, event.clientY, Math.min(2, Math.max(0.5, Math.exp(-pixels * 0.0018))));
     };
 
     svg.addEventListener('wheel', onWheel, { passive: false });
@@ -1707,6 +1974,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       const dy = (event.clientY - drag.startClientY) * drag.scale;
       const origin = drag.origin;
       const elements = plan.elements;
+      const base = drag.base;
 
       if (drag.mode === 'move') {
         let movedX = dx;
@@ -1724,28 +1992,83 @@ export const PlanView: React.FC<PlanViewProps> = ({
         }
 
         // Una abertura suelta se corre a lo largo de su pared, no se despega.
-        const wall = origin.wallId ? elements.find((element) => element.id === origin.wallId) : undefined;
+        const wall = origin.wallId ? base.find((element) => element.id === origin.wallId) : undefined;
         const single = drag.ids.length === 1;
         if (single && wall && isOpening(origin)) {
           const slid = slideOpeningOnWall(origin, wall, origin.x + movedX, origin.y + movedY);
           patchElements(
             drag.planId,
-            elements.map((element) => (element.id === origin.id ? slid : element)),
+            base.map((element) => (element.id === origin.id ? slid : element)),
             false
           );
           return;
         }
 
         // La selección se mueve entera: las paredes se llevan sus aberturas.
-        patchElements(drag.planId, translateElements(elements, drag.ids, movedX, movedY, drag.height), false);
+        patchElements(drag.planId, translateElements(base, drag.ids, movedX, movedY, drag.height), false);
         return;
       }
 
-      // Estirar una punta: la pared, la medida de una cota o la directriz de un texto.
-      const free = snapPoint(origin.x + dx, origin.y + dy, {
+      if (drag.mode === 'room' && drag.room && drag.roomHandle) {
+        const { room, roomHandle } = drag;
+        const startX = roomHandle.sx < 0 ? room.left : roomHandle.sx > 0 ? room.right : (room.left + room.right) / 2;
+        const startY = roomHandle.sy < 0 ? room.top : roomHandle.sy > 0 ? room.bottom : (room.top + room.bottom) / 2;
+        const roomIds = new Set(room.wallIds);
+        const others = elements.filter((element) => !roomIds.has(element.id));
+        const target = snapPoint(startX + dx, startY + dy, {
+          grid: snap,
+          corners: wallCorners(others),
+          midpoints: wallMidpoints(others),
+          height: drag.height,
+          radius: 26,
+        });
+        // Sin Mayús, a voluntad; con Mayús (en una esquina), se conservan las proporciones.
+        patchElements(drag.planId, resizeRoom(base, room, roomHandle, target, event.shiftKey), false);
+        return;
+      }
+
+      if (drag.mode === 'openingA' || drag.mode === 'openingB') {
+        const resized = resizeOpening(origin, drag.mode === 'openingA' ? 'a' : 'b', dx, dy, base);
+        patchElements(
+          drag.planId,
+          elements.map((element) => (element.id === origin.id ? resized : element)),
+          false
+        );
+        return;
+      }
+
+      if (drag.mode === 'resize') {
+        // El tirador está en la esquina (s/2 + 8) de la caja del símbolo, girada con él:
+        // el tamaño sale de lo que se alejó el puntero del centro, en el eje de esa diagonal.
+        const startSize = symbolSize(origin);
+        const radians = ((origin.rotation ?? 0) * Math.PI) / 180;
+        const diagonalX = (Math.cos(radians) - Math.sin(radians)) / Math.SQRT2;
+        const diagonalY = (Math.sin(radians) + Math.cos(radians)) / Math.SQRT2;
+        const growth = dx * diagonalX + dy * diagonalY;
+        const nextSize = Math.round(Math.min(SYMBOL_MAX_SIZE, Math.max(SYMBOL_MIN_SIZE, startSize + growth * Math.SQRT2)));
+        patchElements(
+          drag.planId,
+          elements.map((element) => (element.id === origin.id ? { ...element, size: nextSize } : element)),
+          false
+        );
+        return;
+      }
+
+      /* Estirar una punta: la pared, la medida de una cota o la directriz de un
+         texto. Las paredes que comparten esa esquina la siguen (con Alt, se suelta
+         solo esta punta). */
+      const grabbed = drag.mode === 'endpointA' ? { x: origin.x, y: origin.y } : { x: origin.x2 ?? origin.x, y: origin.y2 ?? origin.y };
+      const cornerEnds = isWall(origin)
+        ? event.altKey
+          ? [{ id: origin.id, end: drag.mode === 'endpointA' ? ('a' as const) : ('b' as const) }]
+          : linkedEnds(base, grabbed.x, grabbed.y)
+        : [];
+      const movingIds = new Set(cornerEnds.map((entry) => entry.id));
+      const others = elements.filter((element) => element.id !== origin.id && !movingIds.has(element.id));
+      const free = snapPoint(grabbed.x + dx, grabbed.y + dy, {
         grid: snap,
-        corners: wallCorners(elements.filter((element) => element.id !== origin.id)),
-        midpoints: wallMidpoints(elements.filter((element) => element.id !== origin.id)),
+        corners: wallCorners(others),
+        midpoints: wallMidpoints(others),
         height: drag.height,
         radius: 26,
       });
@@ -1760,8 +2083,15 @@ export const PlanView: React.FC<PlanViewProps> = ({
           ? { ...origin, x: constrained.x, y: constrained.y }
           : { ...origin, x2: constrained.x, y2: constrained.y };
 
+      if (isWall(origin)) {
+        // Se parte siempre de lo que había al empezar el arrastre, así las
+        // paredes unidas no se van desarmando a medida que se mueve.
+        patchElements(drag.planId, moveLinkedEnds(base, cornerEnds, constrained), false);
+        return;
+      }
+
       const next = elements.map((element) => (element.id === origin.id ? reshaped : element));
-      patchElements(drag.planId, isWall(reshaped) ? followWall(next, reshaped) : next, false);
+      patchElements(drag.planId, next, false);
     };
 
     const onUp = (): void => {
@@ -1861,8 +2191,10 @@ export const PlanView: React.FC<PlanViewProps> = ({
   /** Copia lo seleccionado al portapapeles propio. */
   const handleCopy = (): void => {
     if (!activePlan || selectedIds.length === 0) return;
-    const { copies } = duplicateElements(activePlan.elements, selectedIds, 0, 0);
-    // Las copias se guardan ya con ids nuevos, listas para pegar.
+    // Se guardan los originales (con las aberturas de sus paredes): al pegar se
+    // les arma ids nuevos de una sola vez, para que cada abertura siga ligada a
+    // la copia de su pared.
+    const { copies } = duplicateElements(activePlan.elements, selectedIds, 0, 0, height);
     clipboardRef.current = copies;
     setMessage({
       tone: 'info',
@@ -1873,22 +2205,18 @@ export const PlanView: React.FC<PlanViewProps> = ({
   /** Pega lo copiado, corrido para que no quede encima del original. */
   const handlePaste = (): void => {
     if (!activePlan || clipboardRef.current.length === 0) return;
-    const offset = 40;
-    const copies = clipboardRef.current.map((element) => ({
-      ...element,
-      id: `el_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      x: snapCoordinate(element.x + offset, PLAN_WIDTH, false),
-      y: snapCoordinate(element.y + offset, height, false),
-      x2: element.x2 === undefined ? undefined : snapCoordinate(element.x2 + offset, PLAN_WIDTH, false),
-      y2: element.y2 === undefined ? undefined : snapCoordinate(element.y2 + offset, height, false),
-    }));
+    const clipboard = clipboardRef.current;
+    const { copies, ids } = duplicateElements(clipboard, clipboard.map((element) => element.id), 40, 40, height);
+    if (copies.length === 0) return;
     patchElements(activePlan.id, [...activePlan.elements, ...copies]);
-    setSelectedIds(copies.map((copy) => copy.id));
+    setSelectedIds(ids);
+    // Cada pegado sale corrido respecto del anterior, no uno encima del otro.
+    clipboardRef.current = copies;
   };
 
   const handleDuplicateElement = (): void => {
     if (!activePlan || selectedIds.length === 0) return;
-    const { copies, ids } = duplicateElements(activePlan.elements, selectedIds, 40, 40);
+    const { copies, ids } = duplicateElements(activePlan.elements, selectedIds, 40, 40, height);
     if (copies.length === 0) return;
     patchElements(activePlan.id, [...activePlan.elements, ...copies]);
     setSelectedIds(ids);
@@ -1907,6 +2235,24 @@ export const PlanView: React.FC<PlanViewProps> = ({
     setMessage({
       tone: 'info',
       text: `Se reflejó ${axis === 'vertical' ? 'de izquierda a derecha' : 'de arriba abajo'} respecto del centro de la selección.`,
+    });
+  };
+
+  /** Une las esquinas de las paredes seleccionadas: las estira o recorta hasta cruzarse. */
+  const handleJoinCorners = (): void => {
+    if (!activePlan) return;
+    const { elements, joined } = joinCorners(activePlan.elements, selectedIds);
+    if (joined === 0) {
+      setMessage({
+        tone: 'info',
+        text: 'No hay esquinas para unir: elegí dos o más paredes que se crucen (no paralelas) y que estén cerca de cruzarse.',
+      });
+      return;
+    }
+    patchElements(activePlan.id, elements);
+    setMessage({
+      tone: 'success',
+      text: `Se ${joined === 1 ? 'unió 1 esquina' : `unieron ${joined} esquinas`}. Ctrl+Z lo deshace.`,
     });
   };
 
@@ -2090,7 +2436,10 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
     if (plan.imageDataUrl) {
       const background = await loadImage(plan.imageDataUrl);
+      // Con la misma transparencia que se ve en pantalla: a opacidad plena la foto taparía el dibujo.
+      context.globalAlpha = plan.backgroundOpacity ?? 1;
       context.drawImage(background, 0, header, PLAN_WIDTH, planPixelHeight);
+      context.globalAlpha = 1;
     }
 
     const drawing = await loadImage(svgUrl);
@@ -2139,9 +2488,12 @@ export const PlanView: React.FC<PlanViewProps> = ({
         });
         return;
       }
+      // El nombre lo escribe el usuario: se escapa antes de ponerlo en el HTML.
+      const safeTitle = activePlan.name.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
+      const orientation = (activePlan.aspect ?? PLAN_SHEETS[0].aspect) < 1 ? 'portrait' : 'landscape';
       printWindow.document.write(
-        `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${activePlan.name}</title>` +
-          '<style>@page{size:A4 landscape;margin:10mm}body{margin:0}img{width:100%;height:auto}</style>' +
+        `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${safeTitle}</title>` +
+          `<style>@page{size:A4 ${orientation};margin:10mm}body{margin:0}img{width:100%;height:auto}</style>` +
           `</head><body><img src="${canvas.toDataURL('image/png')}" onload="window.focus();window.print()"></body></html>`
       );
       printWindow.document.close();
@@ -2598,6 +2950,16 @@ export const PlanView: React.FC<PlanViewProps> = ({
                   >
                     <path d={`M ${PLAN_GRID} 0 L 0 0 0 ${PLAN_GRID}`} fill="none" stroke={GRID_LINE} strokeWidth={1} />
                   </pattern>
+                  <pattern
+                    id={hatchId}
+                    width={7}
+                    height={7}
+                    patternUnits="userSpaceOnUse"
+                    patternTransform="rotate(45)"
+                  >
+                    <rect width={7} height={7} fill={BACKGROUND_FILL} />
+                    <line x1={0} y1={0} x2={0} y2={7} stroke={INK} strokeWidth={1.1} />
+                  </pattern>
                 </defs>
 
                 {/* El zoom y el desplazamiento se aplican acá adentro: la hoja
@@ -2642,6 +3004,18 @@ export const PlanView: React.FC<PlanViewProps> = ({
                     />
                   )}
 
+                  {/* Contorno de las paredes: todas juntas y por debajo de sus
+                      interiores, así las esquinas quedan unidas sin líneas de más. */}
+                  {wallStyle !== 'relleno' && (
+                    <g pointerEvents="none">
+                      {visibleElements.filter(isWall).map((wall) => (
+                        <g key={`contorno-${wall.id}`} transform={elementTransform(wall)}>
+                          {renderWallOutline(wall, { wall: INK, gap: BACKGROUND_FILL, wallStyle })}
+                        </g>
+                      ))}
+                    </g>
+                  )}
+
                   {visibleElements.map((element) => (
                     <PlanElementNode
                       key={element.id}
@@ -2649,6 +3023,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
                       selected={selectedIds.includes(element.id)}
                       onPointerDown={handleElementPointerDown}
                       onHandlePointerDown={handleHandlePointerDown}
+                      wallStyle={wallStyle}
+                      hatchId={hatchId}
                     />
                   ))}
 
@@ -2663,6 +3039,44 @@ export const PlanView: React.FC<PlanViewProps> = ({
                       selected={selectedIds.includes(element.id)}
                     />
                   ))}
+
+                  {/* Habitación seleccionada: caja con tiradores en las esquinas y los lados */}
+                  {roomSelection && tool === 'select' && (
+                    <g data-export="hide">
+                      <rect
+                        x={roomSelection.left}
+                        y={roomSelection.top}
+                        width={roomSelection.right - roomSelection.left}
+                        height={roomSelection.bottom - roomSelection.top}
+                        fill="none"
+                        stroke={SELECTION}
+                        strokeWidth={1.5}
+                        strokeDasharray="8 6"
+                        pointerEvents="none"
+                      />
+                      {ROOM_HANDLES.map((roomHandle) => {
+                        const hx =
+                          roomHandle.sx < 0 ? roomSelection.left : roomHandle.sx > 0 ? roomSelection.right : (roomSelection.left + roomSelection.right) / 2;
+                        const hy =
+                          roomHandle.sy < 0 ? roomSelection.top : roomHandle.sy > 0 ? roomSelection.bottom : (roomSelection.top + roomSelection.bottom) / 2;
+                        return (
+                          <rect
+                            key={`${roomHandle.sx}${roomHandle.sy}`}
+                            x={hx - 7}
+                            y={hy - 7}
+                            width={14}
+                            height={14}
+                            rx={2}
+                            fill={BACKGROUND_FILL}
+                            stroke={SELECTION}
+                            strokeWidth={2.5}
+                            style={{ cursor: roomHandle.cursor }}
+                            onPointerDown={(event) => handleRoomHandlePointerDown(event, roomSelection, roomHandle)}
+                          />
+                        );
+                      })}
+                    </g>
+                  )}
 
                   {/* Trazo en curso: se ve qué se está dibujando y cuánto mide */}
                   {draftWall && (
@@ -2790,7 +3204,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
                   <button
                     type="button"
                     onClick={zoomToFit}
-                    title="Ajustar el plano a la ventana (tecla Z)"
+                    onDoubleClick={zoomToSheet}
+                    title="Encuadrar todo lo dibujado (tecla Z). Doble clic o tecla A: la hoja entera"
                     className="min-w-[52px] rounded-md border border-edge bg-raised px-1.5 py-1 font-mono font-bold text-soft transition-colors hover:text-strong"
                   >
                     {Math.round(view.zoom * 100)}%
@@ -2898,6 +3313,18 @@ export const PlanView: React.FC<PlanViewProps> = ({
                       >
                         Espejar ↕
                       </Button>
+                      {selectedElements.filter(isWall).length >= 2 && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          icon={<CornerUpRight className="h-3.5 w-3.5" />}
+                          onClick={handleJoinCorners}
+                          className="col-span-2"
+                          fullWidth
+                        >
+                          Unir esquinas (U)
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="danger"
@@ -3047,7 +3474,15 @@ export const PlanView: React.FC<PlanViewProps> = ({
                               }}
                               min={10}
                               max={600}
-                              presets={elementKind(selected) === 'ventana' ? [80, 110, 160, 220] : [70, 90, 110, 160]}
+                              presets={
+                                elementKind(selected) === 'ventana'
+                                  ? [80, 110, 160, 220]
+                                  : elementKind(selected) === 'puerta_doble'
+                                    ? [140, 160, 180, 200]
+                                    : elementKind(selected) === 'puerta_corrediza'
+                                      ? [120, 140, 180, 240]
+                                      : [70, 90, 110, 160]
+                              }
                               presetsLabel="Frecuentes"
                               hint={
                                 hasScale(activePlan)
@@ -3160,6 +3595,35 @@ export const PlanView: React.FC<PlanViewProps> = ({
                       )}
                     </PanelSection>
 
+                    {!isStructure(selected) && (
+                      <PanelSection
+                        title="Tamaño"
+                        hint="También se cambia arrastrando el cuadradito de la esquina del símbolo en el plano."
+                      >
+                        <NumberField
+                          label="Tamaño del símbolo"
+                          unit="u"
+                          value={symbolSize(selected)}
+                          onChange={(value) => {
+                            if (typeof value === 'number') handleUpdateElement({ size: value });
+                          }}
+                          min={SYMBOL_MIN_SIZE}
+                          max={SYMBOL_MAX_SIZE}
+                          presets={[20, 28, 40, 60]}
+                          presetsLabel="Frecuentes"
+                        />
+                        {selected.size !== undefined && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateElement({ size: undefined })}
+                            className="text-xs font-semibold text-accent-text hover:underline"
+                          >
+                            Volver al tamaño original
+                          </button>
+                        )}
+                      </PanelSection>
+                    )}
+
                     <PanelSection title="Presentación">
                       {selectedIsOpening ? (
                         <NumberField
@@ -3194,22 +3658,41 @@ export const PlanView: React.FC<PlanViewProps> = ({
                         )
                       )}
 
-                      {elementKind(selected) === 'puerta' && (
-                        <Field
-                          label="Abre hacia"
-                          help="Indica de qué lado queda la hoja de la puerta. Sirve para saber si tapa un tablero."
-                        >
-                          <SegmentedControl
-                            size="sm"
-                            ariaLabel="Lado hacia el que abre la puerta"
-                            value={selected.hand ?? 'derecha'}
-                            onChange={(value) => handleUpdateElement({ hand: value as 'izquierda' | 'derecha' })}
-                            options={[
-                              { value: 'izquierda', label: 'Izquierda' },
-                              { value: 'derecha', label: 'Derecha' },
-                            ]}
-                          />
-                        </Field>
+                      {hasSwing(elementKind(selected)) && (
+                        <>
+                          <Field
+                            label={elementKind(selected) === 'puerta_corrediza' ? 'Riel hacia' : 'Abre hacia'}
+                            help="Lado de la pared hacia el que abre la hoja (o donde va el riel). Cambiarlo espeja la puerta de arriba abajo."
+                          >
+                            <SegmentedControl
+                              size="sm"
+                              ariaLabel="Lado de la pared hacia el que abre la puerta"
+                              value={selected.hand ?? 'derecha'}
+                              onChange={(value) => handleUpdateElement({ hand: value as 'izquierda' | 'derecha' })}
+                              options={[
+                                { value: 'izquierda', label: 'Un lado' },
+                                { value: 'derecha', label: 'Otro lado' },
+                              ]}
+                            />
+                          </Field>
+                          {elementKind(selected) !== 'puerta_doble' && (
+                            <Field
+                              label={elementKind(selected) === 'puerta_corrediza' ? 'Panel fijo en' : 'Bisagra en'}
+                              help="Extremo del hueco donde va la bisagra. Cambiarlo espeja la puerta de izquierda a derecha."
+                            >
+                              <SegmentedControl
+                                size="sm"
+                                ariaLabel="Extremo de la bisagra"
+                                value={selected.hinge ?? 'izquierda'}
+                                onChange={(value) => handleUpdateElement({ hinge: value as 'izquierda' | 'derecha' })}
+                                options={[
+                                  { value: 'izquierda', label: 'Izquierda' },
+                                  { value: 'derecha', label: 'Derecha' },
+                                ]}
+                              />
+                            </Field>
+                          )}
+                        </>
                       )}
 
                       {selectedIsText && (
@@ -3427,6 +3910,23 @@ export const PlanView: React.FC<PlanViewProps> = ({
                   />
                 </PanelSection>
 
+                <PanelSection
+                  title="Estilo de paredes"
+                  hint="Contorno y hachurado dibujan las dos caras de la pared, con las esquinas unidas, como en un plano técnico."
+                >
+                  <SegmentedControl<PlanWallStyle>
+                    size="sm"
+                    ariaLabel="Estilo de las paredes"
+                    value={wallStyle}
+                    onChange={(value) => patchPlan(activePlan.id, { wallStyle: value })}
+                    options={[
+                      { value: 'relleno', label: 'Relleno' },
+                      { value: 'contorno', label: 'Contorno' },
+                      { value: 'hachurado', label: 'Hachurado' },
+                    ]}
+                  />
+                </PanelSection>
+
                 <PanelSection title="Hoja y escala">
                   <SelectField
                     label="Proporción de la hoja"
@@ -3636,7 +4136,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
                         type="button"
                         onClick={() => setTool(structure.type)}
                         aria-pressed={active}
-                        title={`${structure.hint} (tecla ${index + 2})`}
+                        title={`${structure.hint}${TOOL_ORDER.includes(structure.type) ? ` (tecla ${TOOL_ORDER.indexOf(structure.type) + 1})` : ''}`}
                         className={cx(
                           'relative flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-colors',
                           active
@@ -3644,14 +4144,16 @@ export const PlanView: React.FC<PlanViewProps> = ({
                             : 'border-hairline bg-sunken hover:border-accent-line hover:bg-accent-soft'
                         )}
                       >
-                        <kbd
-                          className={cx(
-                            'absolute right-1 top-1 rounded border px-1 font-mono text-xs font-bold',
-                            active ? 'border-accent-line bg-surface text-accent-text' : 'border-edge bg-raised text-muted'
-                          )}
-                        >
-                          {index + 2}
-                        </kbd>
+                        {TOOL_ORDER.includes(structure.type) && (
+                          <kbd
+                            className={cx(
+                              'absolute right-1 top-1 rounded border px-1 font-mono text-xs font-bold',
+                              active ? 'border-accent-line bg-surface text-accent-text' : 'border-edge bg-raised text-muted'
+                            )}
+                          >
+                            {TOOL_ORDER.indexOf(structure.type) + 1}
+                          </kbd>
+                        )}
                         <svg viewBox="-20 -20 40 40" className="h-9 w-9 text-strong" aria-hidden="true">
                           <g stroke="currentColor">{structureIcon(structure.type)}</g>
                         </svg>
@@ -3662,8 +4164,26 @@ export const PlanView: React.FC<PlanViewProps> = ({
                     );
                   })}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setTool('habitacion')}
+                  aria-pressed={tool === 'habitacion'}
+                  title={`${toolHint('habitacion')} (tecla R)`}
+                  className={cx(
+                    'mt-2 flex w-full items-center justify-center gap-2 rounded-xl border px-2 py-2 text-xs transition-colors',
+                    tool === 'habitacion'
+                      ? 'border-accent-line bg-accent-soft font-bold text-strong'
+                      : 'border-hairline bg-sunken font-semibold text-soft hover:border-accent-line hover:bg-accent-soft'
+                  )}
+                >
+                  <svg viewBox="-20 -20 40 40" className="h-6 w-6 text-strong" aria-hidden="true">
+                    <rect x={-13} y={-10} width={26} height={20} fill="none" stroke="currentColor" strokeWidth={4} />
+                  </svg>
+                  Habitación (4 paredes)
+                  <kbd className="rounded border border-edge bg-raised px-1 font-mono text-xs font-bold text-muted">R</kbd>
+                </button>
                 <p className="mt-2 text-xs leading-snug text-muted">
-                  {tool === 'select' ? 'Elegí Pared para empezar la planta.' : toolHint(tool)}
+                  {tool === 'select' ? 'Elegí Pared para empezar la planta, o Habitación para dibujar 4 paredes de una vez.' : toolHint(tool)}
                 </p>
               </div>
 

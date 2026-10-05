@@ -178,23 +178,64 @@ export type PlanSymbolType =
   | 'tablero'
   | 'tablero_seccional'
   | 'medidor'
+  | 'acometida'
   | 'toma'
+  | 'toma_doble'
   | 'toma_especial'
+  | 'toma_trifasica'
   | 'luminaria'
+  | 'luz_pared'
+  | 'spot'
+  | 'fluorescente'
+  | 'emergencia'
+  | 'ventilador'
   | 'llave'
+  | 'llave_doble'
   | 'combinacion'
+  | 'conmutador'
+  | 'pulsador'
+  | 'timbre'
+  | 'sensor'
+  | 'datos'
+  | 'telefono'
+  | 'tv'
+  | 'camara'
   | 'puesta_tierra'
+  | 'jabalina'
   | 'caja_derivacion'
   | 'aire'
   | 'termotanque'
   | 'bomba'
-  | 'motor';
+  | 'motor'
+  | 'cocina'
+  | 'heladera'
+  | 'lavarropas'
+  | 'estufa'
+  | 'camara_frigorifica'
+  | 'unidad_condensadora'
+  | 'evaporador'
+  | 'rack_compresores'
+  | 'exhibidora_vertical'
+  | 'isla_congelados'
+  | 'vitrina_mostrador'
+  | 'cortina_aire'
+  | 'fabrica_hielo'
+  | 'chiller'
+  | 'caja_registradora'
+  | 'balanza'
+  | 'horno_comercial';
 
 /**
  * Elementos de estructura del plano: lo que dibuja la planta del inmueble.
  * Sin paredes y aberturas, los símbolos flotan y no hay forma de ubicarse.
  */
-export type PlanStructureType = 'pared' | 'puerta' | 'ventana' | 'abertura';
+export type PlanStructureType =
+  | 'pared'
+  | 'puerta'
+  | 'puerta_doble'
+  | 'puerta_corrediza'
+  | 'ventana'
+  | 'abertura';
 
 /**
  * Anotaciones del plano: lo que se agrega para que el plano se entienda y se
@@ -245,11 +286,17 @@ export interface PlanElement {
   wallId?: string;
   /** Lado hacia el que abre la puerta. */
   hand?: 'izquierda' | 'derecha';
+  /**
+   * Extremo del hueco donde está la bisagra (puerta) o el panel fijo (corrediza).
+   * Con `hand` (el lado de la pared hacia el que abre) permite las cuatro
+   * posiciones de una puerta: es el espejo de izquierda a derecha.
+   */
+  hinge?: 'izquierda' | 'derecha';
   /** Giro en grados (0, 90, 180 o 270 para los símbolos; el de la pared para las aberturas). */
   rotation?: number;
   /** Corrimiento de la línea de cota respecto de la medida, en unidades. */
   offset?: number;
-  /** Alto de la letra, en unidades (solo texto). */
+  /** Alto de la letra (texto) o tamaño del símbolo (plantilla eléctrica), en unidades. */
   size?: number;
   /** Acometida a la que pertenece. */
   supplyId?: string;
@@ -259,6 +306,15 @@ export interface PlanElement {
   loadId?: string;
   notes?: string;
 }
+
+/**
+ * Representación de las paredes, como en un plano técnico:
+ *  - `relleno`: macizas (negro).
+ *  - `contorno`: solo las líneas de los dos lados, sin relleno.
+ *  - `hachurado`: contorno con rayado a 45° adentro.
+ * Las esquinas se resuelven como la unión de las paredes: sin líneas de más.
+ */
+export type PlanWallStyle = 'relleno' | 'contorno' | 'hachurado';
 
 /** Un plano del inmueble: una planta, un sector o una acometida. */
 export interface ClientPlan {
@@ -281,6 +337,8 @@ export interface ClientPlan {
   metersPerUnit?: number;
   /** Opacidad del fondo, para que el dibujo no se pierda sobre una foto. */
   backgroundOpacity?: number;
+  /** Cómo se dibujan las paredes: macizas, solo contorno o con hachurado. */
+  wallStyle?: PlanWallStyle;
   elements: PlanElement[];
   notes?: string;
   createdAt: string;
