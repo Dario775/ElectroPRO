@@ -21,8 +21,9 @@ import {
   GitBranch,
 } from 'lucide-react';
 import { ClientRecord, ElectricalPanel, ApplianceLoad, PanelMeasurements, PanelType, ServiceSupply } from '../types/electrical';
-import { describeSupply, getSupplies } from '../utils/supplies';
-import { WIRE_GAUGES } from '../utils/electricalMath';
+import { describeSupply, getSupplies, supplyOfPanel } from '../utils/supplies';
+import { cableOptions } from '../utils/aea';
+import { calculateDemand, calculatePhaseBalance } from '../utils/electricalMath';
 import { Button } from './ui/Button';
 import { Badge, Callout, SectionHeader } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
@@ -77,7 +78,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       hasIsolatedNeutralBar: true,
       totalDinModules: 18,
       usedDinModules: 10,
-      feederGauge: '8 AWG',
+      feederGauge: '10 mm²',
       feederMaterial: 'copper',
       feederLengthMeters: 6,
       physicalCondition: 'bueno',
@@ -119,35 +120,13 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
 
       const totalWatts = assignedLoads.reduce((acc, l) => acc + l.powerWatts * l.quantity, 0);
 
-      // Current calculations
-      let maxPhaseAmps = 0;
-      let phaseL1Amps = 0;
-      let phaseL2Amps = 0;
-      let phaseL3Amps = 0;
-
-      assignedLoads.forEach((load) => {
-        const nominalV = load.voltage || client.nominalVoltage || 120;
-        const pf = load.powerFactor || 0.9;
-        const totalW = load.powerWatts * load.quantity;
-        const amps = totalW / (nominalV * pf);
-
-        if (load.assignedPhase === 'L1') phaseL1Amps += amps;
-        else if (load.assignedPhase === 'L2') phaseL2Amps += amps;
-        else if (load.assignedPhase === 'L3') phaseL3Amps += amps;
-        else if (load.assignedPhase === 'L1-L2') {
-          phaseL1Amps += amps;
-          phaseL2Amps += amps;
-        } else if (load.assignedPhase === '3F') {
-          const threePhaseAmps = totalW / (Math.sqrt(3) * (client.lineVoltage || 220) * pf);
-          phaseL1Amps += threePhaseAmps;
-          phaseL2Amps += threePhaseAmps;
-          phaseL3Amps += threePhaseAmps;
-        } else {
-          phaseL1Amps += amps;
-        }
-      });
-
-      maxPhaseAmps = Math.max(phaseL1Amps, phaseL2Amps, phaseL3Amps);
+      // Corrientes por fase con el mismo motor que el balance, y la demanda con simultaneidad:
+      // comparar todo encendido a la vez con la térmica marca sobrecargas que no existen.
+      const supply = supplyOfPanel(client, panel);
+      const summary = calculatePhaseBalance(assignedLoads, supply.serviceType, supply.nominalVoltage, supply.lineVoltage);
+      const demand = calculateDemand(assignedLoads, summary, client.simultaneityFactor);
+      const { phaseL1Amps, phaseL2Amps, phaseL3Amps } = summary;
+      const maxPhaseAmps = demand.demandMaxAmps;
 
       const capacityUtilization = panel.mainBreakerAmps > 0
         ? Math.round((maxPhaseAmps / panel.mainBreakerAmps) * 100)
@@ -282,7 +261,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
         hasIsolatedNeutralBar: true,
         totalDinModules: 12,
         usedDinModules: 6,
-        feederGauge: '10 AWG',
+        feederGauge: '6 mm²',
         feederMaterial: 'copper',
         feederLengthMeters: 12,
         physicalCondition: 'bueno',
@@ -1241,12 +1220,9 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <SelectField
                   label="Calibre del alimentador"
-                  value={editingPanel.feederGauge || '8 AWG'}
+                  value={editingPanel.feederGauge || '10 mm²'}
                   onChange={(value) => updatePanelField({ feederGauge: value })}
-                  options={WIRE_GAUGES.map((gauge) => ({
-                    value: gauge.awg,
-                    label: `${gauge.awg} · ${gauge.mm2} mm² · hasta ${gauge.ampacity75C} A`,
-                  }))}
+                  options={cableOptions(editingPanel.feederGauge)}
                   help="Es el cable que llega al tablero. Tiene que aguantar más corriente que la térmica de cabecera."
                 />
                 <NumberField

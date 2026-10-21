@@ -1,5 +1,5 @@
-import { ClientRecord, FieldMeasurements, DiagnosticResult, DiagnosticActionItem } from '../types/electrical';
-import { WIRE_GAUGES } from './electricalMath';
+import type { ClientRecord, FieldMeasurements, DiagnosticResult, DiagnosticActionItem } from '../types/electrical';
+import { cableAmpacity, findCable } from './aea';
 
 export const DEFAULT_MEASUREMENTS: FieldMeasurements = {
   vL1N: 118,
@@ -19,7 +19,7 @@ export const DEFAULT_MEASUREMENTS: FieldMeasurements = {
   panelThermalSigns: false,
   conductorCondition: 'regular',
   installationAgeYears: 18,
-  mainFeederCaliber: '8 AWG',
+  mainFeederCaliber: '10 mm²',
   farthestOutletVoltage: 112,
 };
 
@@ -131,8 +131,9 @@ export function analyzeInstallation(
   }
 
   // 3. MAIN BREAKER & FEEDER SIZING MISMATCH (CRITICAL FIRE RISK)
-  const wireData = WIRE_GAUGES.find((w) => w.awg === measurements.mainFeederCaliber);
-  const wireAmpacity = wireData ? wireData.ampacity75C : 50;
+  // Corriente admisible del alimentador según la AEA (3 conductores cargados en trifásico)
+  const wireData = findCable(measurements.mainFeederCaliber);
+  const wireAmpacity = wireData ? Math.floor(cableAmpacity(wireData, isThreePhase ? 3 : 2, 'copper')) : 50;
   let feederOverloaded = false;
 
   if (client.mainBreakerAmps > wireAmpacity) {
@@ -265,7 +266,7 @@ export function analyzeInstallation(
     priority: 'preventiva',
     category: 'Normativa',
     title: 'Mantenimiento Preventivo: Torquímetro en bornes, peinado y rotulado de circuitos',
-    description: 'Apretar todas las conexiones de interruptores termomagnéticos y barras colectoras al par especificado por el fabricante (evita falsos contactos futuros por vibración de 60Hz). Actualizar el directorio de circuitos en la tapa del tablero.',
+    description: 'Apretar todas las conexiones de interruptores termomagnéticos y barras colectoras al par especificado por el fabricante (evita falsos contactos futuros por la vibración de 50 Hz). Actualizar el directorio de circuitos en la tapa del tablero.',
     recommendedMaterial: 'Rotuladora industrial, precintos plásticos y spray dieléctrico para contactos',
     estimatedHours: 1.5,
   });

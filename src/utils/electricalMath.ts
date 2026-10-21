@@ -1,4 +1,37 @@
-import { ApplianceLoad, PhaseBalanceSummary, PhaseAssignment, SupportedCurrency } from '../types/electrical';
+import type { ApplianceLoad, PhaseBalanceSummary, PhaseAssignment, PhaseType, SupportedCurrency } from '../types/electrical';
+import {
+  CABLE_SECTIONS,
+  IEC_BREAKERS,
+  MIN_SECTION_MM2,
+  cableAmpacity,
+  cablesFor,
+  clampSimultaneity,
+  findCable,
+  groupingFactor,
+  simultaneousDemandWatts,
+  temperatureFactor,
+  type CableSection,
+  type ConductorMaterial,
+  type LoadedConductors,
+} from './aea';
+
+/**
+ * Tensión con la que trabaja un circuito: los monofásicos van entre fase y neutro;
+ * los trifásicos y los conectados entre dos fases, a la tensión entre fases.
+ */
+export function circuitVoltage(phase: PhaseType, nominalVoltage: number, lineVoltage: number): number {
+  if (phase === '1F') return nominalVoltage || 220;
+  return lineVoltage || 380;
+}
+
+/**
+ * Un bifásico es de "fase partida" (120/240 V, fases a 180°) cuando la tensión entre fases
+ * es el doble de la de fase. En Argentina el bifásico son dos fases de una red de
+ * 380/220 V, a 120° entre sí (380 / 220 ≈ √3).
+ */
+export function isSplitPhase(nominalVoltage: number, lineVoltage: number): boolean {
+  return nominalVoltage > 0 && lineVoltage / nominalVoltage > 1.9;
+}
 
 // Conversions
 export function unitToWatts(power: number, unit: 'W' | 'kW' | 'HP' | 'VA', powerFactor = 1): number {
@@ -148,6 +181,12 @@ export function calculatePhaseBalance(
   let l2Amps = 0;
   let l3Amps = 0;
 
+  // Corrientes de las cargas conectadas entre fase y neutro: son las únicas que vuelven por
+  // el neutro. Las cargas entre fases y las trifásicas no lo cargan.
+  let n1Amps = 0;
+  let n2Amps = 0;
+  let n3Amps = 0;
+
   let totalWatts = 0;
   let totalApparentVA = 0;
   let totalReactiveVAR = 0;
@@ -173,6 +212,7 @@ export function calculatePhaseBalance(
       l1Watts += itemWatts;
       const amps = calculateCurrent(itemWatts, item.voltage || nominalVoltage, item.powerFactor, '1F');
       l1Amps += amps;
+      n1Amps += amps;
     } else if (serviceType === 'Bifásico (2F+N)') {
       // 2 Phases (L1, L2)
       if (item.systemPhase === '2F' || item.assignedPhase === 'L1-L2') {
@@ -188,9 +228,11 @@ export function calculatePhaseBalance(
         if (targetPhase === 'L2') {
           l2Watts += itemWatts;
           l2Amps += amps;
+          n2Amps += amps;
         } else {
           l1Watts += itemWatts;
           l1Amps += amps;
+          n1Amps += amps;
         }
       }
     } else {
@@ -232,13 +274,16 @@ export function calculatePhaseBalance(
         if (item.assignedPhase === 'L2') {
           l2Watts += itemWatts;
           l2Amps += amps;
+          n2Amps += amps;
         } else if (item.assignedPhase === 'L3') {
           l3Watts += itemWatts;
           l3Amps += amps;
+          n3Amps += amps;
         } else {
           // Default L1
           l1Watts += itemWatts;
           l1Amps += amps;
+          n1Amps += amps;
         }
       }
     }
@@ -247,20 +292,20 @@ export function calculatePhaseBalance(
   // Calculate Neutral current using phasor addition
   let neutralAmps = 0;
   if (serviceType === 'Monofásico (1F+N)') {
-    neutralAmps = l1Amps;
-  } else if (serviceType === 'Bifásico (2F+N)') {
-    // In split-phase 120/240V, L1 and L2 are 180 degrees apart: I_N = |I_L1 - I_L2|
-    neutralAmps = Math.abs(l1Amps - l2Amps);
+    neutralAmps = n1Amps;
+  } else if (serviceType === 'Bifásico (2F+N)' && isSplitPhase(nominalVoltage, lineVoltage)) {
+    // Fase partida 120/240 V: L1 y L2 a 180°, I_N = |I_L1 - I_L2|
+    neutralAmps = Math.abs(n1Amps - n2Amps);
   } else {
-    // 3-phase 120° apart:
+    // Fases a 120° (trifásico, o bifásico de una red 380/220 V, con I3 = 0):
     // I_N = sqrt( I1^2 + I2^2 + I3^2 - I1*I2 - I2*I3 - I3*I1 )
     const inSq =
-      l1Amps * l1Amps +
-      l2Amps * l2Amps +
-      l3Amps * l3Amps -
-      l1Amps * l2Amps -
-      l2Amps * l3Amps -
-      l3Amps * l1Amps;
+      n1Amps * n1Amps +
+      n2Amps * n2Amps +
+      n3Amps * n3Amps -
+      n1Amps * n2Amps -
+      n2Amps * n3Amps -
+      n3Amps * n1Amps;
     neutralAmps = inSq > 0 ? Math.sqrt(inSq) : 0;
   }
 
@@ -340,6 +385,37 @@ export function calculatePhaseBalance(
     totalDailyKwh: parseFloat(totalDailyKwh.toFixed(2)),
     totalMonthlyKwh: parseFloat(totalMonthlyKwh.toFixed(1)),
     totalMonthlyCost: parseFloat(totalMonthlyCost.toFixed(2)),
+  };
+}
+
+export interface DemandSummary {
+  /** Factor de simultaneidad aplicado (0 a 1). */
+  factor: number;
+  connectedWatts: number;
+  demandWatts: number;
+  /** Corriente de la fase más cargada afectada por la simultaneidad. */
+  demandMaxAmps: number;
+}
+
+/**
+ * Demanda máxima simultánea: lo que realmente se le pide a la térmica general. Comparar la
+ * suma de todos los artefactos encendidos a la vez marca sobrecargas que no existen.
+ */
+export function calculateDemand(
+  loads: ApplianceLoad[],
+  summary: PhaseBalanceSummary,
+  simultaneity?: number
+): DemandSummary {
+  const factor = clampSimultaneity(simultaneity);
+  const watts = loads.map((l) => l.powerWatts * l.quantity);
+  const connectedWatts = watts.reduce((acc, w) => acc + w, 0);
+  const demandWatts = simultaneousDemandWatts(watts, factor);
+  const ratio = connectedWatts > 0 ? demandWatts / connectedWatts : 0;
+  return {
+    factor,
+    connectedWatts,
+    demandWatts,
+    demandMaxAmps: parseFloat((summary.maxAmps * ratio).toFixed(2)),
   };
 }
 
@@ -508,34 +584,11 @@ export function autoBalanceLoads(
 // TECHNICAL CALCULATOR UTILITIES
 // ==========================================
 
-export interface WireGauge {
-  awg: string;
-  mm2: number;
-  ampacity60C: number; // TW / UF
-  ampacity75C: number; // THW
-  ampacity90C: number; // THHN
-  resistanceOhmKmCopper: number;
-  resistanceOhmKmAlum: number;
-}
+/** Secciones normalizadas en mm² (AEA 90364-7-771). */
+export type WireGauge = CableSection;
 
-export const WIRE_GAUGES: WireGauge[] = [
-  { awg: '14 AWG', mm2: 2.08, ampacity60C: 15, ampacity75C: 20, ampacity90C: 25, resistanceOhmKmCopper: 8.28, resistanceOhmKmAlum: 13.6 },
-  { awg: '12 AWG', mm2: 3.31, ampacity60C: 20, ampacity75C: 25, ampacity90C: 30, resistanceOhmKmCopper: 5.21, resistanceOhmKmAlum: 8.56 },
-  { awg: '10 AWG', mm2: 5.26, ampacity60C: 30, ampacity75C: 35, ampacity90C: 40, resistanceOhmKmCopper: 3.28, resistanceOhmKmAlum: 5.38 },
-  { awg: '8 AWG', mm2: 8.37, ampacity60C: 40, ampacity75C: 50, ampacity90C: 55, resistanceOhmKmCopper: 2.06, resistanceOhmKmAlum: 3.38 },
-  { awg: '6 AWG', mm2: 13.3, ampacity60C: 55, ampacity75C: 65, ampacity90C: 75, resistanceOhmKmCopper: 1.30, resistanceOhmKmAlum: 2.13 },
-  { awg: '4 AWG', mm2: 21.15, ampacity60C: 70, ampacity75C: 85, ampacity90C: 95, resistanceOhmKmCopper: 0.815, resistanceOhmKmAlum: 1.34 },
-  { awg: '2 AWG', mm2: 33.6, ampacity60C: 95, ampacity75C: 115, ampacity90C: 130, resistanceOhmKmCopper: 0.512, resistanceOhmKmAlum: 0.84 },
-  { awg: '1/0 AWG', mm2: 53.5, ampacity60C: 125, ampacity75C: 150, ampacity90C: 170, resistanceOhmKmCopper: 0.323, resistanceOhmKmAlum: 0.53 },
-  { awg: '2/0 AWG', mm2: 67.4, ampacity60C: 145, ampacity75C: 175, ampacity90C: 195, resistanceOhmKmCopper: 0.256, resistanceOhmKmAlum: 0.42 },
-  { awg: '3/0 AWG', mm2: 85.0, ampacity60C: 165, ampacity75C: 200, ampacity90C: 225, resistanceOhmKmCopper: 0.203, resistanceOhmKmAlum: 0.333 },
-  { awg: '4/0 AWG', mm2: 107.2, ampacity60C: 195, ampacity75C: 230, ampacity90C: 260, resistanceOhmKmCopper: 0.161, resistanceOhmKmAlum: 0.264 },
-  { awg: '250 kcmil', mm2: 126.7, ampacity60C: 215, ampacity75C: 255, ampacity90C: 290, resistanceOhmKmCopper: 0.136, resistanceOhmKmAlum: 0.223 },
-  { awg: '350 kcmil', mm2: 177.3, ampacity60C: 260, ampacity75C: 310, ampacity90C: 350, resistanceOhmKmCopper: 0.097, resistanceOhmKmAlum: 0.160 },
-  { awg: '500 kcmil', mm2: 253.4, ampacity60C: 320, ampacity75C: 380, ampacity90C: 430, resistanceOhmKmCopper: 0.068, resistanceOhmKmAlum: 0.112 },
-];
-
-export const STANDARD_BREAKERS = [10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 100, 125, 150, 175, 200, 225, 250, 300, 400];
+/** Térmicas normalizadas de la serie IEC (las que se consiguen en Argentina). */
+export const STANDARD_BREAKERS = IEC_BREAKERS;
 
 /**
  * Voltage drop calculation
@@ -544,8 +597,8 @@ export function calculateVoltageDrop(params: {
   currentAmps: number;
   lengthMeters: number;
   voltage: number;
-  wireAwg: string;
-  material: 'copper' | 'aluminum';
+  cableLabel: string;
+  material: ConductorMaterial;
   phase: '1F' | '2F' | '3F';
   powerFactor: number;
 }): {
@@ -565,8 +618,8 @@ export function calculateVoltageDrop(params: {
   kFactor: number;
   resistivityRho: number;
 } {
-  const { currentAmps, lengthMeters, voltage, wireAwg, material, phase, powerFactor } = params;
-  const wire = WIRE_GAUGES.find((w) => w.awg === wireAwg) || WIRE_GAUGES[0];
+  const { currentAmps, lengthMeters, voltage, cableLabel, material, phase, powerFactor } = params;
+  const wire = findCable(cableLabel) || CABLE_SECTIONS[0];
   const rPerKm = material === 'copper' ? wire.resistanceOhmKmCopper : wire.resistanceOhmKmAlum;
   const rOhm = (rPerKm * lengthMeters) / 1000;
 
@@ -600,15 +653,16 @@ export function calculateVoltageDrop(params: {
   const vDropAl = kFactor * currentAmps * zAl;
   const pDropAl = (vDropAl / Math.max(1, voltage)) * 100;
 
+  // AEA 771: hasta 3 % en circuitos de iluminación y hasta 5 % en fuerza motriz
   let status: 'excelente' | 'precaucion' | 'excedido' = 'excelente';
-  let statusText = 'Excelente (<= 2%): Pérdida mínima de tensión';
+  let statusText = 'Bien (≤ 3 %): cumple la AEA también para iluminación';
 
   if (dropPercent > 5) {
     status = 'excedido';
-    statusText = 'Crítico (> 5%): Excede límite normativo NEC/IEC';
+    statusText = 'Excedido (> 5 %): supera el máximo de la AEA incluso para fuerza motriz';
   } else if (dropPercent > 3) {
     status = 'precaucion';
-    statusText = 'Precaución (3% a 5%): Al límite para circuitos derivados';
+    statusText = 'Precaución (3 % a 5 %): la AEA lo admite solo en circuitos de fuerza motriz';
   }
 
   const resistivityRho = material === 'copper' ? 0.01724 : 0.02826;
@@ -632,75 +686,60 @@ export function calculateVoltageDrop(params: {
   };
 }
 
+export interface CircuitSizing {
+  /** Corriente de proyecto (con la reserva del 25 % si se pidió). */
+  designAmps: number;
+  recommendedBreaker: number;
+  conductor: CableSection;
+  /** Corriente admisible del cable ya corregida por temperatura y agrupamiento (Iz). */
+  wireAmpacityDerated: number;
+  deratingFactor: number;
+  /** false cuando ni la sección más grande de la tabla alcanza (cables en bandeja o en paralelo). */
+  fitsTable: boolean;
+}
+
 /**
- * Breaker & Cable Sizing with continuous load factor (125%)
+ * Térmica y cable según la AEA 771: IB ≤ In ≤ Iz. Se elige la térmica IEC inmediata superior a
+ * la corriente de proyecto y el cable más chico cuya corriente admisible corregida la soporta.
+ * Con térmicas IEC 60898 la condición I2 ≤ 1,45 Iz se cumple sola.
  */
 export function sizeBreakerAndCable(params: {
   nominalAmps: number;
-  isContinuousLoad: boolean; // Continuous load requires 125% breaker
+  isContinuousLoad: boolean; // suma un 25 % de reserva a la corriente
   ambientTempC: number;
-  conductorsInRaceway: number;
-  insulationType: '60C' | '75C' | '90C';
-  material: 'copper' | 'aluminum';
-}): {
-  designAmps: number;
-  recommendedBreaker: number;
-  minimumConductorAwg: string;
-  wireAmpacityDerated: number;
-} {
-  const { nominalAmps, isContinuousLoad, ambientTempC, conductorsInRaceway, insulationType, material } = params;
+  circuitsInRaceway: number;
+  loadedConductors: LoadedConductors;
+  material: ConductorMaterial;
+  minSectionMm2?: number;
+}): CircuitSizing {
+  const {
+    nominalAmps,
+    isContinuousLoad,
+    ambientTempC,
+    circuitsInRaceway,
+    loadedConductors,
+    material,
+    minSectionMm2 = MIN_SECTION_MM2.IUG,
+  } = params;
 
-  // Continuous factor
   const designAmps = isContinuousLoad ? nominalAmps * 1.25 : nominalAmps;
+  const largestBreaker = IEC_BREAKERS[IEC_BREAKERS.length - 1];
+  const breaker = IEC_BREAKERS.find((b) => b >= designAmps) ?? largestBreaker;
 
-  // Find standard breaker >= designAmps
-  const breaker = STANDARD_BREAKERS.find((b) => b >= designAmps) || 400;
+  const deratingFactor = temperatureFactor(ambientTempC) * groupingFactor(circuitsInRaceway);
+  const izOf = (cable: CableSection) => cableAmpacity(cable, loadedConductors, material) * deratingFactor;
 
-  // Derating factors
-  let tempFactor = 1.0;
-  if (ambientTempC > 30) {
-    if (ambientTempC <= 35) tempFactor = 0.94;
-    else if (ambientTempC <= 40) tempFactor = 0.88;
-    else if (ambientTempC <= 45) tempFactor = 0.82;
-    else tempFactor = 0.75;
-  }
-
-  let racewayFactor = 1.0;
-  if (conductorsInRaceway >= 4 && conductorsInRaceway <= 6) racewayFactor = 0.8;
-  else if (conductorsInRaceway >= 7 && conductorsInRaceway <= 9) racewayFactor = 0.7;
-  else if (conductorsInRaceway > 9) racewayFactor = 0.5;
-
-  const totalDerate = tempFactor * racewayFactor;
-
-  // Find conductor whose derated ampacity >= breaker
-  let selectedWire = WIRE_GAUGES[WIRE_GAUGES.length - 1];
-  for (const wire of WIRE_GAUGES) {
-    const rawAmpacity =
-      insulationType === '60C'
-        ? wire.ampacity60C
-        : insulationType === '75C'
-        ? wire.ampacity75C
-        : wire.ampacity90C;
-
-    const derated = rawAmpacity * totalDerate * (material === 'aluminum' ? 0.8 : 1.0);
-    if (derated >= breaker) {
-      selectedWire = wire;
-      break;
-    }
-  }
-
-  const rawAmp =
-    insulationType === '60C'
-      ? selectedWire.ampacity60C
-      : insulationType === '75C'
-      ? selectedWire.ampacity75C
-      : selectedWire.ampacity90C;
+  const options = cablesFor(material).filter((c) => c.mm2 >= minSectionMm2);
+  const fit = options.find((c) => izOf(c) >= breaker);
+  const conductor = fit ?? options[options.length - 1];
 
   return {
     designAmps: parseFloat(designAmps.toFixed(2)),
     recommendedBreaker: breaker,
-    minimumConductorAwg: selectedWire.awg,
-    wireAmpacityDerated: parseFloat((rawAmp * totalDerate * (material === 'aluminum' ? 0.8 : 1.0)).toFixed(1)),
+    conductor,
+    wireAmpacityDerated: parseFloat(izOf(conductor).toFixed(1)),
+    deratingFactor: parseFloat(deratingFactor.toFixed(2)),
+    fitsTable: fit !== undefined && designAmps <= largestBreaker,
   };
 }
 
@@ -722,7 +761,8 @@ export function calculateCapacitorBank(params: {
   currentReductionPercent: number;
   savedKva: number;
 } {
-  const { activePowerKw, currentPF, targetPF, voltage, phase, frequencyHz = 60 } = params;
+  // La red argentina es de 50 Hz
+  const { activePowerKw, currentPF, targetPF, voltage, phase, frequencyHz = 50 } = params;
 
   const pKw = Math.max(0.1, activePowerKw);
   const pf1 = Math.max(0.1, Math.min(0.99, currentPF));
@@ -773,14 +813,15 @@ export function calculateCapacitorBank(params: {
 }
 
 /**
- * Conductor section sizing recommendation (AWG / mm²) based on amperage, distance and allowable voltage drop
+ * Conductor section sizing recommendation (mm², AEA) based on amperage, distance and allowable voltage drop
  */
 export interface ConductorCandidate {
   wire: WireGauge;
   dropVolts: number;
   dropPercent: number;
   finalVoltage: number;
-  ampacity75C: number;
+  /** Corriente admisible AEA corregida por temperatura. */
+  ampacity: number;
   isDropCompliant: boolean;
   isAmpacityCompliant: boolean;
   isRecommended: boolean;
@@ -804,7 +845,7 @@ export function recommendConductorGauge(params: {
   lengthMeters: number;
   voltage: number;
   maxDropPercent: number;
-  material: 'copper' | 'aluminum';
+  material: ConductorMaterial;
   phase: '1F' | '2F' | '3F';
   powerFactor: number;
   temperatureC?: number;
@@ -817,7 +858,7 @@ export function recommendConductorGauge(params: {
     material,
     phase,
     powerFactor,
-    temperatureC = 30,
+    temperatureC = 40,
   } = params;
 
   const pf = Math.max(0.1, Math.min(1.0, powerFactor || 0.9));
@@ -838,29 +879,22 @@ export function recommendConductorGauge(params: {
       (2 * rho * lengthMeters * currentAmps * pf) / Math.max(0.01, maxDropVolts);
   }
 
-  // Temperature derating factor
-  let tempDerate = 1.0;
-  if (temperatureC > 30) {
-    if (temperatureC <= 35) tempDerate = 0.94;
-    else if (temperatureC <= 40) tempDerate = 0.88;
-    else if (temperatureC <= 45) tempDerate = 0.82;
-    else tempDerate = 0.75;
-  }
+  const tempDerate = temperatureFactor(temperatureC);
+  const loaded: LoadedConductors = phase === '3F' ? 3 : 2;
 
-  // Evaluate every wire in the standardized AWG catalog
-  const candidates: ConductorCandidate[] = WIRE_GAUGES.map((wire) => {
+  // Evaluate every normalized section (mm², AEA)
+  const candidates: ConductorCandidate[] = cablesFor(material).map((wire) => {
     const vd = calculateVoltageDrop({
       currentAmps,
       lengthMeters,
       voltage,
-      wireAwg: wire.awg,
+      cableLabel: wire.label,
       material,
       phase,
       powerFactor: pf,
     });
 
-    const baseAmpacity = material === 'aluminum' ? wire.ampacity75C * 0.8 : wire.ampacity75C;
-    const effectiveAmpacity = Math.round(baseAmpacity * tempDerate);
+    const effectiveAmpacity = Math.round(cableAmpacity(wire, loaded, material) * tempDerate);
 
     const isDropCompliant = vd.dropPercent <= maxDropPercent;
     const isAmpacityCompliant = effectiveAmpacity >= currentAmps;
@@ -879,7 +913,7 @@ export function recommendConductorGauge(params: {
       dropVolts: vd.dropVolts,
       dropPercent: vd.dropPercent,
       finalVoltage: vd.finalVoltage,
-      ampacity75C: effectiveAmpacity,
+      ampacity: effectiveAmpacity,
       isDropCompliant,
       isAmpacityCompliant,
       isRecommended: false,
@@ -903,7 +937,7 @@ export function recommendConductorGauge(params: {
     sizingCriterion = 'ampacidad_termica';
   }
 
-  const ampacityMarginAmps = chosen.ampacity75C - currentAmps;
+  const ampacityMarginAmps = chosen.ampacity - currentAmps;
 
   return {
     recommendedWire: chosen.wire,

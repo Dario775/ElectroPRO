@@ -15,16 +15,18 @@ import {
   Check,
 } from 'lucide-react';
 import {
-  WIRE_GAUGES,
-  STANDARD_BREAKERS,
   calculateVoltageDrop,
   sizeBreakerAndCable,
   calculateCapacitorBank,
   recommendConductorGauge,
   unitToWatts,
   calculateCurrent,
+  calculatePhaseBalance,
+  calculateDemand,
+  circuitVoltage,
 } from '../utils/electricalMath';
-import { ClientRecord } from '../types/electrical';
+import { CABLE_SECTIONS, MIN_SECTION_MM2, type CircuitKind, type LoadedConductors } from '../utils/aea';
+import type { ClientRecord, PhaseType } from '../types/electrical';
 import { SectionHeader } from './ui/Card';
 
 interface CalculatorsViewProps {
@@ -34,29 +36,40 @@ interface CalculatorsViewProps {
 export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
   const [activeTab, setActiveTab] = useState<'wiresizing' | 'vdrop' | 'breaker' | 'pf' | 'ohm'>('wiresizing');
 
+  const clientPhase: PhaseType =
+    client?.serviceType === 'Trifásico (3F+N)' ? '3F' : client?.serviceType === 'Bifásico (2F+N)' ? '2F' : '1F';
+  /** Tensión que corresponde a cada tipo de circuito: 220 V entre fase y neutro, 380 V entre fases. */
+  const voltageFor = (phase: PhaseType) => circuitVoltage(phase, client?.nominalVoltage || 220, client?.lineVoltage || 380);
+
+  // Corriente de la fase más cargada del cliente, afectada por la simultaneidad
+  const clientDemandAmps = (() => {
+    if (!client || client.loads.length === 0) return 0;
+    const summary = calculatePhaseBalance(
+      client.loads,
+      client.serviceType,
+      client.nominalVoltage,
+      client.lineVoltage,
+      client.kwhCost,
+      client.fixedCharge
+    );
+    return calculateDemand(client.loads, summary, client.simultaneityFactor).demandMaxAmps;
+  })();
+
   // --- 0. WIRE SIZING / SECTION RECOMMENDER STATE ---
-  // Calculate default amperage based on client loads if available
-  const defaultClientAmps = client && client.loads.length > 0
-    ? Math.max(
-        15,
-        Math.round(
-          client.loads.reduce((acc, l) => acc + (l.powerWatts * l.quantity), 0) /
-            (client.nominalVoltage || 120) *
-            0.7
-        )
-      )
-    : 25;
+  const defaultClientAmps = clientDemandAmps > 0 ? Math.max(5, Math.round(clientDemandAmps)) : 25;
 
   const [wsCurrent, setWsCurrent] = useState<number>(defaultClientAmps);
   const [wsLength, setWsLength] = useState<number>(35); // 35 meters
-  const [wsVoltage, setWsVoltage] = useState<number>(client?.nominalVoltage || 220);
+  const [wsVoltage, setWsVoltage] = useState<number>(voltageFor(clientPhase));
   const [wsMaxDropPercent, setWsMaxDropPercent] = useState<number>(3.0); // 3% branch standard
   const [wsMaterial, setWsMaterial] = useState<'copper' | 'aluminum'>('copper');
-  const [wsPhase, setWsPhase] = useState<'1F' | '2F' | '3F'>(
-    client?.serviceType === 'Trifásico (3F+N)' ? '3F' : client?.serviceType === 'Bifásico (2F+N)' ? '2F' : '1F'
-  );
+  const [wsPhase, setWsPhase] = useState<PhaseType>(clientPhase);
   const [wsPF, setWsPF] = useState<number>(0.90);
-  const [wsTemp, setWsTemp] = useState<number>(30);
+  const [wsTemp, setWsTemp] = useState<number>(40);
+  const changeWsPhase = (phase: PhaseType) => {
+    setWsPhase(phase);
+    setWsVoltage(voltageFor(phase));
+  };
 
   const wsResult = recommendConductorGauge({
     currentAmps: wsCurrent,
@@ -75,8 +88,8 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
   const [vdPowerValue, setVdPowerValue] = useState<number>(4400);
   const [vdPowerUnit, setVdPowerUnit] = useState<'W' | 'kW' | 'HP'>('W');
   const [vdLength, setVdLength] = useState<number>(35);
-  const [vdVoltage, setVdVoltage] = useState<number>(client?.nominalVoltage || 220);
-  const [vdWire, setVdWire] = useState<string>('12 AWG');
+  const [vdVoltage, setVdVoltage] = useState<number>(voltageFor(clientPhase));
+  const [vdWire, setVdWire] = useState<string>('2,5 mm²');
   const [vdMaterial, setVdMaterial] = useState<'copper' | 'aluminum'>('copper');
   const [vdPhase, setVdPhase] = useState<'1F' | '2F' | '3F'>(
     client?.serviceType === 'Trifásico (3F+N)' ? '3F' : client?.serviceType === 'Bifásico (2F+N)' ? '2F' : '1F'
@@ -95,7 +108,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
     currentAmps: effectiveVdCurrent,
     lengthMeters: vdLength,
     voltage: vdVoltage,
-    wireAwg: vdWire,
+    cableLabel: vdWire,
     material: vdMaterial,
     phase: vdPhase,
     powerFactor: vdPF,
@@ -112,28 +125,30 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
 
   // --- 2. BREAKER & CABLE SIZING STATE ---
   const [brCurrent, setBrCurrent] = useState<number>(24);
-  const [brContinuous, setBrContinuous] = useState<boolean>(true);
-  const [brTemp, setBrTemp] = useState<number>(30);
-  const [brConductors, setBrConductors] = useState<number>(3);
-  const [brInsulation, setBrInsulation] = useState<'60C' | '75C' | '90C'>('75C');
+  const [brContinuous, setBrContinuous] = useState<boolean>(false);
+  const [brTemp, setBrTemp] = useState<number>(40);
+  const [brCircuits, setBrCircuits] = useState<number>(1);
+  const [brLoaded, setBrLoaded] = useState<LoadedConductors>(clientPhase === '3F' ? 3 : 2);
+  const [brKind, setBrKind] = useState<CircuitKind>('TUG');
   const [brMaterial, setBrMaterial] = useState<'copper' | 'aluminum'>('copper');
 
   const brResult = sizeBreakerAndCable({
     nominalAmps: brCurrent,
     isContinuousLoad: brContinuous,
     ambientTempC: brTemp,
-    conductorsInRaceway: brConductors,
-    insulationType: brInsulation,
+    circuitsInRaceway: brCircuits,
+    loadedConductors: brLoaded,
     material: brMaterial,
+    minSectionMm2: MIN_SECTION_MM2[brKind],
   });
 
   // --- 3. POWER FACTOR & CAPACITOR STATE ---
   const [pfActiveKw, setPfActiveKw] = useState<number>(15);
   const [pfCurrent, setPfCurrent] = useState<number>(0.75);
   const [pfTarget, setPfTarget] = useState<number>(0.95);
-  const [pfVoltage, setPfVoltage] = useState<number>(220);
+  const [pfVoltage, setPfVoltage] = useState<number>(voltageFor('3F'));
   const [pfPhase, setPfPhase] = useState<'1F' | '3F'>('3F');
-  const [pfFreq, setPfFreq] = useState<number>(60);
+  const [pfFreq, setPfFreq] = useState<number>(50);
 
   const pfResult = calculateCapacitorBank({
     activePowerKw: pfActiveKw,
@@ -211,7 +226,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
           <Layers className="w-5 h-5 flex-shrink-0 text-accent-text" />
           <div>
             <div className="text-xs sm:text-sm font-bold text-strong leading-tight">Sección de Cable</div>
-            <div className="text-xs text-muted">Recomendación AWG/mm²</div>
+            <div className="text-xs text-muted">Sección en mm² (AEA)</div>
           </div>
         </button>
 
@@ -240,8 +255,8 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
         >
           <ShieldCheck className="w-5 h-5 flex-shrink-0" />
           <div>
-            <div className="text-xs sm:text-sm font-bold text-strong leading-tight">Breaker & Cable</div>
-            <div className="text-xs text-muted">Protección y Calibre NEC</div>
+            <div className="text-xs sm:text-sm font-bold text-strong leading-tight">Térmica y cable</div>
+            <div className="text-xs text-muted">Protección y sección (AEA)</div>
           </div>
         </button>
 
@@ -276,7 +291,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
         </button>
       </div>
 
-      {/* --- 0. NUEVA CALCULADORA: SECCIÓN Y CALIBRE DE CABLE (AWG / mm²) RECOMENDADO --- */}
+      {/* --- 0. NUEVA CALCULADORA: SECCIÓN DE CABLE (mm², AEA) RECOMENDADA --- */}
       {activeTab === 'wiresizing' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -287,7 +302,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                   <Layers className="w-5 h-5 text-accent-text" />
                   <div>
                     <h3 className="font-bold text-base text-strong">
-                      Calculadora de Sección y Calibre de Cable (AWG / mm²)
+                      Calculadora de sección de cable (mm²)
                     </h3>
                     <p className="text-xs text-muted">
                       Recomienda el calibre óptimo para evitar caídas de tensión excesivas en base al amperaje y la distancia.
@@ -308,17 +323,8 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                   <button
                     type="button"
                     onClick={() => {
-                      if (client.loads.length > 0) {
-                        const totalWatts = client.loads.reduce((acc, l) => acc + l.powerWatts * l.quantity, 0);
-                        const calcAmps = Math.round(
-                          totalWatts / (client.nominalVoltage || 120) * (client.serviceType === 'Trifásico (3F+N)' ? 0.6 : 0.8)
-                        );
-                        setWsCurrent(Math.max(5, calcAmps));
-                      }
-                      setWsVoltage(client.nominalVoltage || 220);
-                      if (client.serviceType === 'Trifásico (3F+N)') setWsPhase('3F');
-                      else if (client.serviceType === 'Bifásico (2F+N)') setWsPhase('2F');
-                      else setWsPhase('1F');
+                      if (clientDemandAmps > 0) setWsCurrent(Math.max(5, Math.round(clientDemandAmps)));
+                      changeWsPhase(clientPhase);
                     }}
                     className="px-2.5 py-1 rounded-lg bg-accent-soft hover:brightness-110 text-accent-text text-xs font-bold border border-accent-line whitespace-nowrap transition-colors"
                   >
@@ -394,9 +400,9 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                   >
                     <option value={1.5}>1.5% (Alimentador Crítico)</option>
                     <option value={2.0}>2.0% (Alimentador Principal)</option>
-                    <option value={3.0}>3.0% (Circuito Ramal - Norma NEC)</option>
-                    <option value={4.0}>4.0% (Instalaciones Rurales)</option>
-                    <option value={5.0}>5.0% (Límite Máx. Total NEC/IEC)</option>
+                    <option value={3.0}>3 % (Iluminación · máximo AEA)</option>
+                    <option value={4.0}>4 % (Instalaciones Rurales)</option>
+                    <option value={5.0}>5 % (Fuerza motriz · máximo AEA)</option>
                   </select>
                 </div>
 
@@ -405,7 +411,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                   <label className="font-bold text-soft block mb-1">Configuración de Red</label>
                   <select
                     value={wsPhase}
-                    onChange={(e) => setWsPhase(e.target.value as '1F' | '2F' | '3F')}
+                    onChange={(e) => changeWsPhase(e.target.value as PhaseType)}
                     className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                   >
                     <option value="1F">Monofásico (1F + N)</option>
@@ -449,10 +455,10 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                     onChange={(e) => setWsTemp(parseInt(e.target.value) || 30)}
                     className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                   >
-                    <option value={30}>Hasta 30°C (Factor 1.0)</option>
-                    <option value={35}>31°C - 35°C (Factor 0.94)</option>
-                    <option value={40}>36°C - 40°C (Factor 0.88)</option>
-                    <option value={45}>41°C - 45°C (Factor 0.82)</option>
+                    <option value={40}>Hasta 40 °C (tabla AEA, factor 1,00)</option>
+                    <option value={45}>41 °C a 45 °C (factor 0,91)</option>
+                    <option value={50}>46 °C a 50 °C (factor 0,82)</option>
+                    <option value={55}>51 °C a 55 °C (factor 0,70)</option>
                   </select>
                 </div>
 
@@ -493,16 +499,13 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                       Sección Adecuada
                     </span>
                     <span className="px-2 py-0.5 rounded text-xs font-bold bg-accent text-accent-fg">
-                      Cumple Norma NEC
+                      Cumple AEA 90364
                     </span>
                   </div>
 
                   <div className="mt-2 flex items-baseline gap-2">
                     <span className="text-3xl sm:text-4xl font-extrabold font-mono text-strong">
-                      {wsResult.recommendedWire.awg}
-                    </span>
-                    <span className="text-lg font-bold text-accent-text font-mono">
-                      ({wsResult.recommendedWire.mm2} mm²)
+                      {wsResult.recommendedWire.label}
                     </span>
                   </div>
 
@@ -528,9 +531,9 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                   </div>
 
                   <div className="p-2.5 rounded-lg bg-sunken border border-hairline">
-                    <span className="text-xs text-muted block">Ampacidad a 75°C</span>
+                    <span className="text-xs text-muted block">Corriente admisible (AEA)</span>
                     <strong className="text-base text-data-text font-mono">
-                      {wsResult.recommendedWire.ampacity75C} A
+                      {wsResult.candidates.find((c) => c.isRecommended)?.ampacity ?? 0} A
                     </strong>
                     <span className="text-xs text-faint block">
                       Margen: +{wsResult.ampacityMarginAmps} A
@@ -545,13 +548,13 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                     <p className="text-muted text-xs leading-relaxed">
                       ⚡ <strong>Agrandado por distancia ({wsLength} m):</strong> La sección térmica de corriente requería
                       un cable menor, pero debido a la distancia de la línea se aumentó a{' '}
-                      <strong className="text-accent-text">{wsResult.recommendedWire.awg}</strong> para mantener la caída por
+                      <strong className="text-accent-text">{wsResult.recommendedWire.label}</strong> para mantener la caída por
                       debajo del {wsMaxDropPercent}%.
                     </p>
                   ) : (
                     <p className="text-muted text-xs leading-relaxed">
                       🔥 <strong>Determinado por capacidad térmica:</strong> La corriente de carga ({wsCurrent} A) exigió
-                      un calibre mínimo de <strong className="text-accent-text">{wsResult.recommendedWire.awg}</strong>. La
+                      un calibre mínimo de <strong className="text-accent-text">{wsResult.recommendedWire.label}</strong>. La
                       caída de tensión a esta distancia está muy holgada ({wsResult.actualDropPercent}% &le;{' '}
                       {wsMaxDropPercent}%).
                     </p>
@@ -560,7 +563,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
               </div>
 
               <div className="text-xs text-faint border-t border-hairline pt-2 flex items-center justify-between">
-                <span>Norma NEC Art. 210.19(A) e IEC 60364-5-52</span>
+                <span>AEA 90364-7-771 (tabla 771.16.I) e IEC 60364-5-52</span>
                 <span className="font-mono text-muted">{wsMaterial === 'copper' ? 'Cu' : 'Al'} • {wsVoltage}V</span>
               </div>
             </div>
@@ -586,12 +589,11 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-hairline text-muted uppercase text-xs font-bold">
-                    <th className="py-2.5 px-3">Calibre AWG</th>
-                    <th className="py-2.5 px-3 text-right">Sección (mm²)</th>
+                    <th className="py-2.5 px-3">Sección</th>
                     <th className="py-2.5 px-3 text-right">Caída (%)</th>
                     <th className="py-2.5 px-3 text-right">Pérdida (V)</th>
                     <th className="py-2.5 px-3 text-right">Tensión en Carga</th>
-                    <th className="py-2.5 px-3 text-right">Ampacidad (75°C)</th>
+                    <th className="py-2.5 px-3 text-right">Corriente admisible</th>
                     <th className="py-2.5 px-3 text-center">Evaluación Técnica</th>
                   </tr>
                 </thead>
@@ -601,7 +603,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
 
                     return (
                       <tr
-                        key={cand.wire.awg}
+                        key={cand.wire.label}
                         className={`transition-colors ${
                           isOptimal
                             ? 'bg-accent-soft font-bold border-l-2 border-accent'
@@ -609,14 +611,13 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                         }`}
                       >
                         <td className="py-2.5 px-3 font-sans font-bold text-strong">
-                          {cand.wire.awg}
+                          {cand.wire.label}
                           {isOptimal && (
                             <span className="ml-2 px-1.5 py-0.5 rounded text-xs uppercase font-bold bg-accent text-accent-fg">
                               Óptimo
                             </span>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-right text-soft">{cand.wire.mm2} mm²</td>
                         <td
                           className={`py-2.5 px-3 text-right font-bold ${
                             cand.isDropCompliant ? 'text-success-text' : 'text-danger-text'
@@ -631,7 +632,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                             cand.isAmpacityCompliant ? 'text-data-text' : 'text-danger-text'
                           }`}
                         >
-                          {cand.ampacity75C} A
+                          {cand.ampacity} A
                         </td>
                         <td className="py-2.5 px-3 text-center font-sans text-xs">
                           {isOptimal ? (
@@ -671,7 +672,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                   Cálculo del Porcentaje de Caída de Tensión (% ΔV)
                 </h3>
                 <span className="px-2 py-0.5 rounded text-xs font-bold bg-accent-soft text-accent-text border border-accent-line">
-                  NEC Art. 210.19 / IEC 60364
+                  AEA 90364-7-771 / IEC 60364
                 </span>
               </div>
               <p className="text-xs text-muted max-w-2xl">
@@ -684,19 +685,12 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
               <button
                 type="button"
                 onClick={() => {
-                  if (client.loads.length > 0) {
-                    const totalWatts = client.loads.reduce((acc, l) => acc + l.powerWatts * l.quantity, 0);
-                    const kFactor = client.serviceType === 'Trifásico (3F+N)' ? Math.sqrt(3) : 1.0;
-                    const calcAmps = Math.round(
-                      totalWatts / (kFactor * (client.nominalVoltage || 120) * 0.9)
-                    );
+                  if (clientDemandAmps > 0) {
                     setVdLoadType('current');
-                    setVdCurrent(Math.max(5, calcAmps));
+                    setVdCurrent(Math.max(5, Math.round(clientDemandAmps)));
                   }
-                  setVdVoltage(client.nominalVoltage || 220);
-                  if (client.serviceType === 'Trifásico (3F+N)') setVdPhase('3F');
-                  else if (client.serviceType === 'Bifásico (2F+N)') setVdPhase('2F');
-                  else setVdPhase('1F');
+                  setVdPhase(clientPhase);
+                  setVdVoltage(voltageFor(clientPhase));
                 }}
                 className="flex-shrink-0 px-3 py-1.5 rounded-xl bg-accent-soft hover:brightness-110 text-accent-text border border-accent-line text-xs font-bold flex items-center gap-1.5 transition-colors"
                 title="Cargar corriente y tensión del cliente activo"
@@ -943,15 +937,15 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs pt-1 border-t border-hairline/80">
                 {/* Calibre */}
                 <div>
-                  <label className="font-bold text-soft block mb-1">Calibre del Cable</label>
+                  <label className="font-bold text-soft block mb-1">Sección del cable</label>
                   <select
                     value={vdWire}
                     onChange={(e) => setVdWire(e.target.value)}
                     className="w-full px-2.5 py-1.5 rounded-lg bg-sunken border border-edge text-xs text-strong focus:border-accent focus:outline-none font-mono"
                   >
-                    {WIRE_GAUGES.map((w) => (
-                      <option key={w.awg} value={w.awg}>
-                        {w.awg} ({w.mm2} mm²)
+                    {CABLE_SECTIONS.map((w) => (
+                      <option key={w.label} value={w.label}>
+                        {w.label}
                       </option>
                     ))}
                   </select>
@@ -984,7 +978,11 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                   <label className="font-bold text-soft block mb-1">Sistema Eléctrico</label>
                   <select
                     value={vdPhase}
-                    onChange={(e) => setVdPhase(e.target.value as '1F' | '2F' | '3F')}
+                    onChange={(e) => {
+                      const phase = e.target.value as PhaseType;
+                      setVdPhase(phase);
+                      setVdVoltage(voltageFor(phase));
+                    }}
                     className="w-full px-2.5 py-1.5 rounded-lg bg-sunken border border-edge text-xs text-strong focus:border-accent focus:outline-none"
                   >
                     <option value="1F">Monofásico (1F + N)</option>
@@ -1067,13 +1065,13 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                       <div
                         className="absolute top-0 bottom-0 w-0.5 bg-accent z-10"
                         style={{ left: `${Math.min(100, (3.0 / 6.0) * 100)}%` }}
-                        title="Límite 3% Ramal (NEC)"
+                        title="Límite 3 % iluminación (AEA)"
                       />
                       {/* 5% Threshold Marker Line */}
                       <div
                         className="absolute top-0 bottom-0 w-0.5 bg-danger-solid z-10"
                         style={{ left: `${Math.min(100, (5.0 / 6.0) * 100)}%` }}
-                        title="Límite 5% Total (NEC/IEC)"
+                        title="Límite 5 % fuerza motriz (AEA)"
                       />
 
                       {/* Actual Filled Bar */}
@@ -1290,7 +1288,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
               <div>
                 <strong>Criterio Técnico del Electricista:</strong> El aluminio tiene una resistividad ~64% superior al cobre.
                 Si se opta por conductores de aluminio por economía en largas distancias, la norma y la práctica profesional exigen
-                subir habitualmente <strong>1 o 2 calibres AWG</strong> (ej. sustituir 10 AWG de cobre por 8 AWG o 6 AWG de aluminio) para
+                subir <strong>una o dos secciones</strong> (ej. 16 mm² de cobre por 25 mm² de aluminio; en aluminio no se usan menos de 16 mm²) para
                 mantener la misma caída porcentual y ampacidad térmica.
               </div>
             </div>
@@ -1306,10 +1304,11 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
               <ShieldCheck className="w-5 h-5 text-accent-text" />
               <div>
                 <h3 className="font-bold text-base text-strong">
-                  Dimensionamiento de Disyuntor Termomagnético y Conductor (NEC)
+                  Térmica y sección del cable (AEA 90364-7-771)
                 </h3>
                 <p className="text-xs text-muted">
-                  Aplica factor de carga continua (125%) y factores de corrección por temperatura y agrupamiento.
+                  Térmica IEC inmediata superior a la corriente y cable que la aguanta (IB ≤ In ≤ Iz), corregido por
+                  temperatura y por circuitos en el mismo caño.
                 </p>
               </div>
             </div>
@@ -1328,7 +1327,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
               </div>
 
               <div>
-                <label className="font-bold text-soft block mb-1">Régimen de Operación</label>
+                <label className="font-bold text-soft block mb-1">Reserva</label>
                 <div className="flex items-center gap-2 h-10">
                   <button
                     type="button"
@@ -1339,7 +1338,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                         : 'bg-raised text-soft hover:bg-raised-strong'
                     }`}
                   >
-                    {brContinuous ? 'Carga Continua (125%)' : 'No Continua (100%)'}
+                    {brContinuous ? 'Con 25 % de reserva' : 'Sin reserva (100 %)'}
                   </button>
                 </div>
               </div>
@@ -1348,41 +1347,55 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                 <label className="font-bold text-soft block mb-1">Temperatura Ambiente</label>
                 <select
                   value={brTemp}
-                  onChange={(e) => setBrTemp(parseInt(e.target.value) || 30)}
+                  onChange={(e) => setBrTemp(parseInt(e.target.value) || 40)}
                   className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                 >
-                  <option value={30}>Hasta 30°C (Factor 1.0)</option>
-                  <option value={35}>31°C - 35°C (Factor 0.94)</option>
-                  <option value={40}>36°C - 40°C (Factor 0.88)</option>
-                  <option value={45}>41°C - 45°C (Factor 0.82)</option>
-                  <option value={50}>46°C - 50°C (Factor 0.75)</option>
+                  <option value={40}>Hasta 40 °C (tabla AEA, factor 1,00)</option>
+                  <option value={45}>41 °C a 45 °C (factor 0,91)</option>
+                  <option value={50}>46 °C a 50 °C (factor 0,82)</option>
+                  <option value={55}>51 °C a 55 °C (factor 0,70)</option>
                 </select>
               </div>
 
               <div>
-                <label className="font-bold text-soft block mb-1">Conductores en Ducto</label>
+                <label className="font-bold text-soft block mb-1">Circuitos en el mismo caño</label>
                 <select
-                  value={brConductors}
-                  onChange={(e) => setBrConductors(parseInt(e.target.value) || 3)}
+                  value={brCircuits}
+                  onChange={(e) => setBrCircuits(parseInt(e.target.value) || 1)}
                   className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                 >
-                  <option value={3}>1 a 3 conductores (Factor 1.0)</option>
-                  <option value={5}>4 a 6 conductores (Factor 0.80)</option>
-                  <option value={8}>7 a 9 conductores (Factor 0.70)</option>
-                  <option value={12}>10+ conductores (Factor 0.50)</option>
+                  <option value={1}>1 circuito (factor 1,00)</option>
+                  <option value={2}>2 circuitos (factor 0,80)</option>
+                  <option value={3}>3 circuitos (factor 0,70)</option>
+                  <option value={4}>4 circuitos (factor 0,65)</option>
+                  <option value={6}>5 o 6 circuitos (factor 0,57)</option>
+                  <option value={9}>7 a 9 circuitos (factor 0,50)</option>
                 </select>
               </div>
 
               <div>
-                <label className="font-bold text-soft block mb-1">Aislamiento Térmico</label>
+                <label className="font-bold text-soft block mb-1">Tipo de circuito</label>
                 <select
-                  value={brInsulation}
-                  onChange={(e) => setBrInsulation(e.target.value as '60C' | '75C' | '90C')}
-                  className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none font-mono"
+                  value={brKind}
+                  onChange={(e) => setBrKind(e.target.value as CircuitKind)}
+                  className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                 >
-                  <option value="60C">60°C (TW, UF)</option>
-                  <option value="75C">75°C (THW, RHW)</option>
-                  <option value="90C">90°C (THHN, THWN-2)</option>
+                  <option value="IUG">Iluminación (IUG · mín. 1,5 mm²)</option>
+                  <option value="TUG">Tomacorrientes (TUG · mín. 2,5 mm²)</option>
+                  <option value="ESPECIAL">Uso especial: aire, bomba (mín. 2,5 mm²)</option>
+                  <option value="LINEA_PRINCIPAL">Línea principal (mín. 4 mm²)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-soft block mb-1">Conductores cargados</label>
+                <select
+                  value={brLoaded}
+                  onChange={(e) => setBrLoaded(parseInt(e.target.value) === 3 ? 3 : 2)}
+                  className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
+                >
+                  <option value={2}>2 (monofásico: fase y neutro)</option>
+                  <option value={3}>3 (trifásico)</option>
                 </select>
               </div>
 
@@ -1409,7 +1422,7 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
 
               <div className="mt-3 space-y-4">
                 <div className="p-3.5 rounded-xl bg-sunken border border-hairline">
-                  <span className="text-xs text-muted block mb-0.5">Disyuntor Comercial (Breaker):</span>
+                  <span className="text-xs text-muted block mb-0.5">Térmica (serie IEC):</span>
                   <div className="text-3xl font-extrabold font-mono text-accent-text">
                     {brResult.recommendedBreaker} A
                   </div>
@@ -1419,19 +1432,25 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-sunken border border-hairline">
-                  <span className="text-xs text-muted block mb-0.5">Calibre Mínimo de Conductor:</span>
+                  <span className="text-xs text-muted block mb-0.5">Sección mínima del cable:</span>
                   <div className="text-2xl font-extrabold font-mono text-data-text">
-                    {brResult.minimumConductorAwg}
+                    {brResult.conductor.label}
                   </div>
                   <span className="text-xs text-muted mt-1 block">
-                    Ampacidad corregida: {brResult.wireAmpacityDerated} A
+                    Corriente admisible corregida: {brResult.wireAmpacityDerated} A (factor {brResult.deratingFactor})
                   </span>
+                  {!brResult.fitsTable && (
+                    <span className="text-xs text-danger-text mt-1 block font-bold">
+                      Ni la sección más grande de la tabla alcanza: hace falta cable en bandeja, en paralelo o un
+                      cálculo específico.
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="text-xs text-faint mt-4 border-t border-hairline pt-3">
-              Cumple Art. 210.20 y Tabla 310.16 del Código Eléctrico Nacional (NEC).
+              Cable unipolar IRAM NM 247-3 en cañería, AEA 90364-7-771 tabla 771.16.I (40 °C).
             </div>
           </div>
         </div>
@@ -1513,7 +1532,11 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                 <label className="font-bold text-soft block mb-1">Configuración de Red</label>
                 <select
                   value={pfPhase}
-                  onChange={(e) => setPfPhase(e.target.value as '1F' | '3F')}
+                  onChange={(e) => {
+                    const phase = e.target.value as '1F' | '3F';
+                    setPfPhase(phase);
+                    setPfVoltage(voltageFor(phase));
+                  }}
                   className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                 >
                   <option value="3F">Trifásico (Delta)</option>
@@ -1525,11 +1548,11 @@ export const CalculatorsView: React.FC<CalculatorsViewProps> = ({ client }) => {
                 <label className="font-bold text-soft block mb-1">Frecuencia de Red</label>
                 <select
                   value={pfFreq}
-                  onChange={(e) => setPfFreq(parseInt(e.target.value) || 60)}
+                  onChange={(e) => setPfFreq(parseInt(e.target.value) || 50)}
                   className="w-full px-3 py-2 rounded-lg bg-sunken border border-edge text-sm text-strong focus:border-accent focus:outline-none"
                 >
-                  <option value={60}>60 Hz (América)</option>
-                  <option value={50}>50 Hz (Europa / Latam Sur)</option>
+                  <option value={50}>50 Hz (Argentina y Cono Sur)</option>
+                  <option value={60}>60 Hz (EE. UU., México, Brasil)</option>
                 </select>
               </div>
             </div>

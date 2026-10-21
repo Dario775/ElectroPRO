@@ -28,7 +28,7 @@ Verificado en este repositorio:
 | Render de las 14 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
 | Render de la aplicación completa | `npx tsx render-check.tsx` | ✅ marca, navegación y estado inicial |
 | Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
-| Pruebas automatizadas del proyecto | — | ❌ No existen todavía |
+| Pruebas automatizadas (cálculo eléctrico y diagnóstico) | `node --test tests/electrical.test.mjs` | ✅ 20 pruebas con `node:test` |
 
 ---
 
@@ -585,10 +585,27 @@ lienzo con el menú del programa abierto.
 - Conversión de unidades de potencia, incluido HP → W.
 - Corriente por fase según sistema (1F/2F/3F) y potencia aparente/reactiva a partir del factor de potencia.
 - Consumo diario y mensual en kWh y su costo.
-- Balance de fases con desbalance según criterio **NEMA** y corriente de neutro.
+- Balance de fases con desbalance según criterio **NEMA** y corriente de neutro. El neutro se calcula solo con las
+  cargas conectadas entre fase y neutro (las cargas entre fases y las trifásicas no lo cargan), con fases a 120° en
+  trifásico y en el bifásico argentino (dos fases de una red 380/220 V) y a 180° solo en el bifásico de fase partida
+  120/240 V (`isSplitPhase`).
+- `circuitVoltage`: los circuitos trifásicos y entre fases usan la tensión entre fases (380 V), no la de fase.
+- **Demanda simultánea** (`calculateDemand`): la carga más grande entera y el resto por el factor de simultaneidad del
+  cliente (`ClientRecord.simultaneityFactor`, 0,7 si no hay dato). Es lo que se compara con la térmica general en
+  Cargas y en Tableros.
 - **Auto-balanceo** de cargas entre fases.
-- Tablas de calibres AWG/mm² con ampacidad y lista de breakers comerciales.
-- Caída de tensión, dimensionado conjunto de breaker + conductor, banco de capacitores y recomendación de conductor.
+- Caída de tensión (límites AEA: 3 % iluminación, 5 % fuerza motriz), dimensionado de térmica + cable, banco de
+  capacitores (50 Hz por defecto) y recomendación de sección.
+
+`src/utils/aea.ts` reúne los criterios de la **AEA 90364-7-771**:
+
+- Secciones en mm² (1,5 a 120 mm²) con la corriente admisible de la tabla 771.16.I: cable IRAM NM 247-3 en cañería,
+  40 °C, columnas de 2 y 3 conductores cargados. Aluminio con factor 0,78 y nunca menos de 16 mm².
+- Térmicas de la serie IEC (6, 10, 16, 20, 25, 32, 40, 50, 63… A) y la regla IB ≤ In ≤ Iz.
+- Factores por temperatura (relativos a 40 °C, sin agrandar por debajo) y por circuitos en el mismo caño.
+- Secciones mínimas por tipo de circuito: IUG 1,5 mm², TUG y usos especiales 2,5 mm², línea principal 4 mm².
+- Los calibres AWG guardados en clientes viejos se siguen leyendo, del lado seguro, con la corriente de la sección mm²
+  inmediata inferior (`findCable`).
 
 `src/utils/diagnosticEngine.ts` evalúa la instalación contra criterios tipo **NEC / IEEE / IEC**: desbalance de
 tensión (límite 2 %), desviación de tensión respecto de la nominal, desbalance de corriente, caída de tensión en el
@@ -714,8 +731,8 @@ Todo se guarda en `localStorage` del navegador:
 
 ## Próximos pasos (deuda técnica conocida)
 
-1. **Pruebas**: no hay ninguna. Empezar por `electricalMath` y `diagnosticEngine`, que son funciones puras y
-   concentran el riesgo real de errores de cálculo (Vitest encaja de forma natural con Vite).
+1. **Pruebas**: `tests/electrical.test.mjs` cubre el motor de cálculo, la AEA y el alimentador del diagnóstico.
+   Faltan el auto-balanceo, el flujo del recorrido y los presupuestos.
 2. **Bundle único de 1,42 MB** (399 kB gzip) en un solo chunk. Cargar las vistas pesadas con `React.lazy` +
    `Suspense` y/o separar vendors (`jspdf`, `recharts`).
 3. **Componentes monolíticos**: `BudgetView.tsx` (93 KB), `CalculatorsView.tsx` (87 KB), `PanelsView.tsx` (65 KB)

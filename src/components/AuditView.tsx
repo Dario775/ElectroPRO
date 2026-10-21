@@ -29,6 +29,7 @@ import {
   calculateDailyKwh,
   calculateMonthlyKwh,
   calculatePhaseBalance,
+  calculateDemand,
 } from '../utils/electricalMath';
 import { useCurrency } from '../context/CurrencyContext';
 import { cx } from '../utils/cx';
@@ -237,6 +238,10 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
     client.kwhCost,
     client.fixedCharge
   );
+  const demand = calculateDemand(client.loads, summary, client.simultaneityFactor);
+  const simultaneityOptions = ['0.5', '0.6', '0.7', '0.8', '1'] as const;
+  type SimultaneityOption = (typeof simultaneityOptions)[number];
+  const currentSimultaneity = (simultaneityOptions.find((o) => Number(o) === demand.factor) ?? '0.7') as SimultaneityOption;
 
   const categories: string[] = [
     'Todos',
@@ -425,15 +430,15 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
           icon={<Zap className="h-4 w-4" />}
         />
         <Stat
-          label="Corriente máxima"
-          value={summary.maxAmps.toFixed(1)}
+          label="Demanda simultánea"
+          value={demand.demandMaxAmps.toFixed(1)}
           unit="A"
-          tone={client.mainBreakerAmps > 0 && summary.maxAmps > client.mainBreakerAmps * 0.8 ? 'danger' : 'default'}
+          tone={client.mainBreakerAmps > 0 && demand.demandMaxAmps > client.mainBreakerAmps * 0.8 ? 'danger' : 'default'}
           hint={
             client.mainBreakerAmps > 0
               ? `Térmica principal de ${client.mainBreakerAmps} A · usa el ${Math.round(
-                  (summary.maxAmps / client.mainBreakerAmps) * 100
-                )} %`
+                  (demand.demandMaxAmps / client.mainBreakerAmps) * 100
+                )} % · todo encendido: ${summary.maxAmps.toFixed(1)} A`
               : 'Falta cargar la térmica principal del cliente'
           }
           icon={<Gauge className="h-4 w-4" />}
@@ -467,6 +472,24 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
           icon={<DollarSign className="h-4 w-4" />}
           className="col-span-2 lg:col-span-1"
         />
+      </div>
+
+      {/* Simultaneidad: no todos los equipos funcionan a la vez */}
+      <div className="flex flex-wrap items-center gap-3 text-sm text-soft">
+        <span>
+          Simultaneidad: <strong className="text-strong">{demand.factor.toLocaleString('es-AR')}</strong>
+        </span>
+        <SegmentedControl<SimultaneityOption>
+          size="sm"
+          ariaLabel="Factor de simultaneidad"
+          value={currentSimultaneity}
+          onChange={(value) => onUpdateClient({ ...client, simultaneityFactor: Number(value) })}
+          options={simultaneityOptions.map((o) => ({ value: o, label: o.replace('.', ',') }))}
+        />
+        <span className="text-xs text-muted">
+          El equipo más grande se cuenta entero y el resto con este factor. 0,7 es lo habitual en una vivienda; 1 = todo
+          encendido a la vez.
+        </span>
       </div>
 
       {/* 2. PHASE UNBALANCE WARNING BANNER (If unbalance detected) */}

@@ -74,7 +74,7 @@ export interface FieldMeasurements {
   panelThermalSigns: boolean; // Bornes quemados, aislamiento derretido, zumbidos
   conductorCondition: 'bueno' | 'regular' | 'critico_deteriorado';
   installationAgeYears: number;
-  mainFeederCaliber: string; // ej. "8 AWG", "6 AWG", "4 AWG"
+  mainFeederCaliber: string; // sección AEA, ej. "10 mm²" (los clientes viejos pueden traer "8 AWG")
   farthestOutletVoltage?: number;
 }
 
@@ -152,7 +152,7 @@ export interface ElectricalPanel {
   usedDinModules?: number;
 
   // Alimentador que llega a este tablero
-  feederGauge?: string; // ej. "8 AWG", "6 AWG", "10 mm²"
+  feederGauge?: string; // sección AEA, ej. "10 mm²" (o un calibre AWG viejo)
   feederMaterial?: 'copper' | 'aluminum';
   feederLengthMeters?: number;
 
@@ -395,6 +395,11 @@ export interface ClientRecord {
   nominalVoltage: number; // e.g. 120 or 220 or 230
   lineVoltage: number; // e.g. 240 or 380 or 440
   mainBreakerAmps: number;
+  /**
+   * Factor de simultaneidad (0 a 1): qué parte de los artefactos funciona a la vez. Se usa para
+   * comparar la demanda real con la térmica general. Sin dato se toma 0,7.
+   */
+  simultaneityFactor?: number;
   /**
    * Marca que el técnico verificó el suministro en el lugar (tipo de acometida,
    * tensiones y térmica general). Los valores se cargan al crear el cliente y

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { ClientRecord, FieldMeasurements, DiagnosticActionItem } from '../types/electrical';
 import { analyzeInstallation, DEFAULT_MEASUREMENTS } from '../utils/diagnosticEngine';
-import { WIRE_GAUGES } from '../utils/electricalMath';
+import { cableOptions } from '../utils/aea';
 import { Card, SectionHeader, Stat } from './ui/Card';
 import { Callout } from './ui/Card';
 import { Badge } from './ui/Card';
@@ -434,11 +434,8 @@ export const DiagnosticView: React.FC<DiagnosticViewProps> = ({
               label="Calibre del alimentador principal"
               value={measurements.mainFeederCaliber}
               onChange={(value) => handleUpdateField('mainFeederCaliber', value)}
-              options={WIRE_GAUGES.map((gauge) => ({
-                value: gauge.awg,
-                label: `${gauge.awg} · ${gauge.mm2} mm² · hasta ${gauge.ampacity75C} A`,
-              }))}
-              hint="Sirve para saber si el cable acompaña a la protección."
+              options={cableOptions(measurements.mainFeederCaliber)}
+              hint="Sirve para saber si el cable acompaña a la protección (corriente admisible según la AEA)."
             />
 
             <SelectField

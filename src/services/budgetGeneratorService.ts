@@ -1157,7 +1157,7 @@ export const BudgetGeneratorService = {
         id: `item_${Date.now()}_${itemCounter++}`,
         type: 'material',
         category: 'cableado',
-        description: `Cable Unipolar Antillama de Cobre 4.0 mm² (12 AWG) para Circuitos Especiales`,
+        description: `Cable Unipolar Antillama de Cobre 4 mm² (IRAM NM 247-3) para Circuitos Especiales`,
         detail: `Conductores para climatización, calentador y tomas de alto consumo (${heavyBreakersCount} circuitos)`,
         brand: 'Prysmian / Condumex / Centelsa',
         unit: 'm',
