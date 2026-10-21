@@ -93,6 +93,7 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
 ├── public/                        manifest.webmanifest, sw.js (sin conexión), favicon e íconos
 ├── tests/                         Pruebas con node:test (npm test)
 │   ├── electrical.test.mjs        Motor de cálculo, criterios AEA y alimentador del diagnóstico
+│   ├── panelTree.test.mjs         Árbol de tableros: orígenes, datos rotos y selectividad
 │   └── storage.test.mjs           Persistencia: fallos de escritura, reintentos y borrados
 └── src/
     ├── main.tsx                   Punto de entrada: carga los datos, monta React y registra la PWA
@@ -107,6 +108,7 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
     │   ├── aea.ts                 Criterios AEA 90364-7-771: secciones mm², térmicas IEC, factores, simultaneidad
     │   ├── diagnosticEngine.ts    Evaluación de seguridad y plan de acción
     │   ├── supplies.ts            Acometidas múltiples: normalización y consultas por suministro
+    │   ├── panelTree.ts           Árbol de tableros de cada acometida (de quién se alimenta cada uno)
     │   ├── workflow.ts            Etapas, pasos, módulos y progreso del recorrido
     │   ├── plan.ts                Geometría del plano: hojas, rejilla y vínculo con el relevamiento
     │   ├── history.ts             Deshacer y rehacer: pasos, agrupado y tope (puro y sin React)
@@ -126,6 +128,7 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
         ├── PwaBanner.tsx          Avisos de instalación y de versión nueva
         ├── SupplyView.tsx         Suministro y acometidas
         ├── PanelsView.tsx         Tableros eléctricos, protecciones y jerarquía
+        ├── PanelTree.tsx          Esquema del inmueble: medidor → principal → seccionales
         ├── DiagnosticView.tsx     Mediciones de campo, índice de seguridad y plan de trabajo
         ├── AuditView.tsx          Cargas, consumos y demanda simultánea
         ├── ConsumptionHistoryView.tsx  Facturación real vs. auditoría (con gráficas)

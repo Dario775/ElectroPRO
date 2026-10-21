@@ -24,6 +24,8 @@ import { ClientRecord, ElectricalPanel, ApplianceLoad, PanelMeasurements, PanelT
 import { describeSupply, getSupplies, supplyOfPanel } from '../utils/supplies';
 import { cableOptions } from '../utils/aea';
 import { calculateDemand, calculatePhaseBalance } from '../utils/electricalMath';
+import { buildPanelTree } from '../utils/panelTree';
+import { PanelTree, type PanelTreeGroup, type PanelTreeStats } from './PanelTree';
 import { Button } from './ui/Button';
 import { Badge, Callout, SectionHeader } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
@@ -216,6 +218,33 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
     });
   }, [panels, client]);
 
+  // Esquema: un árbol por acometida, armado con el tablero de origen de cada uno
+  const treeGroups: PanelTreeGroup[] = useMemo(
+    () =>
+      supplies
+        .filter((supply) => supplyFilter === 'all' || supply.id === supplyFilter)
+        .map((supply) => ({
+          supply,
+          nodes: buildPanelTree(panels.filter((panel) => supplyOf(panel).id === supply.id)),
+        })),
+    [supplies, panels, supplyFilter]
+  );
+
+  const treeStats = useMemo(
+    () =>
+      new Map<string, PanelTreeStats>(
+        panelAnalytics.map((item) => [
+          item.panel.id,
+          {
+            capacityUtilization: item.capacityUtilization,
+            circuits: item.assignedLoads.length,
+            totalWatts: item.totalWatts,
+          },
+        ])
+      ),
+    [panelAnalytics]
+  );
+
   // Selected panel specific analytics
   const currentAnalytics = useMemo(() => {
     return (
@@ -407,128 +436,13 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
           supplies.length > 1 ? `${supplies.length} acometidas` : `${client.serviceType} · ${client.nominalVoltage} V`
         }`}
       >
-        {/* Tree / Flow Visualizer */}
-        <div className="p-4 rounded-xl bg-sunken border border-hairline/80 overflow-x-auto">
-          <div className="min-w-[650px] flex items-center gap-4">
-            {/* Medidor / Acometida Block */}
-            <div className="p-3 rounded-xl bg-surface border border-edge text-center w-40 flex-shrink-0 shadow-md">
-              <div className="w-8 h-8 rounded-full bg-raised border border-edge flex items-center justify-center mx-auto mb-1.5 text-accent-text font-bold text-xs">
-                kWh
-              </div>
-              <strong className="text-xs text-strong block">Medidor / Red</strong>
-              <span className="text-xs text-muted block font-mono">
-                {(supplyFilter === 'all' ? primarySupply : supplyOf(visiblePanels[0] ?? activePanel)).serviceType.split(' ')[0]}
-              </span>
-              <span className="text-xs text-success-text font-bold block mt-1">
-                {supplyFilter === 'all' && supplies.length === 1
-                  ? 'Acometida'
-                  : supplyFilter === 'all'
-                  ? `${supplies.length} acometidas`
-                  : supplyOf(visiblePanels[0] ?? activePanel).name}
-              </span>
-            </div>
-
-            {/* Connecting Arrow */}
-            <div className="flex items-center text-soft">
-              <div className="w-8 h-0.5 bg-raised-strong" />
-              <ArrowRight className="w-4 h-4 -ml-1 text-accent-text" />
-            </div>
-
-            {/* Panels Flow Columns */}
-            <div className="flex-1 flex items-start gap-4">
-              {panelAnalytics
-                .filter((item) => supplyFilter === 'all' || supplyOf(item.panel).id === supplyFilter)
-                .map((item) => {
-                const p = item.panel;
-                const isSelected = p.id === activePanel.id;
-                const isOverloaded = item.capacityUtilization > 100;
-                const isWarning = item.capacityUtilization > 80;
-
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => setSelectedPanelId(p.id)}
-                    className={`flex-1 p-3.5 rounded-xl border-2 transition-all cursor-pointer shadow-md ${
-                      isSelected
-                        ? 'bg-surface border-accent ring-2 ring-accent/20'
-                        : 'bg-surface/70 border-hairline hover:border-edge'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1 mb-1.5">
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-xs font-bold uppercase ${
-                          p.type === 'principal'
-                            ? 'bg-accent text-accent-fg'
-                            : 'bg-raised text-soft'
-                        }`}
-                      >
-                        {p.type}
-                      </span>
-
-                      {/* Acometida del tablero, cuando el inmueble tiene más de una */}
-                      {supplies.length > 1 && supplyFilter === 'all' && (
-                        <span className="truncate rounded bg-raised px-1.5 py-0.5 text-xs font-semibold text-soft">
-                          {supplyOf(p).name}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between gap-1 mb-1.5">
-                      {/* Status indicator */}
-                      {isOverloaded ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-danger-soft text-danger-text border border-danger-line animate-pulse">
-                          Sobrecarga {item.capacityUtilization}%
-                        </span>
-                      ) : isWarning ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-accent-soft text-accent-text border border-accent-line">
-                          {item.capacityUtilization}% Capacidad
-                        </span>
-                      ) : (
-                        <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-success-soft text-success-text">
-                          Normal ({item.capacityUtilization}%)
-                        </span>
-                      )}
-                    </div>
-
-                    <h4 className="font-bold text-xs sm:text-sm text-strong truncate mb-0.5">
-                      {p.name}
-                    </h4>
-                    <span className="text-xs text-muted flex items-center gap-1 mb-2">
-                      <MapPin className="w-2.5 h-2.5 text-faint" />
-                      {p.location}
-                    </span>
-
-                    {/* Quick Specs */}
-                    <div className="grid grid-cols-2 gap-1 text-xs font-mono bg-sunken p-2 rounded-lg border border-hairline/80 mb-2">
-                      <div>
-                        <span className="text-faint block">Térmica:</span>
-                        <strong className="text-strong">
-                          {p.mainBreakerAmps}A ({p.mainBreakerCurve || 'C'})
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="text-faint block">Diferencial:</span>
-                        <strong
-                          className={p.hasDifferential ? 'text-success-text' : 'text-danger-text'}
-                        >
-                          {p.hasDifferential ? `${p.differentialSensitivityMa}mA` : 'FALTA'}
-                        </strong>
-                      </div>
-                    </div>
-
-                    {/* Load count and power */}
-                    <div className="flex items-center justify-between text-xs pt-1 border-t border-hairline text-soft font-sans">
-                      <span>{item.assignedLoads.length} Circuitos</span>
-                      <strong className="font-mono text-accent-text">
-                        {(item.totalWatts / 1000).toFixed(2)} kW
-                      </strong>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        <PanelTree
+          groups={treeGroups}
+          stats={treeStats}
+          selectedId={activePanel.id}
+          onSelect={setSelectedPanelId}
+          onFixLink={handleOpenPanelModal}
+        />
       </Collapsible>
 
       {/* 3. Detalle del tablero seleccionado (plegable) */}
