@@ -13,6 +13,11 @@
  *
  * Lo que se lee antes de que arranque React (el tema, la moneda) se queda en
  * `localStorage`: son unos pocos bytes y el script de `index.html` los necesita.
+ *
+ * Varias pestañas (o la app instalada y una pestaña) comparten el mismo disco pero
+ * cada una tiene su copia en memoria. Para que una no pise a la otra, cada guardado
+ * se anuncia por un `BroadcastChannel` y las demás releen esas claves; además, al
+ * volver a una pestaña se compara su memoria con el disco (`syncFromDisk`).
  */
 
 const DB_NAME = 'electropro';
@@ -30,6 +35,9 @@ const FLUSH_DELAY_MS = 120;
 
 export const STORAGE_ERROR_EVENT = 'electropro:storage-error';
 export const STORAGE_STATE_EVENT = 'electropro:storage-state';
+/** Otra pestaña o ventana cambió datos; `detail.keys` dice cuáles. */
+export const EXTERNAL_CHANGE_EVENT = 'electropro:external-change';
+const CHANNEL_NAME = 'electropro-data';
 
 export type StorageBackend = 'indexeddb' | 'localstorage' | 'memory';
 
@@ -41,6 +49,9 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushing: Promise<void> = Promise.resolve();
 let storageError: string | null = null;
 let retryCount = 0;
+let channel: BroadcastChannel | null = null;
+const externalListeners = new Set<(keys: string[]) => void>();
+const tabId = Math.random().toString(36).slice(2);
 
 export function getStorageError(): string | null { return storageError; }
 
@@ -149,14 +160,91 @@ export async function initKv(): Promise<StorageBackend> {
   }
   if (backend === 'memory') reportError('El almacenamiento no está disponible. Los cambios solo están en esta sesión.', new Error('Sin almacenamiento'));
 
+  if (typeof BroadcastChannel !== 'undefined' && backend !== 'memory') {
+    channel = new BroadcastChannel(CHANNEL_NAME);
+    channel.onmessage = (event: MessageEvent) => {
+      const data = event.data as { from?: string; keys?: unknown } | null;
+      if (!data || data.from === tabId || !Array.isArray(data.keys)) return;
+      void syncFromDisk(data.keys.filter((key): key is string => typeof key === 'string'));
+    };
+    // En Node (pruebas) el canal no tiene que mantener vivo el proceso.
+    (channel as unknown as { unref?: () => void }).unref?.();
+  }
+
   if (typeof document !== 'undefined') {
-    // Al ocultar la pestaña o cerrar la app se vuelca lo pendiente sin esperar.
+    // Al ocultar la pestaña o cerrar la app se vuelca lo pendiente sin esperar;
+    // al volver, se trae lo que otra pestaña o ventana haya guardado mientras tanto.
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') void flushNow();
+      else void syncFromDisk();
     });
     window.addEventListener('pagehide', () => void flushNow());
   }
   return backend;
+}
+
+/** Cierra el canal entre pestañas (para pruebas). */
+export function closeKv(): void {
+  channel?.close();
+  channel = null;
+}
+
+/** Avisa cuando otra pestaña o ventana cambió datos. Devuelve la función para dejar de escuchar. */
+export function onExternalChange(listener: (keys: string[]) => void): () => void {
+  externalListeners.add(listener);
+  return () => externalListeners.delete(listener);
+}
+
+function readFromDisk(keys: string[]): Promise<Map<string, string | null>> {
+  if (backend === 'indexeddb' && db) {
+    const database = db;
+    return new Promise((resolve, reject) => {
+      const result = new Map<string, string | null>();
+      const store = database.transaction(STORE, 'readonly').objectStore(STORE);
+      for (const key of keys) {
+        const request = store.get(key);
+        request.onsuccess = () => {
+          result.set(key, typeof request.result === 'string' ? request.result : null);
+          if (result.size === keys.length) resolve(result);
+        };
+        request.onerror = () => reject(request.error ?? new Error('No se pudo leer IndexedDB'));
+      }
+      if (keys.length === 0) resolve(result);
+    });
+  }
+  if (backend === 'localstorage') {
+    return Promise.resolve(new Map(keys.map((key) => [key, localStorage.getItem(key)])));
+  }
+  return Promise.resolve(new Map());
+}
+
+/**
+ * Trae del disco lo que cambió otra pestaña o ventana. No toca las claves que esta
+ * pestaña tiene sin guardar (son más nuevas). Devuelve las claves que cambiaron.
+ */
+export async function syncFromDisk(keys: string[] = MIGRATED_KEYS): Promise<string[]> {
+  let fromDisk: Map<string, string | null>;
+  try {
+    fromDisk = await readFromDisk(keys);
+  } catch (error) {
+    console.warn('No se pudo releer el almacenamiento:', error);
+    return [];
+  }
+  const changed: string[] = [];
+  for (const [key, value] of fromDisk) {
+    if (pending.has(key)) continue;
+    if ((cache.get(key) ?? null) === value) continue;
+    if (value === null) cache.delete(key);
+    else cache.set(key, value);
+    changed.push(key);
+  }
+  if (changed.length > 0) {
+    externalListeners.forEach((listener) => listener(changed));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(EXTERNAL_CHANGE_EVENT, { detail: { keys: changed } }));
+    }
+  }
+  return changed;
 }
 
 export function storageBackend(): StorageBackend {
@@ -195,6 +283,8 @@ export function flushNow(): Promise<void> {
         if (pending.has(key) && pending.get(key) === value) pending.delete(key);
       }
       retryCount = 0;
+      // Las demás pestañas releen lo que se acaba de guardar.
+      channel?.postMessage({ from: tabId, keys: [...batch.keys()] });
       if (pending.size === 0) {
         storageError = null;
         publishState();

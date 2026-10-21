@@ -18,7 +18,7 @@ import { ClientRecord } from '../types/electrical';
 import { StorageService } from '../services/storageService';
 import { calculatePhaseBalance } from '../utils/electricalMath';
 import { Button } from './ui/Button';
-import { SectionHeader } from './ui/Card';
+import { Callout, SectionHeader } from './ui/Card';
 
 interface ClientListProps {
   clients: ClientRecord[];
@@ -41,6 +41,8 @@ export const ClientList: React.FC<ClientListProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [backupSuccess, setBackupSuccess] = useState<string | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [damaged, setDamaged] = useState(() => StorageService.getDamagedClients());
 
   const filteredClients = clients.filter((c) => {
     const q = searchTerm.toLowerCase();
@@ -78,23 +80,72 @@ export const ClientList: React.FC<ClientListProps> = ({
     setTimeout(() => setBackupSuccess(null), 4000);
   };
 
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const content = event.target?.result as string;
-      const success = StorageService.importBackup(content);
-      if (success) {
-        onReloadClients();
-        setBackupSuccess('¡Base de datos restaurada correctamente!');
-        setTimeout(() => setBackupSuccess(null), 4000);
-      } else {
-        alert('Error al leer el archivo de copia de seguridad. Asegúrate de que sea un JSON válido.');
+      input.value = ''; // permite volver a elegir el mismo archivo
+      setBackupSuccess(null);
+      setBackupError(null);
+      const content = String(event.target?.result ?? '');
+
+      const preview = StorageService.previewImport(content);
+      if (!preview.ok) {
+        const skipped = preview.skipped.map((s) => `${s.name} (${s.reason})`).join(', ');
+        setBackupError(`No se importó nada. ${preview.error}${skipped ? ` Clientes con problemas: ${skipped}.` : ''}`);
+        return;
       }
+
+      const lines = [
+        preview.added > 0 ? `${preview.added === 1 ? 'Se agrega' : 'Se agregan'} ${plural(preview.added, 'cliente nuevo', 'clientes nuevos')}.` : '',
+        preview.updated > 0
+          ? `${preview.updated === 1 ? 'Se reemplaza' : 'Se reemplazan'} ${plural(preview.updated, 'cliente que ya está', 'clientes que ya están')} en este equipo por la versión del archivo.`
+          : '',
+        preview.skipped.length > 0 ? `${preview.skipped.length === 1 ? 'No entra' : 'No entran'} ${plural(preview.skipped.length, 'cliente dañado', 'clientes dañados')}.` : '',
+        preview.technician ? 'También se reemplaza el perfil del técnico.' : '',
+        'Los demás clientes de este equipo no se tocan, y antes queda una copia de rescate.',
+      ].filter(Boolean);
+      if (!confirm(`${lines.join('\n')}\n\n¿Importar la copia?`)) return;
+
+      const result = StorageService.importBackup(content);
+      if (!result.ok) {
+        setBackupError(`No se importó nada. ${result.error}`);
+        return;
+      }
+      onReloadClients();
+      setDamaged(StorageService.getDamagedClients());
+      const skipped = result.skipped.map((s) => s.name).join(', ');
+      setBackupSuccess(
+        `Copia importada: ${plural(result.added, 'cliente nuevo', 'clientes nuevos')} y ${plural(result.updated, 'actualizado', 'actualizados')}.` +
+          (skipped ? ` No entraron por estar dañados: ${skipped}.` : '')
+      );
+    };
+    reader.onerror = () => {
+      input.value = '';
+      setBackupError('No se pudo leer el archivo.');
     };
     reader.readAsText(file);
+  };
+
+  const handleDownloadDamaged = () => {
+    const url = URL.createObjectURL(new Blob([StorageService.exportDamagedClients()], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ElectroPro_ClientesDanados_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDiscardDamaged = () => {
+    if (!confirm('¿Quitar los clientes que no se pueden leer? Antes queda una copia de rescate en Ajustes → Recuperar datos.')) return;
+    StorageService.discardDamagedClients();
+    setDamaged([]);
+    onReloadClients();
   };
 
   return (
@@ -128,6 +179,30 @@ export const ClientList: React.FC<ClientListProps> = ({
         <div className="p-3 rounded-xl bg-success-soft border border-success-line text-success-text text-xs font-bold animate-in fade-in">
           {backupSuccess}
         </div>
+      )}
+      {backupError && <Callout tone="danger">{backupError}</Callout>}
+
+      {damaged.length > 0 && (
+        <Callout tone="warning" title="Hay datos guardados que no se pueden leer">
+          <p>
+            Se apartaron sin borrarlos y se siguen guardando tal cual; el resto de los clientes no se tocó.
+          </p>
+          <ul className="mt-1 list-disc pl-5">
+            {damaged.map((d, i) => (
+              <li key={`${d.id ?? 'sin-id'}-${i}`}>
+                <strong>{d.name}</strong>: {d.reason}.
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" icon={<Download className="h-4 w-4" />} onClick={handleDownloadDamaged}>
+              Descargar esos datos
+            </Button>
+            <Button size="sm" variant="ghost" icon={<Trash2 className="h-4 w-4" />} onClick={handleDiscardDamaged}>
+              Quitarlos
+            </Button>
+          </div>
+        </Callout>
       )}
 
       {/* Search Bar */}

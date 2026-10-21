@@ -1,4 +1,4 @@
-import {
+import type {
   ClientRecord,
   ProjectBudget,
   BudgetItem,

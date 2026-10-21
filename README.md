@@ -757,6 +757,22 @@ Las escrituras fallidas se conservan en memoria y se reintentan hasta tres veces
 
 `npm test` ejecuta las pruebas de persistencia con Node 24: fallo y reintento, conservación de borrados, escrituras consecutivas y rescate sin almacenamiento. Todavía falta verificar IndexedDB y el aviso en un navegador real.
 
+### Que no se pierda trabajo
+
+- **Un cliente dañado no se lleva a los demás.** Si un cliente guardado no se puede leer, se aparta con el motivo y
+  se sigue guardando tal cual; los demás se ven normalmente y nunca se reemplazan por los de ejemplo. Si la lista
+  entera es ilegible, la app arranca vacía y, antes del primer guardado, deja una copia de rescate con lo que había.
+  En **Clientes** se ven los dañados, se pueden descargar o quitar (con copia de rescate antes).
+- **Varias pestañas o ventanas.** Cada guardado se anuncia por `BroadcastChannel` y las demás pestañas releen esos
+  datos y actualizan la pantalla («Se trajeron los cambios…»); al volver a una pestaña también se compara con el disco
+  (`syncFromDisk`). Cada cliente lleva una `revision`: si se guarda sobre una revisión que escribió otra pestaña, se
+  guarda igual pero la otra versión queda en una copia de rescate y se avisa.
+- **Copias de rescate.** En **Ajustes → Recuperar datos** cada copia se puede restaurar (trae lo que falta) o
+  **descargar**; ese archivo se importa como cualquier copia y trae de vuelta esas versiones.
+- **Importar una copia** muestra antes qué va a pasar (clientes nuevos, actualizados y dañados que no entran), **suma y
+  actualiza por id sin borrar** los clientes que solo están en este equipo, deja una copia de rescate y, si el archivo no
+  sirve, lo dice sin tocar nada. Acepta la copia de la lista de clientes y la copia completa de Ajustes, y valida las dos.
+
 | Clave | Contenido |
 |---|---|
 | `electropro_clients_v1` | Lista de clientes con todo su trabajo de auditoría (incluye sus acometidas y sus planos de ubicación) |

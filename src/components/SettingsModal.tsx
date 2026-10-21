@@ -60,6 +60,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setRecoveryMessage(null);
   }, [isOpen]);
 
+  /** Baja la copia como archivo de copia de seguridad: importarlo trae esas versiones de vuelta. */
+  const handleDownloadRecovery = (index: number, at: string): void => {
+    const content = StorageService.exportRecoveryPoint(index);
+    if (!content) return;
+    const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ElectroPro_Rescate_${at.slice(0, 19).replace(/[:T]/g, '-')}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleRestore = (index: number): void => {
     const result = StorageService.restoreRecoveryPoint(index);
     if (!result) {
@@ -333,9 +345,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {point.plans === 1 ? 'plano' : 'planos'}.
                     </p>
                   </div>
-                  <Button size="sm" variant="secondary" onClick={() => handleRestore(point.index)}>
-                    Restaurar
-                  </Button>
+                  <div className="flex flex-shrink-0 flex-col gap-1.5">
+                    <Button size="sm" variant="secondary" onClick={() => handleRestore(point.index)}>
+                      Restaurar
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => handleDownloadRecovery(point.index, point.at)}>
+                      Descargar
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>

@@ -16,7 +16,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { PwaBanner } from './components/PwaBanner';
 import { ClientRecord, TechnicianProfile } from './types/electrical';
 import { StorageService, DEFAULT_TECHNICIAN } from './services/storageService';
-import { kvClear } from './services/kvStore';
+import { EXTERNAL_CHANGE_EVENT, kvClear } from './services/kvStore';
 import { CurrencyProvider } from './context/CurrencyContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ViewId, buildWorkflow } from './utils/workflow';
@@ -68,6 +68,17 @@ function AppContent() {
     }
   }, []);
 
+  // Lo que guarda otra pestaña o ventana se trae acá, para no seguir trabajando sobre una versión vieja.
+  useEffect(() => {
+    const onExternalChange = (event: Event): void => {
+      const keys = (event as CustomEvent<{ keys: string[] }>).detail?.keys ?? [];
+      if (keys.includes('electropro_clients_v1')) setClients(StorageService.getClients());
+      if (keys.includes('electropro_technician_profile_v1')) setTechnician(StorageService.getTechnicianProfile());
+    };
+    window.addEventListener(EXTERNAL_CHANGE_EVENT, onExternalChange);
+    return () => window.removeEventListener(EXTERNAL_CHANGE_EVENT, onExternalChange);
+  }, []);
+
   const activeClient = clients.find((c) => c.id === activeClientId) || clients[0] || null;
   const workflow = useMemo(() => buildWorkflow(activeClient), [activeClient]);
 
@@ -77,8 +88,9 @@ function AppContent() {
   };
 
   const handleUpdateActiveClient = (updated: ClientRecord) => {
-    StorageService.saveClient(updated);
-    setClients((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    // Se sigue con lo que quedó guardado (trae la revisión nueva), no con lo que se mandó.
+    const saved = StorageService.saveClient(updated);
+    setClients((prev) => prev.map((c) => (c.id === saved.id ? saved : c)));
   };
 
   const handleSaveClientModal = (client: ClientRecord) => {

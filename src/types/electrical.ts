@@ -461,6 +461,11 @@ export interface ClientRecord {
   /** Circuitos de todos los tableros. Si falta, se arma con el circuito de cada carga. */
   circuits?: ElectricalCircuit[];
   /**
+   * Cuántas veces se guardó. Sirve para darse cuenta de que otra pestaña o ventana lo
+   * cambió mientras esta tenía una versión anterior.
+   */
+  revision?: number;
+  /**
    * Marca que el técnico verificó el suministro en el lugar (tipo de acometida,
    * tensiones y térmica general). Los valores se cargan al crear el cliente y
    * se confirman durante el relevamiento.

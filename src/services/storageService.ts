@@ -1,4 +1,4 @@
-import { ClientRecord, TechnicianProfile, ApplianceLoad } from '../types/electrical';
+import type { ClientRecord, TechnicianProfile, ApplianceLoad } from '../types/electrical';
 import { kvGet, kvSet } from './kvStore';
 import { BudgetGeneratorService } from './budgetGeneratorService';
 import { normalizeClient } from '../utils/supplies';
@@ -37,19 +37,33 @@ export interface RecoverySummary {
   plans: number;
 }
 
+const listOf = <T>(value: T[] | undefined): T[] => (Array.isArray(value) ? value : []);
+
 function inventoryOf(clients: ClientRecord[]): Map<string, ClientInventory> {
   return new Map(
-    clients.map((client) => [
-      client.id,
-      {
-        name: client.clientName,
-        plans: (client.plans ?? []).length,
-        elements: (client.plans ?? []).reduce((total, plan) => total + plan.elements.length, 0),
-        loads: client.loads.length,
-        supplies: (client.supplies ?? []).length,
-      },
-    ])
+    clients
+      .filter((client) => client && typeof client === 'object' && typeof client.id === 'string')
+      .map((client) => [
+        client.id,
+        {
+          name: String(client.clientName ?? 'Sin nombre'),
+          plans: listOf(client.plans).length,
+          elements: listOf(client.plans).reduce((total, plan) => total + listOf(plan?.elements).length, 0),
+          loads: listOf(client.loads).length,
+          supplies: listOf(client.supplies).length,
+        },
+      ])
   );
+}
+
+/** Inventario de una lista guardada; si no se puede leer, ninguno. */
+function inventoryOfRaw(raw: string): Map<string, ClientInventory> | null {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? inventoryOf(parsed as ClientRecord[]) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -78,6 +92,77 @@ function describeLoss(before: Map<string, ClientInventory>, after: Map<string, C
 }
 
 let lastInventory: Map<string, ClientInventory> | null = null;
+/** Lo último que escribió esta pestaña: si el disco tiene otra cosa, alguien lo cambió por fuera. */
+let lastWrittenRaw: string | null = null;
+
+/* ------------------------------------------------------------------ */
+/* Clientes dañados                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Un cliente guardado que no se pudo leer. No se borra ni se reemplaza por los de
+ * ejemplo: se aparta, se sigue guardando tal cual y se avisa para que el técnico decida.
+ */
+export interface DamagedClient {
+  id?: string;
+  name: string;
+  reason: string;
+}
+
+/** Los clientes dañados de la última lectura, tal como estaban guardados. */
+let damagedEntries: unknown[] = [];
+let damagedInfo: DamagedClient[] = [];
+/** La lista guardada entera, cuando no se puede leer ni como lista. */
+let unreadableRaw: string | null = null;
+
+function clientProblem(item: unknown): string | null {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return 'no es una ficha de cliente';
+  const client = item as Partial<ClientRecord>;
+  if (typeof client.id !== 'string' || client.id.length === 0) return 'le falta el identificador';
+  if (typeof client.clientName !== 'string') return 'le falta el nombre';
+  if (!Array.isArray(client.loads)) return 'le falta la lista de cargas';
+  return null;
+}
+
+function describeDamaged(item: unknown, reason: string): DamagedClient {
+  const client = (item && typeof item === 'object' ? item : {}) as Partial<ClientRecord>;
+  return {
+    id: typeof client.id === 'string' ? client.id : undefined,
+    name: typeof client.clientName === 'string' && client.clientName ? client.clientName : 'Sin nombre',
+    reason,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Choques entre pestañas                                              */
+/* ------------------------------------------------------------------ */
+
+export interface SaveConflict {
+  clientId: string;
+  clientName: string;
+}
+
+const conflictListeners = new Set<(conflict: SaveConflict) => void>();
+/** Última revisión de cada cliente que guardó esta pestaña. */
+const revisionsWrittenHere = new Map<string, number>();
+
+/* ------------------------------------------------------------------ */
+/* Importación                                                         */
+/* ------------------------------------------------------------------ */
+
+export interface ImportSummary {
+  ok: boolean;
+  /** Por qué no se importó nada. */
+  error?: string;
+  added: number;
+  updated: number;
+  /** Clientes del archivo que no se pudieron leer y no entran. */
+  skipped: DamagedClient[];
+  /** El archivo trae el perfil del técnico (lo reemplaza). */
+  technician: boolean;
+}
+
+const CATALOG_KEYS = ['electropro_materials_catalog_v1', 'electropro_catalog_brands_v1'];
 
 function readRecoveryPoints(): RecoveryPoint[] {
   try {
@@ -918,86 +1003,146 @@ const INITIAL_MARKET_CLIENT: ClientRecord = {
   updatedAt: new Date().toISOString(),
 };
 
+/** Migraciones de un cliente guardado y normalización. Puede lanzar si el cliente está dañado. */
+function migrateClient(c: ClientRecord): ClientRecord {
+  let updatedClient = c;
+  if (!c.panels || c.panels.length === 0) {
+    const defaultPanel = {
+      id: 'panel_main',
+      name: 'Tablero Principal (TP-01)',
+      type: 'principal' as const,
+      location: 'Pilar / Entrada',
+      mainBreakerAmps: c.mainBreakerAmps || 40,
+      mainBreakerPoles: c.serviceType === 'Trifásico (3F+N)' ? ('3P+N' as const) : c.serviceType === 'Bifásico (2F+N)' ? ('2P' as const) : ('1P+N' as const),
+      mainBreakerCurve: 'C' as const,
+      mainBreakerKACapacity: 6,
+      hasDifferential: c.diagnosticMeasurements ? c.diagnosticMeasurements.hasDifferentialBreaker : true,
+      differentialAmps: c.mainBreakerAmps || 40,
+      differentialSensitivityMa: 30,
+      differentialPoles: c.serviceType === 'Trifásico (3F+N)' ? ('4P' as const) : ('2P' as const),
+      hasSurgeProtector: c.diagnosticMeasurements ? c.diagnosticMeasurements.hasSurgeProtector : false,
+      hasGroundBar: c.diagnosticMeasurements ? c.diagnosticMeasurements.hasGroundRod : true,
+      hasIsolatedNeutralBar: true,
+      totalDinModules: 18,
+      usedDinModules: Math.min(18, c.loads.length * 2),
+      physicalCondition: (c.diagnosticMeasurements?.conductorCondition || 'bueno') as 'bueno' | 'regular' | 'critico',
+      hasHotSpots: c.diagnosticMeasurements ? c.diagnosticMeasurements.panelThermalSigns : false,
+      isLabeled: true,
+    };
+    updatedClient = {
+      ...c,
+      panels: [defaultPanel],
+      loads: c.loads.map((l) => ({ ...l, panelId: l.panelId || 'panel_main' })),
+    };
+  }
+
+  if (!updatedClient.budgets || updatedClient.budgets.length === 0) {
+    const initialBudget =
+      updatedClient.budget && updatedClient.budget.items && updatedClient.budget.items.length > 0
+        ? updatedClient.budget
+        : BudgetGeneratorService.generateBudgetFromProject(updatedClient);
+    updatedClient = {
+      ...updatedClient,
+      budget: initialBudget,
+      budgets: [initialBudget],
+      activeBudgetId: initialBudget.id,
+    };
+  } else {
+    const activeId = updatedClient.activeBudgetId || updatedClient.budgets[0].id;
+    const activeBudget = updatedClient.budgets.find((b) => b.id === activeId) || updatedClient.budgets[0];
+    updatedClient = {
+      ...updatedClient,
+      budget: activeBudget,
+      activeBudgetId: activeBudget.id,
+    };
+  }
+
+  if (updatedClient.currency !== 'ARS' && updatedClient.currency !== 'USD') {
+    updatedClient = { ...updatedClient, currency: 'ARS' };
+  }
+
+  // Migración a acometidas múltiples: garantiza que cada cliente tenga
+  // al menos una, y que sus tableros y facturas estén asignados.
+  return normalizeClient(updatedClient);
+}
+
 export const StorageService = {
   // --- CLIENT RECORDS ---
   getClients(): ClientRecord[] {
-    try {
-      const raw = kvGet(STORAGE_KEY_CLIENTS);
-      if (!raw) {
-        // Seed with sample client
-        const initial = [INITIAL_SAMPLE_CLIENT, INITIAL_MARKET_CLIENT];
-        kvSet(STORAGE_KEY_CLIENTS, JSON.stringify(initial));
-        return initial;
-      }
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.map((c: ClientRecord) => {
-          let updatedClient = c;
-          if (!c.panels || c.panels.length === 0) {
-            const defaultPanel = {
-              id: 'panel_main',
-              name: 'Tablero Principal (TP-01)',
-              type: 'principal' as const,
-              location: 'Pilar / Entrada',
-              mainBreakerAmps: c.mainBreakerAmps || 40,
-              mainBreakerPoles: c.serviceType === 'Trifásico (3F+N)' ? ('3P+N' as const) : c.serviceType === 'Bifásico (2F+N)' ? ('2P' as const) : ('1P+N' as const),
-              mainBreakerCurve: 'C' as const,
-              mainBreakerKACapacity: 6,
-              hasDifferential: c.diagnosticMeasurements ? c.diagnosticMeasurements.hasDifferentialBreaker : true,
-              differentialAmps: c.mainBreakerAmps || 40,
-              differentialSensitivityMa: 30,
-              differentialPoles: c.serviceType === 'Trifásico (3F+N)' ? ('4P' as const) : ('2P' as const),
-              hasSurgeProtector: c.diagnosticMeasurements ? c.diagnosticMeasurements.hasSurgeProtector : false,
-              hasGroundBar: c.diagnosticMeasurements ? c.diagnosticMeasurements.hasGroundRod : true,
-              hasIsolatedNeutralBar: true,
-              totalDinModules: 18,
-              usedDinModules: Math.min(18, c.loads.length * 2),
-              physicalCondition: (c.diagnosticMeasurements?.conductorCondition || 'bueno') as 'bueno' | 'regular' | 'critico',
-              hasHotSpots: c.diagnosticMeasurements ? c.diagnosticMeasurements.panelThermalSigns : false,
-              isLabeled: true,
-            };
-            updatedClient = {
-              ...c,
-              panels: [defaultPanel],
-              loads: c.loads.map((l) => ({ ...l, panelId: l.panelId || 'panel_main' })),
-            };
-          }
-
-          if (!updatedClient.budgets || updatedClient.budgets.length === 0) {
-            const initialBudget =
-              updatedClient.budget && updatedClient.budget.items && updatedClient.budget.items.length > 0
-                ? updatedClient.budget
-                : BudgetGeneratorService.generateBudgetFromProject(updatedClient);
-            updatedClient = {
-              ...updatedClient,
-              budget: initialBudget,
-              budgets: [initialBudget],
-              activeBudgetId: initialBudget.id,
-            };
-          } else {
-            const activeId = updatedClient.activeBudgetId || updatedClient.budgets[0].id;
-            const activeBudget = updatedClient.budgets.find((b) => b.id === activeId) || updatedClient.budgets[0];
-            updatedClient = {
-              ...updatedClient,
-              budget: activeBudget,
-              activeBudgetId: activeBudget.id,
-            };
-          }
-
-          if (updatedClient.currency !== 'ARS' && updatedClient.currency !== 'USD') {
-            updatedClient = { ...updatedClient, currency: 'ARS' };
-          }
-
-          // Migración a acometidas múltiples: garantiza que cada cliente tenga
-          // al menos una, y que sus tableros y facturas estén asignados.
-          return normalizeClient(updatedClient);
-        });
-      }
-      return [INITIAL_SAMPLE_CLIENT, INITIAL_MARKET_CLIENT];
-    } catch (e) {
-      console.error('Failed reading clients from storage:', e);
-      return [INITIAL_SAMPLE_CLIENT, INITIAL_MARKET_CLIENT];
+    const raw = kvGet(STORAGE_KEY_CLIENTS);
+    if (!raw) {
+      // Primera vez en este equipo: se arranca con los clientes de ejemplo.
+      const initial = [INITIAL_SAMPLE_CLIENT, INITIAL_MARKET_CLIENT];
+      kvSet(STORAGE_KEY_CLIENTS, JSON.stringify(initial));
+      damagedEntries = [];
+      damagedInfo = [];
+      unreadableRaw = null;
+      return initial;
     }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = undefined;
+    }
+    if (!Array.isArray(parsed)) {
+      // Nunca se muestran los de ejemplo en lugar de los datos reales: se avisa y se
+      // conserva lo guardado para el próximo guardado (ver saveClients).
+      unreadableRaw = raw;
+      damagedEntries = [];
+      damagedInfo = [{ name: 'Lista de clientes', reason: 'lo guardado en este equipo no se puede leer' }];
+      return [];
+    }
+
+    unreadableRaw = null;
+    const clients: ClientRecord[] = [];
+    damagedEntries = [];
+    damagedInfo = [];
+    for (const item of parsed) {
+      const problem = clientProblem(item);
+      if (problem) {
+        damagedEntries.push(item);
+        damagedInfo.push(describeDamaged(item, problem));
+        continue;
+      }
+      try {
+        clients.push(migrateClient(item as ClientRecord));
+      } catch (error) {
+        console.error('Cliente guardado que no se pudo leer:', error);
+        damagedEntries.push(item);
+        damagedInfo.push(describeDamaged(item, 'sus datos no se pudieron leer'));
+      }
+    }
+    return clients;
+  },
+
+  /** Clientes guardados que no se pudieron leer en la última lectura. */
+  getDamagedClients(): DamagedClient[] {
+    this.getClients();
+    return damagedInfo;
+  },
+
+  /** Lo guardado de los clientes dañados, tal cual, para descargarlo. */
+  exportDamagedClients(): string {
+    this.getClients();
+    return unreadableRaw ?? JSON.stringify(damagedEntries, null, 2);
+  },
+
+  /** Quita los clientes dañados, dejando antes una copia de rescate con todo. */
+  discardDamagedClients(): void {
+    const clients = this.getClients();
+    const raw = kvGet(STORAGE_KEY_CLIENTS);
+    if (raw && (damagedEntries.length > 0 || unreadableRaw)) {
+      addRecoveryPoint(raw, 'Se descartaron clientes guardados que no se podían leer');
+    }
+    damagedEntries = [];
+    damagedInfo = [];
+    unreadableRaw = null;
+    lastInventory = inventoryOf(clients);
+    const next = JSON.stringify(clients.map((client) => normalizeClient(client)));
+    kvSet(STORAGE_KEY_CLIENTS, next);
+    lastWrittenRaw = next;
   },
 
   saveClients(clients: ClientRecord[]): void {
@@ -1005,24 +1150,28 @@ export const StorageService = {
       const normalized = clients.map((client) => normalizeClient(client));
       const previousRaw = kvGet(STORAGE_KEY_CLIENTS);
 
-      // Antes de pisar los datos, si el cambio quita planos, clientes o cargas, queda una copia de lo anterior.
-      if (previousRaw) {
-        if (!lastInventory) {
-          try {
-            lastInventory = inventoryOf(JSON.parse(previousRaw) as ClientRecord[]);
-          } catch {
-            lastInventory = null;
-          }
-        }
-        const nextInventory = inventoryOf(normalized);
+      if (previousRaw && unreadableRaw !== null && previousRaw === unreadableRaw) {
+        // Lo guardado no se podía leer: antes de escribir encima queda la copia tal cual.
+        addRecoveryPoint(previousRaw, 'La lista de clientes guardada no se podía leer: esta es la copia tal como estaba');
+        unreadableRaw = null;
+        damagedInfo = [];
+      } else if (previousRaw) {
+        // Antes de pisar los datos, si el cambio quita planos, clientes o cargas, queda una copia de lo anterior.
+        // Se compara con lo que hay en el disco: otra pestaña o una importación pueden haberlo cambiado.
+        if (!lastInventory || previousRaw !== lastWrittenRaw) lastInventory = inventoryOfRaw(previousRaw);
+        const nextInventory = inventoryOf([...normalized, ...(damagedEntries as ClientRecord[])]);
         const loss = lastInventory ? describeLoss(lastInventory, nextInventory) : null;
         if (loss) addRecoveryPoint(previousRaw, loss);
-        lastInventory = nextInventory;
-      } else {
-        lastInventory = inventoryOf(normalized);
       }
 
-      kvSet(STORAGE_KEY_CLIENTS, JSON.stringify(normalized));
+      // Los clientes dañados se siguen guardando tal cual, salvo que ya haya uno sano con su id.
+      const ids = new Set(normalized.map((client) => client.id));
+      const kept = damagedEntries.filter((item) => !ids.has((item as { id?: string } | null)?.id ?? ''));
+      const list = [...normalized, ...kept];
+      const next = JSON.stringify(list);
+      kvSet(STORAGE_KEY_CLIENTS, next);
+      lastWrittenRaw = next;
+      lastInventory = inventoryOf(list as ClientRecord[]);
     } catch (e) {
       console.error('Failed saving clients:', e);
     }
@@ -1087,14 +1236,49 @@ export const StorageService = {
     }
   },
 
+  /**
+   * Una copia de rescate como archivo de copia de seguridad. Importarlo trae de vuelta
+   * esas versiones de los clientes (sirve, por ejemplo, para recuperar lo que se había
+   * guardado en otra pestaña). Si la copia no se puede leer, se entrega tal cual.
+   */
+  exportRecoveryPoint(index: number): string | null {
+    const point = readRecoveryPoints()[index];
+    if (!point) return null;
+    try {
+      const clients = JSON.parse(point.raw) as unknown;
+      if (!Array.isArray(clients)) return point.raw;
+      return JSON.stringify({ version: '1.0', exportedAt: point.at, reason: point.reason, clients }, null, 2);
+    } catch {
+      return point.raw;
+    }
+  },
+
   getClientById(id: string): ClientRecord | null {
     const clients = this.getClients();
     return clients.find((c) => c.id === id) || null;
   },
 
-  saveClient(client: ClientRecord): void {
+  /**
+   * Guarda un cliente y devuelve cómo quedó (con su revisión nueva), que es lo que
+   * la pantalla debe seguir usando. Si en el disco hay una revisión que no escribió
+   * esta pestaña, otra pestaña o ventana lo cambió: se guarda esta versión, pero la
+   * otra queda en una copia de rescate y se avisa.
+   */
+  saveClient(client: ClientRecord): ClientRecord {
     const clients = this.getClients();
     const index = clients.findIndex((c) => c.id === client.id);
+    const storedRevision = index >= 0 ? clients[index].revision ?? 0 : 0;
+    const incomingRevision = client.revision ?? 0;
+    if (index >= 0 && incomingRevision !== storedRevision && revisionsWrittenHere.get(client.id) !== storedRevision) {
+      const previousRaw = kvGet(STORAGE_KEY_CLIENTS);
+      if (previousRaw) {
+        addRecoveryPoint(
+          previousRaw,
+          `«${clients[index].clientName}» se había cambiado en otra pestaña o ventana: esta copia tiene esa versión`
+        );
+      }
+      conflictListeners.forEach((listener) => listener({ clientId: client.id, clientName: clients[index].clientName }));
+    }
     // Si quien guarda ni siquiera trae los planos o las acometidas (por ejemplo, un formulario
     // que no los edita), se conservan los guardados en lugar de borrarse. Un campo que viene
     // vacío a propósito (`plans: []`) sí se respeta.
@@ -1103,7 +1287,9 @@ export const StorageService = {
       if (!('plans' in client)) merged.plans = clients[index].plans;
       if (!('supplies' in client)) merged.supplies = clients[index].supplies;
     }
-    const updated = normalizeClient({ ...merged, updatedAt: new Date().toISOString() });
+    const revision = Math.max(storedRevision, incomingRevision) + 1;
+    const updated = normalizeClient({ ...merged, revision, updatedAt: new Date().toISOString() });
+    revisionsWrittenHere.set(updated.id, revision);
 
     if (index >= 0) {
       clients[index] = updated;
@@ -1111,6 +1297,13 @@ export const StorageService = {
       clients.unshift(updated);
     }
     this.saveClients(clients);
+    return updated;
+  },
+
+  /** Avisa cuando un guardado pisó un cambio hecho en otra pestaña o ventana. */
+  onSaveConflict(listener: (conflict: SaveConflict) => void): () => void {
+    conflictListeners.add(listener);
+    return () => conflictListeners.delete(listener);
   },
 
   deleteClient(id: string): void {
@@ -1167,30 +1360,118 @@ export const StorageService = {
     return JSON.stringify(data, null, 2);
   },
 
-  importBackup(jsonString: string): boolean {
-    try {
-      const data = JSON.parse(jsonString);
-      if (!data || !Array.isArray(data.clients)) return false;
-      if (data.format === 'electropro-storage') {
-        if (data.version !== 1 || !data.entries || typeof data.entries !== 'object') return false;
-        const entries = Object.entries(data.entries);
-        if (entries.some(([key, value]) => !key.startsWith('electropro_') || typeof value !== 'string')) return false;
-        for (const [key, value] of entries) kvSet(key, value as string);
-        return true;
-      }
-      if (data.technician) {
-        this.saveTechnicianProfile(data.technician);
-      }
-      if (Array.isArray(data.clients)) {
-        this.saveClients(data.clients);
-        if (data.clients[0]?.id) {
-          this.setActiveClientId(data.clients[0].id);
-        }
-      }
-      return true;
-    } catch (e) {
-      console.error('Error importing backup:', e);
-      return false;
-    }
+  /** Lo que haría la importación de un archivo, sin guardar nada. */
+  previewImport(jsonString: string): ImportSummary {
+    const plan = planImport(jsonString, this.getClients());
+    return plan.summary;
+  },
+
+  /**
+   * Importa una copia: suma los clientes nuevos y actualiza los que ya están (por id),
+   * sin borrar los que solo están en este equipo. Los clientes dañados del archivo no
+   * entran y se informan. Antes queda una copia de rescate de lo que había.
+   */
+  importBackup(jsonString: string): ImportSummary {
+    const current = this.getClients();
+    const plan = planImport(jsonString, current);
+    if (!plan.summary.ok) return plan.summary;
+
+    const previousRaw = kvGet(STORAGE_KEY_CLIENTS);
+    if (previousRaw) addRecoveryPoint(previousRaw, 'Antes de importar una copia de seguridad');
+
+    const incoming = new Map(plan.clients.map((client) => [client.id, client]));
+    const merged = [
+      ...current.map((client) => incoming.get(client.id) ?? client),
+      ...plan.clients.filter((client) => !current.some((c) => c.id === client.id)),
+    ];
+    this.saveClients(merged);
+    for (const client of plan.clients) revisionsWrittenHere.delete(client.id);
+
+    if (plan.technician) this.saveTechnicianProfile({ ...DEFAULT_TECHNICIAN, ...plan.technician });
+    for (const [key, value] of plan.extraEntries) kvSet(key, value);
+
+    const activeId = kvGet(STORAGE_KEY_ACTIVE_CLIENT);
+    if (!activeId || !merged.some((client) => client.id === activeId)) this.setActiveClientId(merged[0].id);
+    return plan.summary;
   },
 };
+
+interface ImportPlan {
+  summary: ImportSummary;
+  clients: ClientRecord[];
+  technician?: Partial<TechnicianProfile>;
+  extraEntries: Array<[string, string]>;
+}
+
+const failedImport = (error: string, skipped: DamagedClient[] = []): ImportPlan => ({
+  summary: { ok: false, error, added: 0, updated: 0, skipped, technician: false },
+  clients: [],
+  extraEntries: [],
+});
+
+const parseJson = (text: unknown): unknown => {
+  if (typeof text !== 'string') return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+};
+
+/** Lee un archivo de copia (el de la lista de clientes o la copia completa de Ajustes) y revisa cada cliente. */
+function planImport(jsonString: string, current: ClientRecord[]): ImportPlan {
+  const data = parseJson(jsonString) as Record<string, unknown> | undefined;
+  if (!data || typeof data !== 'object') return failedImport('El archivo no es una copia de ElectroPro: no se puede leer.');
+
+  let rawClients: unknown;
+  let technician: unknown;
+  const extraEntries: Array<[string, string]> = [];
+  if (data.format === 'electropro-storage') {
+    const entries = data.entries as Record<string, unknown> | undefined;
+    if (data.version !== 1 || !entries || typeof entries !== 'object') {
+      return failedImport('La copia completa es de una versión que esta aplicación no conoce.');
+    }
+    rawClients = parseJson(entries[STORAGE_KEY_CLIENTS]) ?? data.clients;
+    technician = parseJson(entries[STORAGE_KEY_TECHNICIAN]) ?? data.technician;
+    for (const key of CATALOG_KEYS) {
+      const value = entries[key];
+      if (typeof value === 'string' && parseJson(value) !== undefined) extraEntries.push([key, value]);
+    }
+  } else {
+    rawClients = data.clients;
+    technician = data.technician;
+  }
+  if (!Array.isArray(rawClients)) return failedImport('El archivo no trae clientes.');
+
+  const clients: ClientRecord[] = [];
+  const skipped: DamagedClient[] = [];
+  for (const item of rawClients) {
+    const problem = clientProblem(item);
+    if (problem) {
+      skipped.push(describeDamaged(item, problem));
+      continue;
+    }
+    try {
+      clients.push(migrateClient(item as ClientRecord));
+    } catch {
+      skipped.push(describeDamaged(item, 'sus datos no se pudieron leer'));
+    }
+  }
+  if (clients.length === 0) return failedImport('Ningún cliente del archivo se pudo leer.', skipped);
+
+  const known = new Set(current.map((client) => client.id));
+  const updated = clients.filter((client) => known.has(client.id)).length;
+  const validTechnician = technician && typeof technician === 'object' && !Array.isArray(technician);
+  return {
+    summary: {
+      ok: true,
+      added: clients.length - updated,
+      updated,
+      skipped,
+      technician: Boolean(validTechnician),
+    },
+    clients,
+    technician: validTechnician ? (technician as Partial<TechnicianProfile>) : undefined,
+    extraEntries,
+  };
+}
