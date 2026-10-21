@@ -12,13 +12,16 @@ import {
 import {
   DEFAULT_WALL_THICKNESS,
   DEFAULT_COTA_OFFSET,
+  isSite,
   DEFAULT_TEXT_SIZE,
   elementKind,
   elementTypeLabel,
   findStructure,
   findTool,
   findSymbol,
+  symbolSize,
 } from '../components/planSymbols';
+import { DEFAULT_NORTH_SIZE, DEFAULT_STREET_WIDTH } from '../components/planSite';
 
 /**
  * Lienzo del plano: las coordenadas se guardan en estas unidades, así el plano
@@ -424,7 +427,7 @@ export function slideOpeningOnWall(opening: PlanElement, wall: PlanElement, x: n
 
 /** Borra un elemento; si es una pared, se lleva sus aberturas. */
 export function removeElement(elements: PlanElement[], id: string): PlanElement[] {
-  return elements.filter((element) => element.id !== id && element.wallId !== id);
+  return pruneGroups(elements.filter((element) => element.id !== id && element.wallId !== id));
 }
 
 /** Cuenta los elementos por tipo visible, para los resúmenes. */
@@ -822,7 +825,8 @@ export function duplicateElements(
   ids: string[],
   dx = 40,
   dy = 40,
-  height = PLAN_MAX_HEIGHT
+  height = PLAN_MAX_HEIGHT,
+  keepInside = true
 ): { copies: PlanElement[]; ids: string[] } {
   // Las paredes copiadas se llevan sus aberturas, aunque no estén seleccionadas.
   const wanted = new Set(ids);
@@ -834,8 +838,12 @@ export function duplicateElements(
   // Si el conjunto llegaría al borde de la hoja, se frena ahí en vez de salirse.
   const xs = originals.flatMap((element) => [element.x, element.x2 ?? element.x]);
   const ys = originals.flatMap((element) => [element.y, element.y2 ?? element.y]);
-  const shiftX = Math.round(Math.max(10 - Math.min(...xs), Math.min(PLAN_WIDTH - 10 - Math.max(...xs), dx)));
-  const shiftY = Math.round(Math.max(10 - Math.min(...ys), Math.min(height - 10 - Math.max(...ys), dy)));
+  const shiftX = keepInside
+    ? Math.round(Math.max(10 - Math.min(...xs), Math.min(PLAN_WIDTH - 10 - Math.max(...xs), dx)))
+    : Math.round(dx);
+  const shiftY = keepInside
+    ? Math.round(Math.max(10 - Math.min(...ys), Math.min(height - 10 - Math.max(...ys), dy)))
+    : Math.round(dy);
 
   // Las aberturas copiadas apuntan a la copia de su pared, no a la original.
   const newIdByOld = new Map(originals.map((element) => [element.id, newElementId()]));
@@ -855,7 +863,17 @@ export function duplicateElements(
     return copy;
   });
 
-  return { copies, ids: copies.map((copy) => copy.id) };
+  // Un grupo copiado es otro grupo, no el original; y si solo se copió un miembro, queda suelto.
+  const newGroupByOld = new Map<string, string>();
+  const grouped = pruneGroups(
+    copies.map((copy) => {
+      if (!copy.groupId) return copy;
+      if (!newGroupByOld.has(copy.groupId)) newGroupByOld.set(copy.groupId, newGroupId());
+      return { ...copy, groupId: newGroupByOld.get(copy.groupId) };
+    })
+  );
+
+  return { copies: grouped, ids: grouped.map((copy) => copy.id) };
 }
 
 export type MirrorAxis = 'vertical' | 'horizontal';
@@ -903,6 +921,8 @@ export function describeSelection(elements: PlanElement[], ids: string[]): strin
   const selected = elements.filter((element) => ids.includes(element.id));
   if (selected.length === 0) return 'Nada seleccionado';
   if (selected.length === 1) return elementTypeLabel(selected[0]);
+  const groupIds = new Set(selected.map((element) => element.groupId));
+  if (groupIds.size === 1 && selected[0].groupId) return `Grupo de ${selected.length} elementos`;
   const tipos = new Set(selected.map((element) => elementTypeLabel(element)));
   return `${selected.length} elementos${tipos.size > 1 ? ` (${[...tipos].slice(0, 3).join(', ')}…)` : ''}`;
 }
@@ -1095,6 +1115,8 @@ const MIN_ROOM_SIDE = 25;
 
 const near = (a: number, b: number): boolean => Math.abs(a - b) <= CORNER_TOLERANCE;
 
+const isRoomLine = (element: PlanElement): boolean => elementKind(element) === 'pared' || elementKind(element) === 'limite';
+
 /**
  * Si estas cuatro paredes forman un rectángulo cerrado (dos horizontales y dos
  * verticales que recorren los lados de la caja), devuelve su caja.
@@ -1102,7 +1124,8 @@ const near = (a: number, b: number): boolean => Math.abs(a - b) <= CORNER_TOLERA
 export function roomOfWalls(elements: PlanElement[], ids: string[]): RoomBounds | null {
   if (ids.length !== 4) return null;
   const walls = ids.map((id) => elements.find((element) => element.id === id));
-  if (walls.some((wall) => !wall || !isWall(wall))) return null;
+  // Los cuatro lados pueden ser paredes (habitación) o límites (terreno).
+  if (walls.some((wall) => !wall || !isRoomLine(wall))) return null;
   const list = walls as PlanElement[];
 
   const xs = list.flatMap((wall) => [wall.x, wall.x2 ?? wall.x]);
@@ -1283,4 +1306,523 @@ export function resizeOpening(
     x: Math.round(fixedX + ux * sign * (nextLength / 2)),
     y: Math.round(fixedY + uy * sign * (nextLength / 2)),
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Grupos                                                              */
+/* ------------------------------------------------------------------ */
+
+export function newGroupId(): string {
+  return `grp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** Los ids pedidos más todos los miembros de los grupos a los que pertenecen. */
+export function expandToGroups(elements: PlanElement[], ids: string[]): string[] {
+  const wanted = new Set(ids);
+  const groups = new Set(
+    elements.filter((element) => wanted.has(element.id) && element.groupId).map((element) => element.groupId)
+  );
+  if (groups.size === 0) return ids;
+  const expanded = new Set(ids);
+  for (const element of elements) {
+    if (element.groupId && groups.has(element.groupId)) expanded.add(element.id);
+  }
+  return [...expanded];
+}
+
+/** Un grupo con menos de dos miembros no es un grupo: se disuelve. */
+export function pruneGroups(elements: PlanElement[]): PlanElement[] {
+  const counts = new Map<string, number>();
+  for (const element of elements) {
+    if (element.groupId) counts.set(element.groupId, (counts.get(element.groupId) ?? 0) + 1);
+  }
+  if ([...counts.values()].every((count) => count >= 2)) return elements;
+  return elements.map((element) => {
+    if (!element.groupId || (counts.get(element.groupId) ?? 0) >= 2) return element;
+    const { groupId: _dissolved, ...rest } = element;
+    return rest;
+  });
+}
+
+/**
+ * Agrupa los elementos indicados en un solo grupo nuevo. Si alguno ya estaba en
+ * otro grupo, todo ese grupo pasa al nuevo (no hay grupos dentro de grupos).
+ */
+export function groupElements(elements: PlanElement[], ids: string[]): { elements: PlanElement[]; groupId: string | null } {
+  const members = new Set(expandToGroups(elements, ids));
+  if (members.size < 2) return { elements, groupId: null };
+  const groupId = newGroupId();
+  const grouped = elements.map((element) => (members.has(element.id) ? { ...element, groupId } : element));
+  return { elements: pruneGroups(grouped), groupId };
+}
+
+/** Deshace los grupos de los elementos indicados (de todos sus miembros). */
+export function ungroupElements(elements: PlanElement[], ids: string[]): { elements: PlanElement[]; released: number } {
+  const members = new Set(expandToGroups(elements, ids));
+  let released = 0;
+  const next = elements.map((element) => {
+    if (!members.has(element.id) || !element.groupId) return element;
+    released++;
+    const { groupId: _released, ...rest } = element;
+    return rest;
+  });
+  return { elements: next, released };
+}
+
+/** Caja que ocupan los elementos (con un margen), para dibujar el recuadro de un grupo. */
+export function boundsOfElements(
+  elements: PlanElement[],
+  ids: string[],
+  padding = 14
+): { left: number; top: number; right: number; bottom: number } | null {
+  const wanted = new Set(ids);
+  const items = elements.filter((element) => wanted.has(element.id));
+  if (items.length === 0) return null;
+  const xs = items.flatMap((element) => [element.x, element.x2 ?? element.x]);
+  const ys = items.flatMap((element) => [element.y, element.y2 ?? element.y]);
+  return {
+    left: Math.min(...xs) - padding,
+    top: Math.min(...ys) - padding,
+    right: Math.max(...xs) + padding,
+    bottom: Math.max(...ys) + padding,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Escalar una selección con su caja (como en los programas de dibujo) */
+/* ------------------------------------------------------------------ */
+
+export interface Frame {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** Menor lado de la caja de una selección al achicarla. */
+const MIN_FRAME_SIDE = 20;
+const MIN_ELEMENT_SIZE = 8;
+
+/**
+ * La caja nueva al arrastrar un manejador hasta un punto.
+ *
+ * - Sin teclas: lo opuesto queda fijo y se estira a voluntad.
+ * - `keepRatio` (Mayús) en una esquina: conserva las proporciones.
+ * - `fromCenter` (Alt): el centro queda fijo y se estira hacia los dos lados.
+ */
+export function resizeFrame(
+  frame: Frame,
+  handle: RoomHandle,
+  point: { x: number; y: number },
+  options: { keepRatio: boolean; fromCenter: boolean }
+): Frame {
+  const width = frame.right - frame.left;
+  const height = frame.bottom - frame.top;
+  const centerX = (frame.left + frame.right) / 2;
+  const centerY = (frame.top + frame.bottom) / 2;
+
+  // Distancia pedida de cada lado respecto de su ancla (el lado opuesto, o el centro).
+  const half = options.fromCenter ? 0.5 : 1;
+  const anchorX = options.fromCenter ? centerX : handle.sx < 0 ? frame.right : frame.left;
+  const anchorY = options.fromCenter ? centerY : handle.sy < 0 ? frame.bottom : frame.top;
+
+  let wantedWidth = handle.sx === 0 ? width : Math.abs(point.x - anchorX) / half;
+  let wantedHeight = handle.sy === 0 ? height : Math.abs(point.y - anchorY) / half;
+
+  if (options.keepRatio && handle.sx !== 0 && handle.sy !== 0) {
+    const factor = Math.max(wantedWidth / width, wantedHeight / height);
+    wantedWidth = width * factor;
+    wantedHeight = height * factor;
+  }
+  wantedWidth = Math.max(MIN_FRAME_SIDE, wantedWidth);
+  wantedHeight = Math.max(MIN_FRAME_SIDE, wantedHeight);
+
+  if (options.fromCenter) {
+    return {
+      left: centerX - wantedWidth / 2,
+      right: centerX + wantedWidth / 2,
+      top: centerY - wantedHeight / 2,
+      bottom: centerY + wantedHeight / 2,
+    };
+  }
+  return {
+    left: handle.sx < 0 ? frame.right - wantedWidth : frame.left,
+    right: handle.sx > 0 ? frame.left + wantedWidth : frame.right,
+    top: handle.sy < 0 ? frame.bottom - wantedHeight : frame.top,
+    bottom: handle.sy > 0 ? frame.top + wantedHeight : frame.bottom,
+  };
+}
+
+/**
+ * Escala los elementos indicados de una caja a otra.
+ *
+ * Las posiciones se estiran por eje; los tamaños (símbolos, textos, separación
+ * de las cotas) cambian con la escala de las esquinas (uniforme). El espesor de
+ * las paredes y el ancho de las puertas y ventanas no cambian: una pared más
+ * larga no es una pared más gruesa. Las aberturas siguen a su pared.
+ */
+export function scaleElements(
+  elements: PlanElement[],
+  ids: string[],
+  from: Frame,
+  to: Frame,
+  height: number,
+  scaleSizes = true
+): PlanElement[] {
+  const fromWidth = from.right - from.left;
+  const fromHeight = from.bottom - from.top;
+  if (fromWidth < 1 || fromHeight < 1) return elements;
+
+  const fx = (to.right - to.left) / fromWidth;
+  const fy = (to.bottom - to.top) / fromHeight;
+  const uniform = Math.sqrt(fx * fy);
+  const moving = new Set(expandToGroups(elements, ids));
+  const walls = new Set(elements.filter((element) => moving.has(element.id) && isWall(element)).map((element) => element.id));
+
+  const mapX = (x: number): number => Math.max(10, Math.min(PLAN_WIDTH - 10, Math.round(to.left + (x - from.left) * fx)));
+  const mapY = (y: number): number => Math.max(10, Math.min(height - 10, Math.round(to.top + (y - from.top) * fy)));
+
+  const scaled = elements.map((element) => {
+    if (!moving.has(element.id)) return element;
+    // Una abertura apoyada en una pared que también se escala la acomoda la pared.
+    if (isOpening(element) && element.wallId && walls.has(element.wallId)) return element;
+
+    const next: PlanElement = { ...element, x: mapX(element.x), y: mapY(element.y) };
+    if (element.x2 !== undefined) next.x2 = mapX(element.x2);
+    if (element.y2 !== undefined) next.y2 = mapY(element.y2);
+
+    if (scaleSizes) {
+      const kind = elementKind(element);
+      if (kind === 'symbol') {
+        next.size = Math.round(Math.max(MIN_ELEMENT_SIZE, Math.min(160, symbolSize(element) * uniform)));
+      } else if (kind === 'texto') {
+        next.size = Math.round(Math.max(MIN_ELEMENT_SIZE, Math.min(90, (element.size ?? DEFAULT_TEXT_SIZE) * uniform)));
+      } else if (kind === 'cota' && element.offset !== undefined) {
+        next.offset = Math.round(element.offset * uniform);
+      }
+    }
+    return next;
+  });
+
+  return wallsOf(scaled)
+    .filter((wall) => walls.has(wall.id))
+    .reduce((current, wall) => followWall(current, wall), scaled);
+}
+
+/* ------------------------------------------------------------------ */
+/* Diseño rápido: alinear, distribuir, rotar y repetir                 */
+/* ------------------------------------------------------------------ */
+
+export type AlignMode = 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom';
+
+/** Caja que ocupa un elemento (los símbolos, centrados en su punto, con su tamaño). */
+function itemBox(element: PlanElement): Frame {
+  const kind = elementKind(element);
+  if (kind === 'symbol') {
+    const half = symbolSize(element) / 2;
+    return { left: element.x - half, right: element.x + half, top: element.y - half, bottom: element.y + half };
+  }
+  if (isOpening(element)) {
+    const half = (element.length ?? 90) / 2;
+    return { left: element.x - half, right: element.x + half, top: element.y - half, bottom: element.y + half };
+  }
+  const pad = kind === 'pared' ? (element.thickness ?? DEFAULT_WALL_THICKNESS) / 2 : 0;
+  return {
+    left: Math.min(element.x, element.x2 ?? element.x) - pad,
+    right: Math.max(element.x, element.x2 ?? element.x) + pad,
+    top: Math.min(element.y, element.y2 ?? element.y) - pad,
+    bottom: Math.max(element.y, element.y2 ?? element.y) + pad,
+  };
+}
+
+/**
+ * Bloques que se mueven como uno solo al alinear o distribuir: cada grupo es un
+ * bloque, cada elemento suelto es otro, y las aberturas van con su pared.
+ */
+function movableUnits(elements: PlanElement[], ids: string[]): Array<{ ids: string[]; box: Frame }> {
+  const wanted = new Set(expandToGroups(elements, ids));
+  const selected = elements.filter((element) => wanted.has(element.id));
+  const wallIds = new Set(selected.filter(isWall).map((wall) => wall.id));
+  const units = new Map<string, PlanElement[]>();
+
+  for (const element of selected) {
+    if (isOpening(element) && element.wallId && wallIds.has(element.wallId)) continue;
+    const key = element.groupId ?? element.id;
+    units.set(key, [...(units.get(key) ?? []), element]);
+  }
+
+  return [...units.values()].map((members) => {
+    const boxes = members.map(itemBox);
+    return {
+      ids: members.map((member) => member.id),
+      box: {
+        left: Math.min(...boxes.map((box) => box.left)),
+        right: Math.max(...boxes.map((box) => box.right)),
+        top: Math.min(...boxes.map((box) => box.top)),
+        bottom: Math.max(...boxes.map((box) => box.bottom)),
+      },
+    };
+  });
+}
+
+/** Alinea los bloques seleccionados con el borde o el centro de todos ellos. */
+export function alignElements(elements: PlanElement[], ids: string[], mode: AlignMode, height: number): PlanElement[] {
+  const units = movableUnits(elements, ids);
+  if (units.length < 2) return elements;
+
+  const left = Math.min(...units.map((unit) => unit.box.left));
+  const right = Math.max(...units.map((unit) => unit.box.right));
+  const top = Math.min(...units.map((unit) => unit.box.top));
+  const bottom = Math.max(...units.map((unit) => unit.box.bottom));
+
+  let current = elements;
+  for (const unit of units) {
+    let dx = 0;
+    let dy = 0;
+    if (mode === 'left') dx = left - unit.box.left;
+    if (mode === 'right') dx = right - unit.box.right;
+    if (mode === 'centerX') dx = (left + right) / 2 - (unit.box.left + unit.box.right) / 2;
+    if (mode === 'top') dy = top - unit.box.top;
+    if (mode === 'bottom') dy = bottom - unit.box.bottom;
+    if (mode === 'centerY') dy = (top + bottom) / 2 - (unit.box.top + unit.box.bottom) / 2;
+    if (Math.round(dx) !== 0 || Math.round(dy) !== 0) current = translateElements(current, unit.ids, dx, dy, height);
+  }
+  return current;
+}
+
+/** Reparte los bloques con el mismo espacio entre uno y otro; el primero y el último no se mueven. */
+export function distributeElements(
+  elements: PlanElement[],
+  ids: string[],
+  axis: 'horizontal' | 'vertical',
+  height: number
+): PlanElement[] {
+  const units = movableUnits(elements, ids);
+  if (units.length < 3) return elements;
+
+  const horizontal = axis === 'horizontal';
+  const start = (unit: { box: Frame }): number => (horizontal ? unit.box.left : unit.box.top);
+  const size = (unit: { box: Frame }): number => (horizontal ? unit.box.right - unit.box.left : unit.box.bottom - unit.box.top);
+  const sorted = [...units].sort((a, b) => start(a) + size(a) / 2 - (start(b) + size(b) / 2));
+
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const span = start(last) + size(last) - start(first);
+  const gap = (span - sorted.reduce((total, unit) => total + size(unit), 0)) / (sorted.length - 1);
+
+  let current = elements;
+  let cursor = start(first) + size(first) + gap;
+  for (const unit of sorted.slice(1, -1)) {
+    const delta = cursor - start(unit);
+    current = translateElements(current, unit.ids, horizontal ? delta : 0, horizontal ? 0 : delta, height);
+    cursor += size(unit) + gap;
+  }
+  return current;
+}
+
+/** Gira la selección 90° alrededor de su centro (a derecha o a izquierda), manteniéndola dentro de la hoja. */
+export function rotateElements(elements: PlanElement[], ids: string[], clockwise: boolean, height: number): PlanElement[] {
+  const moving = new Set(expandToGroups(elements, ids));
+  const selected = elements.filter((element) => moving.has(element.id));
+  if (selected.length === 0) return elements;
+
+  const xs = selected.flatMap((element) => [element.x, element.x2 ?? element.x]);
+  const ys = selected.flatMap((element) => [element.y, element.y2 ?? element.y]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+
+  // En pantalla el eje y va hacia abajo: girar a la derecha lleva (dx, dy) a (−dy, dx).
+  const turn = (x: number, y: number): { x: number; y: number } =>
+    clockwise ? { x: cx - (y - cy), y: cy + (x - cx) } : { x: cx + (y - cy), y: cy - (x - cx) };
+
+  const walls = new Set(selected.filter(isWall).map((wall) => wall.id));
+  const turned = elements.map((element) => {
+    if (!moving.has(element.id)) return element;
+    const point = turn(element.x, element.y);
+    const next: PlanElement = { ...element, x: Math.round(point.x), y: Math.round(point.y) };
+    if (element.x2 !== undefined && element.y2 !== undefined) {
+      const end = turn(element.x2, element.y2);
+      next.x2 = Math.round(end.x);
+      next.y2 = Math.round(end.y);
+    }
+    if (elementKind(element) === 'symbol' || elementKind(element) === 'norte') {
+      next.rotation = ((((element.rotation ?? 0) + (clockwise ? 90 : -90)) % 360) + 360) % 360;
+    }
+    return next;
+  });
+
+  const withOpenings = wallsOf(turned)
+    .filter((wall) => walls.has(wall.id))
+    .reduce((current, wall) => followWall(current, wall), turned);
+
+  // Si al girar algo quedó fuera de la hoja, se corre todo junto hacia adentro.
+  const after = withOpenings.filter((element) => moving.has(element.id));
+  const nx = after.flatMap((element) => [element.x, element.x2 ?? element.x]);
+  const ny = after.flatMap((element) => [element.y, element.y2 ?? element.y]);
+  const shiftX = Math.max(10 - Math.min(...nx), Math.min(PLAN_WIDTH - 10 - Math.max(...nx), 0));
+  const shiftY = Math.max(10 - Math.min(...ny), Math.min(height - 10 - Math.max(...ny), 0));
+  if (shiftX === 0 && shiftY === 0) return withOpenings;
+  return translateElements(withOpenings, [...moving], shiftX, shiftY, height);
+}
+
+/**
+ * Repite la selección en filas y columnas (como MATRIZ de AutoCAD). `stepX` y
+ * `stepY` son la distancia entre una copia y la siguiente; las copias que
+ * quedarían fuera de la hoja no se crean.
+ */
+export function arrayElements(
+  elements: PlanElement[],
+  ids: string[],
+  rows: number,
+  columns: number,
+  stepX: number,
+  stepY: number,
+  height: number
+): { copies: PlanElement[]; skipped: number } {
+  const wanted = new Set(expandToGroups(elements, ids));
+  const originals = elements.filter((element) => wanted.has(element.id));
+  if (originals.length === 0) return { copies: [], skipped: 0 };
+
+  // Se compara con los puntos de los elementos (como al mover y al duplicar), no con su caja:
+  // un símbolo pegado al borde de la hoja tiene la caja asomando y aun así se puede repetir.
+  const xs = originals.flatMap((element) => [element.x, element.x2 ?? element.x]);
+  const ys = originals.flatMap((element) => [element.y, element.y2 ?? element.y]);
+  const left = Math.min(...xs);
+  const right = Math.max(...xs);
+  const top = Math.min(...ys);
+  const bottom = Math.max(...ys);
+
+  const copies: PlanElement[] = [];
+  let skipped = 0;
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < columns; column++) {
+      if (row === 0 && column === 0) continue;
+      const dx = column * stepX;
+      const dy = row * stepY;
+      if (left + dx < 10 || right + dx > PLAN_WIDTH - 10 || top + dy < 10 || bottom + dy > height - 10) {
+        skipped++;
+        continue;
+      }
+      copies.push(...duplicateElements(elements, ids, dx, dy, height, false).copies);
+    }
+  }
+  return { copies, skipped };
+}
+
+/* ------------------------------------------------------------------ */
+/* Copiar un plano entero                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Copia de un plano con ids nuevos para el plano y para cada elemento (las
+ * aberturas siguen ligadas a la copia de su pared, y los grupos a su grupo
+ * nuevo). Sirve para duplicar un plano y para abrir uno desde un archivo.
+ */
+export function duplicatePlan(plan: ClientPlan, name?: string): ClientPlan {
+  const now = new Date().toISOString();
+  const { copies } = duplicateElements(plan.elements, plan.elements.map((element) => element.id), 0, 0, PLAN_MAX_HEIGHT * 4, false);
+  // Un elemento que representaba un tablero o una carga del relevamiento ya no lo representa en la copia.
+  return {
+    ...plan,
+    id: newPlanId(),
+    name: name ?? plan.name,
+    elements: copies,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Entorno: calles, terreno, norte y barra de escala                   */
+/* ------------------------------------------------------------------ */
+
+export function createStreet(a: { x: number; y: number }, b: { x: number; y: number }, name = 'Calle'): PlanElement {
+  return {
+    id: newElementId(),
+    kind: 'calle',
+    label: name,
+    x: Math.round(a.x),
+    y: Math.round(a.y),
+    x2: Math.round(b.x),
+    y2: Math.round(b.y),
+    thickness: DEFAULT_STREET_WIDTH,
+  };
+}
+
+/** Un lado del terreno. */
+export function createBoundary(a: { x: number; y: number }, b: { x: number; y: number }, extra: Partial<PlanElement> = {}): PlanElement {
+  return {
+    id: newElementId(),
+    kind: 'limite',
+    label: 'Límite del terreno',
+    x: Math.round(a.x),
+    y: Math.round(a.y),
+    x2: Math.round(b.x),
+    y2: Math.round(b.y),
+    ...extra,
+  };
+}
+
+/** El terreno entero: cuatro límites juntos, agrupados para moverlos y escalarlos como uno. */
+export function createLot(a: { x: number; y: number }, b: { x: number; y: number }): PlanElement[] {
+  const left = Math.min(a.x, b.x);
+  const right = Math.max(a.x, b.x);
+  const top = Math.min(a.y, b.y);
+  const bottom = Math.max(a.y, b.y);
+  const groupId = newGroupId();
+  return [
+    createBoundary({ x: left, y: top }, { x: right, y: top }, { groupId }),
+    createBoundary({ x: right, y: top }, { x: right, y: bottom }, { groupId }),
+    createBoundary({ x: right, y: bottom }, { x: left, y: bottom }, { groupId }),
+    createBoundary({ x: left, y: bottom }, { x: left, y: top }, { groupId }),
+  ];
+}
+
+export function createNorth(x: number, y: number, rotation = 0): PlanElement {
+  return {
+    id: newElementId(),
+    kind: 'norte',
+    label: 'Norte',
+    x: Math.round(x),
+    y: Math.round(y),
+    size: DEFAULT_NORTH_SIZE,
+    rotation: Math.round(rotation),
+  };
+}
+
+export function createScaleBar(x: number, y: number, meters: number): PlanElement {
+  return {
+    id: newElementId(),
+    kind: 'escalagrafica',
+    label: 'Barra de escala',
+    x: Math.round(x),
+    y: Math.round(y),
+    length: meters,
+  };
+}
+
+/** Giro de la flecha del norte del plano (0 = el norte está hacia arriba de la hoja), o null si no hay. */
+export function northRotation(plan: ClientPlan): number | null {
+  const north = plan.elements.find((element) => element.kind === 'norte');
+  return north ? (((north.rotation ?? 0) % 360) + 360) % 360 : null;
+}
+
+/**
+ * Hacia dónde mira el lado de arriba de la hoja, en grados de brújula (0 = norte,
+ * 90 = este). Si el norte está girado 90° a la derecha, la parte de arriba mira al oeste.
+ */
+export function sheetTopBearing(plan: ClientPlan): number | null {
+  const rotation = northRotation(plan);
+  return rotation === null ? null : (360 - rotation) % 360;
+}
+
+/** Líneas de dirección y coordenadas para el encabezado del plano impreso. */
+export function siteSummary(plan: ClientPlan): string {
+  const site = plan.site;
+  if (!site) return '';
+  const parts = [site.address, site.betweenStreets ? `entre ${site.betweenStreets}` : '', site.locality, site.lot ? `Parcela ${site.lot}` : ''];
+  if (typeof site.latitude === 'number' && typeof site.longitude === 'number') {
+    parts.push(`${site.latitude.toFixed(5)}, ${site.longitude.toFixed(5)}`);
+  }
+  return parts.filter(Boolean).join(' · ');
 }

@@ -248,8 +248,34 @@ export type PlanStructureType =
  */
 export type PlanAnnotationType = 'cota' | 'texto';
 
+/**
+ * Entorno del plano: lo que ubica el inmueble en el terreno y en la ciudad.
+ *
+ *  - `calle`: una calzada con su nombre (`label`) y su ancho (`thickness`).
+ *  - `limite`: un lado del terreno (línea municipal, medianera).
+ *  - `norte`: la flecha del norte; `rotation` es cuánto está girada y `size` su tamaño.
+ *  - `escalagrafica`: la barra de escala; `length` es lo que representa, en metros.
+ */
+export type PlanSiteType = 'calle' | 'limite' | 'norte' | 'escalagrafica';
+
 /** Cómo se dibuja un elemento del plano. */
-export type PlanElementKind = 'symbol' | PlanStructureType | PlanAnnotationType;
+export type PlanElementKind = 'symbol' | PlanStructureType | PlanAnnotationType | PlanSiteType;
+
+/** Dónde está el inmueble: lo que va en el encabezado del plano y en el informe. */
+export interface PlanSiteInfo {
+  /** Calle y número. */
+  address?: string;
+  /** Barrio y localidad. */
+  locality?: string;
+  /** Entre qué calles queda (o en qué esquina). */
+  betweenStreets?: string;
+  /** Manzana, parcela o lote, como figura en el catastro. */
+  lot?: string;
+  latitude?: number;
+  longitude?: number;
+  /** Precisión del GPS al tomar la ubicación, en metros. */
+  accuracy?: number;
+}
 
 /**
  * Elemento ubicado en el plano. Las coordenadas están en unidades del lienzo
@@ -284,6 +310,8 @@ export interface PlanElement {
   thickness?: number;
   /** Pared sobre la que está colocada una abertura. */
   wallId?: string;
+  /** Grupo al que pertenece: los elementos con el mismo `groupId` se eligen y se mueven juntos. */
+  groupId?: string;
   /** Lado hacia el que abre la puerta. */
   hand?: 'izquierda' | 'derecha';
   /**
@@ -298,6 +326,8 @@ export interface PlanElement {
   offset?: number;
   /** Alto de la letra (texto) o tamaño del símbolo (plantilla eléctrica), en unidades. */
   size?: number;
+  /** Alto del rótulo del componente eléctrico, independiente del símbolo, en unidades del plano. */
+  labelSize?: number;
   /** Acometida a la que pertenece. */
   supplyId?: string;
   /** Tablero del relevamiento que representa, si corresponde. */
@@ -337,6 +367,8 @@ export interface ClientPlan {
   metersPerUnit?: number;
   /** Opacidad del fondo, para que el dibujo no se pierda sobre una foto. */
   backgroundOpacity?: number;
+  /** Dirección, entre calles y coordenadas del inmueble. */
+  site?: PlanSiteInfo;
   /** Cómo se dibujan las paredes: macizas, solo contorno o con hachurado. */
   wallStyle?: PlanWallStyle;
   elements: PlanElement[];

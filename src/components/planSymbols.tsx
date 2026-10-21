@@ -1,4 +1,5 @@
 import React from 'react';
+import { SITE_TOOLS, SiteDef, findSiteTool, isSiteKind } from './planSite';
 import {
   PlanAnnotationType,
   PlanElement,
@@ -904,6 +905,11 @@ export function isStructure(element: PlanElement): boolean {
   return elementKind(element) !== 'symbol';
 }
 
+/** ¿Es un elemento del entorno (calle, límite, norte, barra de escala)? */
+export function isSite(element: PlanElement): boolean {
+  return isSiteKind(elementKind(element));
+}
+
 /* ------------------------------------------------------------------ */
 /* Anotaciones: cotas y textos                                         */
 /* ------------------------------------------------------------------ */
@@ -961,13 +967,15 @@ export const PLAN_TOOLS: Array<{ type: Exclude<PlanElementKind, 'symbol'>; label
     label: annotation.label,
     hint: annotation.hint,
   })),
+  ...SITE_TOOLS.map((site) => ({ type: site.type as Exclude<PlanElementKind, 'symbol'>, label: site.label, hint: site.hint })),
 ];
 
 /** Definición de una herramienta, sea estructura o anotación. */
-export function findTool(type: Exclude<PlanElementKind, 'symbol'>): PlanStructureDef | PlanAnnotationDef | undefined {
+export function findTool(type: Exclude<PlanElementKind, 'symbol'>): PlanStructureDef | PlanAnnotationDef | SiteDef | undefined {
   return (
     STRUCTURE_TOOLS.find((structure) => structure.type === type) ??
-    ANNOTATION_TOOLS.find((annotation) => annotation.type === type)
+    ANNOTATION_TOOLS.find((annotation) => annotation.type === type) ??
+    SITE_TOOLS.find((site) => site.type === type)
   );
 }
 
@@ -978,6 +986,7 @@ export function annotationIcon(type: PlanAnnotationType): React.ReactNode {
 /** Ícono de cualquier herramienta que no sea plantilla, para la paleta y los listados. */
 export function toolIcon(type: Exclude<PlanElementKind, 'symbol'>): React.ReactNode {
   if (type === 'cota' || type === 'texto') return annotationIcon(type);
+  if (isSiteKind(type)) return findSiteTool(type)?.icon ?? null;
   return structureIcon(type);
 }
 
@@ -1053,6 +1062,10 @@ const SHORT_LABELS: Partial<Record<PlanSymbolType | PlanElementKind, string>> = 
   puerta_corrediza: 'Corrediza',
   cota: 'Cota',
   texto: 'Texto',
+  calle: 'Calle',
+  limite: 'Límite',
+  norte: 'Norte',
+  escalagrafica: 'Escala gráfica',
 };
 
 export function shortLabel(type: PlanSymbolType | PlanElementKind): string {
@@ -1121,7 +1134,9 @@ export function renderCota(element: PlanElement, colors: StructureColors): React
  * símbolos sí, porque se dibujan horizontales alrededor de su centro.
  */
 export function elementTransform(element: PlanElement): string {
-  if (elementKind(element) === 'pared') return `translate(${element.x} ${element.y})`;
+  const kind = elementKind(element);
+  // Las paredes, las calles y los límites van de un extremo al otro: no se giran.
+  if (kind === 'pared' || kind === 'calle' || kind === 'limite') return `translate(${element.x} ${element.y})`;
   return `translate(${element.x} ${element.y}) rotate(${element.rotation ?? 0})`;
 }
 
@@ -1305,6 +1320,8 @@ export function renderTool(element: PlanElement, colors: StructureColors): React
  * cotas no quedan tapadas por los símbolos.
  */
 export const PLAN_LAYERS: PlanElementKind[] = [
+  'calle',
+  'limite',
   'pared',
   'puerta',
   'puerta_doble',
@@ -1314,6 +1331,8 @@ export const PLAN_LAYERS: PlanElementKind[] = [
   'cota',
   'texto',
   'symbol',
+  'norte',
+  'escalagrafica',
 ];
 
 export function layerOf(element: PlanElement): number {

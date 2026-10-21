@@ -18,6 +18,14 @@
   --font-display: 'Chakra Petch', 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
 
+  /* Letra fina, como una aplicación nativa: los pesos «negrita» del diseño se
+     suavizan en un escalón y Inter (que es variable) llega a los valores
+     intermedios. Los pesos se cambian acá y no clase por clase. */
+  --font-weight-medium: 450;
+  --font-weight-semibold: 520;
+  --font-weight-bold: 590;
+  --font-weight-extrabold: 640;
+
   /* --- Superficies (de más profunda a más elevada) --- */
   --color-page: #020617;
   --color-sunken: #020617;
@@ -141,13 +149,64 @@
     scroll-behavior: smooth;
   }
 
+  html {
+    background-color: var(--color-page);
+    /* Sin «rebote» ni recarga al tirar de la pantalla: se siente como una app. */
+    overscroll-behavior: none;
+  }
+
   body {
     background-color: var(--color-page);
     color: var(--color-strong);
     font-family: var(--font-sans);
     font-size: 15px;
+    font-weight: 360;
+    font-optical-sizing: auto;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    /* Sin zoom por doble toque: el plano maneja sus propios gestos. */
+    touch-action: manipulation;
+    /* Pantallas con muesca y barra de gestos: el contenido queda dentro de lo seguro. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Los controles no se seleccionan como texto ni abren el menú de «mantener
+     presionado»; los datos y los campos sí se pueden seleccionar y copiar. */
+  button,
+  [role='button'],
+  nav,
+  summary,
+  label,
+  th {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  input,
+  textarea,
+  [contenteditable='true'] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  img,
+  svg {
+    -webkit-user-drag: none;
+  }
+
+  @media (display-mode: standalone) {
+    /* Instalada: el puntero de los botones es el de una aplicación, no el de un enlace. */
+    button,
+    [role='button'] {
+      cursor: default;
+    }
   }
 
   h1,
@@ -155,6 +214,7 @@
   h3,
   h4 {
     font-family: var(--font-display);
+    font-weight: 500;
     letter-spacing: -0.01em;
     line-height: 1.25;
   }
@@ -239,4 +299,47 @@
     background: #ffffff;
     color: #000000;
   }
+}
+
+/* ------------------------------------------------------------------
+ * Bordes finos
+ *
+ * En pantallas de alta densidad (celulares y tablets) una línea de 1 px se ve
+ * gruesa; con 0,5 px es una línea fina de verdad, como en una aplicación
+ * nativa. Va fuera de las capas a propósito: así gana sobre las utilidades de
+ * Tailwind sin tocar cada componente. Los bordes gruesos (border-2, border-l-4)
+ * no se tocan.
+ * ------------------------------------------------------------------ */
+:root {
+  --hairline: 1px;
+}
+
+@media (min-resolution: 2dppx) {
+  :root {
+    --hairline: 0.5px;
+  }
+}
+
+.border {
+  border-width: var(--hairline);
+}
+.border-t {
+  border-top-width: var(--hairline);
+}
+.border-b {
+  border-bottom-width: var(--hairline);
+}
+.border-l {
+  border-left-width: var(--hairline);
+}
+.border-r {
+  border-right-width: var(--hairline);
+}
+.border-x {
+  border-left-width: var(--hairline);
+  border-right-width: var(--hairline);
+}
+.border-y {
+  border-top-width: var(--hairline);
+  border-bottom-width: var(--hairline);
 }

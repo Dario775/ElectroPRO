@@ -3,10 +3,26 @@ import {
   ArrowLeft,
   ClipboardCopy,
   Copy,
+  Compass,
   Download,
+  ExternalLink,
+  Locate,
+  FolderOpen,
+  Save,
   FlipHorizontal2,
   CornerUpRight,
   FlipVertical2,
+  Group,
+  Ungroup,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignHorizontalDistributeCenter,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  AlignVerticalDistributeCenter,
+  RotateCcw,
   Grid3x3,
   ImagePlus,
   Info,
@@ -49,6 +65,7 @@ import {
   findTool,
   findSymbol,
   hasCustomLabel,
+  isSite,
   isStructure,
   layerOf,
   renderStructure,
@@ -75,7 +92,27 @@ import {
   cotaLength,
   cotaTextPoint,
   createCota,
+  alignElements,
+  arrayElements,
+  boundsOfElements,
+  distributeElements,
+  resizeFrame,
+  rotateElements,
+  scaleElements,
+  type AlignMode,
+  type Frame,
+  createBoundary,
+  createLot,
+  createNorth,
   createRoom,
+  createScaleBar,
+  createStreet,
+  sheetTopBearing,
+  siteSummary,
+  duplicatePlan,
+  expandToGroups,
+  groupElements,
+  ungroupElements,
   hasSwing,
   sideOfWall,
   resizeOpening,
@@ -94,6 +131,7 @@ import {
   createText,
   createWall,
   describePlan,
+  formatArea,
   describeSelection,
   duplicateElements,
   elementsFromLoads,
@@ -142,6 +180,28 @@ import {
 } from '../utils/history';
 import type { History } from '../utils/history';
 import { cx } from '../utils/cx';
+import { MenuDef, PlanMenuBar } from './PlanMenuBar';
+import {
+  DEFAULT_NORTH_SIZE,
+  LOT_TOOL_ICON,
+  SITE_TOOLS,
+  cardinalName,
+  isSiteKind,
+  niceBarMeters,
+  renderSite,
+  scaleBarWidth,
+} from './planSite';
+import {
+  FileHandleLike,
+  PLAN_FILE_EXTENSION,
+  canvasToPdf,
+  fileSafeName,
+  parsePlanFile,
+  readFileText,
+  saveFile,
+  serializePlan,
+} from '../services/planFileService';
+import { StorageService } from '../services/storageService';
 
 /**
  * Módulo «Plano de ubicación».
@@ -207,6 +267,7 @@ type DrawTool =
   | 'medir'
   | 'escala'
   | 'habitacion'
+  | 'terreno'
   | Exclude<PlanElementKind, 'symbol'>
   | `sym:${PlanSymbolType}`;
 
@@ -229,7 +290,9 @@ const TOOL_ORDER: DrawTool[] = ['select', 'pared', 'puerta', 'ventana', 'abertur
 
 interface DragState {
   /** Mover el elemento (o la selección entera), o estirar una de sus puntas. */
-  mode: 'move' | 'endpointA' | 'endpointB' | 'resize' | 'room' | 'openingA' | 'openingB';
+  mode: 'move' | 'endpointA' | 'endpointB' | 'resize' | 'room' | 'scale' | 'rotate' | 'openingA' | 'openingB';
+  /** Caja de la selección que se está escalando (modo `scale`). */
+  frame?: Frame;
   /** Habitación que se está estirando y desde qué esquina o lado (modo `room`). */
   room?: RoomBounds;
   roomHandle?: RoomHandle;
@@ -278,9 +341,16 @@ export const SHORTCUT_GROUPS: Array<{ title: string; items: Array<{ keys: string
       { keys: ['Ctrl', 'X'], what: 'Cortar lo seleccionado' },
       { keys: ['Ctrl', 'V'], what: 'Pegar, corrido respecto del original' },
       { keys: ['Ctrl', 'D'], what: 'Duplicar sin pasar por el portapapeles' },
+      { keys: ['Ctrl', 'G'], what: 'Agrupar lo seleccionado: se elige y se mueve como uno solo' },
+      { keys: ['Ctrl', 'Mayús', 'G'], what: 'Desagrupar' },
+      { keys: ['Ctrl', 'clic'], what: 'Elegir un solo elemento dentro de un grupo' },
       { keys: ['Flechas'], what: 'Mover 1 unidad' },
       { keys: ['Mayús', 'Flechas'], what: 'Mover una rejilla (25 unidades)' },
-      { keys: ['Ctrl', 'S'], what: 'Descargar el plano en PNG' },
+      { keys: ['Ctrl', 'S'], what: 'Guardar el plano en un archivo' },
+      { keys: ['Ctrl', 'Mayús', 'S'], what: 'Guardar como… (plano, PDF o imagen)' },
+      { keys: ['Ctrl', 'O'], what: 'Abrir un plano guardado' },
+      { keys: ['Ctrl', 'P'], what: 'Imprimir el plano' },
+      { keys: ['Ctrl', 'A'], what: 'Seleccionar todo' },
     ],
   },
   {
@@ -298,6 +368,7 @@ export const SHORTCUT_GROUPS: Array<{ title: string; items: Array<{ keys: string
       { keys: ['9'], what: 'Escala: calibrar sobre una distancia conocida' },
       { keys: ['R'], what: 'Habitación: 4 paredes de una vez, arrastrando de esquina a esquina' },
       { keys: ['U'], what: 'Unir esquinas de las paredes seleccionadas' },
+      { keys: ['N'], what: 'Poner la flecha del norte' },
       { keys: ['Mayús', 'estirar'], what: 'Al estirar una habitación desde una esquina, conserva las proporciones' },
       { keys: ['V'], what: 'Volver a seleccionar' },
       { keys: ['G'], what: 'Encender o apagar la rejilla' },
@@ -343,6 +414,7 @@ function toolLabel(tool: DrawTool): string {
   if (tool === 'medir') return 'Medir';
   if (tool === 'escala') return 'Escala';
   if (tool === 'habitacion') return 'Habitación';
+  if (tool === 'terreno') return 'Terreno';
   if (tool.startsWith('sym:')) return findSymbol(symbolOfTool(tool)).label;
   return findTool(tool as Exclude<PlanElementKind, 'symbol'>)?.label ?? 'Dibujar';
 }
@@ -357,6 +429,21 @@ function toolHint(tool: DrawTool): string {
   }
   if (tool === 'habitacion') {
     return 'Arrastrá de una esquina a la opuesta: se dibujan las 4 paredes juntas, ya unidas en las esquinas.';
+  }
+  if (tool === 'terreno') {
+    return 'Arrastrá de una esquina del terreno a la opuesta: se dibujan los 4 límites, agrupados para moverlos o escalarlos juntos.';
+  }
+  if (tool === 'calle') {
+    return 'Arrastrá a lo largo de la calle y escribí su nombre en el panel. Dos calles que se cruzan forman la esquina.';
+  }
+  if (tool === 'limite') {
+    return 'Arrastrá a lo largo de un lado del terreno: línea municipal o medianera.';
+  }
+  if (tool === 'norte') {
+    return 'Un clic donde va la flecha del norte. Después se gira con el tirador de arriba.';
+  }
+  if (tool === 'escalagrafica') {
+    return 'Un clic donde va la barra de escala. Hace falta tener la escala del plano cargada.';
   }
   if (isOpeningTool(tool)) {
     return 'Hacé clic sobre una pared: la abertura se abre el hueco y queda alineada sola. Las puertas abren hacia el lado donde hagas clic.';
@@ -384,10 +471,11 @@ const PlanElementNode: React.FC<{
   element: PlanElement;
   selected: boolean;
   onPointerDown: (event: React.PointerEvent, element: PlanElement) => void;
-  onHandlePointerDown: (event: React.PointerEvent, element: PlanElement, handle: 'a' | 'b' | 'size') => void;
   wallStyle: PlanWallStyle;
   hatchId: string;
-}> = ({ element, selected, onPointerDown, onHandlePointerDown, wallStyle, hatchId }) => {
+  /** Metros por unidad del plano (0 si no hay escala): la barra de escala lo necesita. */
+  unitMeters: number;
+}> = ({ element, selected, onPointerDown, wallStyle, hatchId, unitMeters }) => {
   const kind = elementKind(element);
   const colors: StructureColors = {
     wall: INK,
@@ -432,32 +520,6 @@ const PlanElementNode: React.FC<{
           />
         )}
         {renderStructure(element, colors)}
-        {selected && (
-          <>
-            <circle
-              cx={0}
-              cy={0}
-              r={9}
-              fill={BACKGROUND_FILL}
-              stroke={SELECTION}
-              strokeWidth={2.5}
-              data-export="hide"
-              className="cursor-move"
-              onPointerDown={(event) => onHandlePointerDown(event, element, 'a')}
-            />
-            <circle
-              cx={dx}
-              cy={dy}
-              r={9}
-              fill={BACKGROUND_FILL}
-              stroke={SELECTION}
-              strokeWidth={2.5}
-              data-export="hide"
-              className="cursor-move"
-              onPointerDown={(event) => onHandlePointerDown(event, element, 'b')}
-            />
-          </>
-        )}
       </g>
     );
   }
@@ -497,33 +559,6 @@ const PlanElementNode: React.FC<{
           />
         )}
         {renderStructure(element, colors)}
-        {selected && (
-          <>
-            {/* Tiradores en las dos puntas del hueco: estiran el ancho sobre la pared */}
-            <circle
-              cx={-half}
-              cy={0}
-              r={8}
-              fill={BACKGROUND_FILL}
-              stroke={SELECTION}
-              strokeWidth={2.5}
-              data-export="hide"
-              className="cursor-ew-resize"
-              onPointerDown={(event) => onHandlePointerDown(event, element, 'a')}
-            />
-            <circle
-              cx={half}
-              cy={0}
-              r={8}
-              fill={BACKGROUND_FILL}
-              stroke={SELECTION}
-              strokeWidth={2.5}
-              data-export="hide"
-              className="cursor-ew-resize"
-              onPointerDown={(event) => onHandlePointerDown(event, element, 'b')}
-            />
-          </>
-        )}
         {selected && element.wallId && (
           <line
             x1={-half}
@@ -571,10 +606,6 @@ const PlanElementNode: React.FC<{
         {selected && (
           <>
             <line x1={0} y1={0} x2={dx} y2={dy} stroke={SELECTION} strokeWidth={3} strokeDasharray="8 6" data-export="hide" />
-            {/* Los tiradores van en los puntos que se miden, no en la línea de
-                cota: lo que se acomoda es lo que se está midiendo. */}
-            <circle cx={0} cy={0} r={9} fill={BACKGROUND_FILL} stroke={SELECTION} strokeWidth={2.5} data-export="hide" className="cursor-move" onPointerDown={(event) => onHandlePointerDown(event, element, 'a')} />
-            <circle cx={dx} cy={dy} r={9} fill={BACKGROUND_FILL} stroke={SELECTION} strokeWidth={2.5} data-export="hide" className="cursor-move" onPointerDown={(event) => onHandlePointerDown(event, element, 'b')} />
           </>
         )}
         {renderTool(element, { wall: INK, gap: BACKGROUND_FILL })}
@@ -609,19 +640,76 @@ const PlanElementNode: React.FC<{
           />
         )}
         {renderTool(element, { wall: INK, gap: BACKGROUND_FILL })}
-        {selected && element.x2 !== undefined && element.y2 !== undefined && (
-          <circle
-            cx={element.x2 - element.x}
-            cy={element.y2 - element.y}
-            r={9}
-            fill={BACKGROUND_FILL}
-            stroke={SELECTION}
-            strokeWidth={2.5}
-            data-export="hide"
-            className="cursor-move"
-            onPointerDown={(event) => onHandlePointerDown(event, element, 'b')}
-          />
-        )}
+      </g>
+    );
+  }
+
+  /* --- Entorno: calle, límite del terreno, norte y barra de escala --- */
+  if (isSiteKind(kind)) {
+    let hit: React.ReactNode = null;
+    let outline: React.ReactNode = null;
+
+    if (kind === 'calle' || kind === 'limite') {
+      const dx = (element.x2 ?? element.x) - element.x;
+      const dy = (element.y2 ?? element.y) - element.y;
+      const width = kind === 'calle' ? (element.thickness ?? 90) + 8 : 26;
+      hit = <line x1={0} y1={0} x2={dx} y2={dy} stroke="transparent" strokeWidth={width} data-export="hide" />;
+      outline = (
+        <line
+          x1={0}
+          y1={0}
+          x2={dx}
+          y2={dy}
+          stroke={SELECTION}
+          strokeWidth={width + 8}
+          opacity={0.2}
+          data-export="hide"
+          pointerEvents="none"
+        />
+      );
+    } else if (kind === 'norte') {
+      const radius = (element.size ?? DEFAULT_NORTH_SIZE) / 2;
+      hit = <circle r={radius + 14} fill="transparent" data-export="hide" />;
+      outline = (
+        <circle
+          r={radius + 12}
+          fill={SELECTION}
+          fillOpacity={0.08}
+          stroke={SELECTION}
+          strokeDasharray="6 4"
+          data-export="hide"
+          pointerEvents="none"
+        />
+      );
+    } else {
+      const width = scaleBarWidth(element, unitMeters);
+      hit = <rect x={-10} y={-14} width={width + 20} height={44} fill="transparent" data-export="hide" />;
+      outline = (
+        <rect
+          x={-10}
+          y={-14}
+          width={width + 20}
+          height={44}
+          rx={4}
+          fill={SELECTION}
+          fillOpacity={0.08}
+          stroke={SELECTION}
+          strokeDasharray="6 4"
+          data-export="hide"
+          pointerEvents="none"
+        />
+      );
+    }
+
+    return (
+      <g
+        transform={elementTransform(element)}
+        onPointerDown={(event) => onPointerDown(event, element)}
+        className="cursor-grab active:cursor-grabbing"
+      >
+        {hit}
+        {selected && outline}
+        {renderSite(element, { ink: INK, metersPerUnit: unitMeters })}
       </g>
     );
   }
@@ -630,9 +718,6 @@ const PlanElementNode: React.FC<{
   const size = symbolSize(element);
   const hitWidth = Math.max(44, size + 26);
   const hitHeight = size + 42;
-  // El tirador de tamaño va en la esquina de la caja, así se ve a cualquier escala.
-  const handleX = size / 2 + 8;
-  const handleY = size / 2 + 8;
 
   return (
     <g
@@ -668,23 +753,103 @@ const PlanElementNode: React.FC<{
         />
       )}
       {renderSymbolShapes(element.symbol ?? 'toma', size)}
-      {selected && (
-        <rect
-          x={handleX - 6}
-          y={handleY - 6}
-          width={12}
-          height={12}
-          rx={2}
-          fill={BACKGROUND_FILL}
-          stroke={SELECTION}
-          strokeWidth={2.5}
-          data-export="hide"
-          className="cursor-nwse-resize"
-          onPointerDown={(event) => onHandlePointerDown(event, element, 'size')}
-        />
-      )}
     </g>
   );
+};
+
+/* ------------------------------------------------------------------ */
+/* Tiradores                                                           */
+/* ------------------------------------------------------------------ */
+
+type HandleKind = 'a' | 'b' | 'size' | 'rotate';
+
+/**
+ * Tiradores del elemento seleccionado.
+ *
+ * Van en una capa **por encima de todo**, aparte del dibujo: la zona de agarre
+ * de una pared vecina (ancha, para que sea fácil tomarla) se pinta después y
+ * tapaba el tirador de la esquina, así que el clic caía en la otra pared y la
+ * movía en lugar de estirar.
+ */
+/**
+ * Tirador chico, como los de un programa de dibujo: un cuadradito de 8 px **en
+ * pantalla** (no en unidades del plano), así no tapa la esquina que se está
+ * mirando ni crece al acercar. La zona para tomarlo con el mouse es más grande
+ * que lo que se ve.
+ */
+const Grip: React.FC<{
+  cx: number;
+  cy: number;
+  /** Unidades del plano por píxel de pantalla. */
+  unit: number;
+  cursor: string;
+  onPointerDown: (event: React.PointerEvent) => void;
+}> = ({ cx, cy, unit, cursor, onPointerDown }) => {
+  const hit = 18 * unit;
+  const size = 8 * unit;
+  return (
+    <g data-export="hide" style={{ cursor }} onPointerDown={onPointerDown}>
+      <rect x={cx - hit / 2} y={cy - hit / 2} width={hit} height={hit} fill="transparent" stroke="none" />
+      <rect
+        x={cx - size / 2}
+        y={cy - size / 2}
+        width={size}
+        height={size}
+        fill={SELECTION}
+        stroke="#ffffff"
+        strokeWidth={1.2 * unit}
+      />
+    </g>
+  );
+};
+
+const PlanHandles: React.FC<{
+  element: PlanElement;
+  unit: number;
+  onHandlePointerDown: (event: React.PointerEvent, element: PlanElement, handle: HandleKind) => void;
+}> = ({ element, unit, onHandlePointerDown }) => {
+  const kind = elementKind(element);
+
+  const grip = (cx: number, cy: number, which: HandleKind, cursor: string): React.ReactNode => (
+    <Grip
+      key={which}
+      cx={cx}
+      cy={cy}
+      unit={unit}
+      cursor={cursor}
+      onPointerDown={(event) => onHandlePointerDown(event, element, which)}
+    />
+  );
+
+  let handles: React.ReactNode = null;
+
+  if (kind === 'pared' || kind === 'cota' || kind === 'calle' || kind === 'limite') {
+    // Para la cota, los tiradores van en los puntos que se miden, no en la línea de cota.
+    const dx = (element.x2 ?? element.x) - element.x;
+    const dy = (element.y2 ?? element.y) - element.y;
+    handles = [grip(0, 0, 'a', 'move'), grip(dx, dy, 'b', 'move')];
+  } else if (isOpening(element)) {
+    // Tiradores en las dos puntas del hueco: estiran el ancho sobre la pared.
+    const half = (element.length ?? 90) / 2;
+    handles = [grip(-half, 0, 'a', 'ew-resize'), grip(half, 0, 'b', 'ew-resize')];
+  } else if (kind === 'texto') {
+    if (element.x2 !== undefined && element.y2 !== undefined) {
+      handles = grip(element.x2 - element.x, element.y2 - element.y, 'b', 'move');
+    }
+  } else if (kind === 'escalagrafica') {
+    handles = null;
+  } else if (kind === 'norte') {
+    // Tirador de arriba: gira la flecha. Tirador de la esquina: cambia el tamaño.
+    const radius = (element.size ?? DEFAULT_NORTH_SIZE) / 2;
+    handles = [grip(0, -(radius + 24 + 10 * unit), 'rotate', 'grab'), grip(radius + 6 * unit, radius + 6 * unit, 'size', 'nwse-resize')];
+  } else {
+    // Símbolo: el tirador de tamaño va en la esquina de la caja.
+    const corner = symbolSize(element) / 2 + 6 * unit;
+    handles = grip(corner, corner, 'size', 'nwse-resize');
+  }
+
+  if (!handles) return null;
+  return <g transform={elementTransform(element)}>{handles}</g>;
 };
 
 /* ------------------------------------------------------------------ */
@@ -709,10 +874,12 @@ const PlanLabel: React.FC<{
   selected: boolean;
 }> = ({ element, plan, height, selected }) => {
   const kind = elementKind(element);
+  // Las calles y los límites escriben su nombre a lo largo de la línea (ver renderSite).
+  if (isSiteKind(kind)) return null;
   const label = (element.label ?? '').trim();
 
   let text = label;
-  let fontSize = isStructure(element) ? 14 : 15;
+  let fontSize = isStructure(element) ? 14 : Math.max(6, Math.min(90, element.labelSize ?? 15));
   let anchor: 'middle' | 'start' = 'middle';
   let anchorX = element.x;
   let anchorY = element.y;
@@ -738,7 +905,7 @@ const PlanLabel: React.FC<{
     anchorY = element.y + (element.thickness ?? 14) / 2 + 20;
   } else {
     if (!label || label === findSymbol(element.symbol ?? 'toma').label) return null;
-    anchorY = element.y + symbolSize(element) / 2 + 18;
+    anchorY = element.y + symbolSize(element) / 2 + fontSize + 3;
   }
 
   // Ancho aproximado del texto, para no dejarlo salir de la hoja.
@@ -810,6 +977,65 @@ const MeasureLabel: React.FC<{ x: number; y: number; text: string }> = ({ x, y, 
   </g>
 );
 
+/** Zona de la hoja que se exporta, en unidades del plano. */
+interface ExportCrop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Lo que se exporta: el dibujo con un margen, o la hoja completa. */
+type ExportFit = 'dibujo' | 'hoja';
+
+/**
+ * Mide dónde está el dibujo para exportar solo esa zona.
+ *
+ * La hoja es siempre una proporción fija (A4 apaisado, por ejemplo) y el dibujo
+ * casi nunca la llena: exportarla entera deja una franja en blanco que en el PDF
+ * se ve como un espacio vacío abajo. Se encuadra el dibujo con un margen, se
+ * evitan formas extremas (muy angosto o muy ancho) y se mantiene dentro de la hoja.
+ */
+function measureDrawing(clone: SVGSVGElement, view: SVGGraphicsElement, sheetHeight: number): ExportCrop | null {
+  // getBBox solo mide si el SVG está en el documento: se lo muestra fuera de pantalla un instante.
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:fixed;left:-100000px;top:0;width:1000px;height:1000px;visibility:hidden;pointer-events:none';
+  holder.appendChild(clone);
+  document.body.appendChild(holder);
+  let box: DOMRect | null = null;
+  try {
+    box = view.getBBox();
+  } catch {
+    box = null;
+  }
+  holder.removeChild(clone);
+  document.body.removeChild(holder);
+  if (!box || box.width < 1 || box.height < 1) return null;
+
+  const margin = 40;
+  let left = box.x - margin;
+  let top = box.y - margin;
+  let width = box.width + margin * 2;
+  let height = box.height + margin * 2;
+
+  // Ni más angosto que 520 unidades (se ampliaría demasiado) ni de una proporción extrema.
+  const centerX = left + width / 2;
+  const centerY = top + height / 2;
+  width = Math.max(width, 520);
+  height = Math.max(height, 300);
+  if (width / height > 2.3) height = width / 2.3;
+  if (height / width > 1.6) width = height / 1.6;
+  left = centerX - width / 2;
+  top = centerY - height / 2;
+
+  // Dentro de la hoja: se corre el recuadro en vez de recortarlo.
+  width = Math.min(width, PLAN_WIDTH);
+  height = Math.min(height, sheetHeight);
+  left = Math.max(0, Math.min(PLAN_WIDTH - width, left));
+  top = Math.max(0, Math.min(sheetHeight - height, top));
+  return { x: left, y: top, width, height };
+}
+
 /**
  * Trazo en curso.
  *
@@ -826,13 +1052,24 @@ const DraftOverlay: React.FC<{
 }> = ({ tool, draft, plan, ortho }) => {
   const measurement = measureBetween({ x: draft.x, y: draft.y }, { x: draft.x2, y: draft.y2 });
   const label =
-    tool === 'habitacion'
+    tool === 'habitacion' || tool === 'terreno'
       ? `${formatLength(plan, Math.abs(draft.x2 - draft.x))} × ${formatLength(plan, Math.abs(draft.y2 - draft.y))}`
       : `${formatLength(plan, measurement.distance)} · ${measurement.angle}°${ortho ? ' · orto' : ''}`;
 
   return (
     <g data-export="hide" pointerEvents="none">
-      {tool === 'habitacion' && (
+      {tool === 'calle' && (
+        <line
+          x1={draft.x}
+          y1={draft.y}
+          x2={draft.x2}
+          y2={draft.y2}
+          stroke="#d9dee6"
+          strokeWidth={90}
+          opacity={0.85}
+        />
+      )}
+      {(tool === 'habitacion' || tool === 'terreno') && (
         <rect
           x={Math.min(draft.x, draft.x2)}
           y={Math.min(draft.y, draft.y2)}
@@ -840,8 +1077,9 @@ const DraftOverlay: React.FC<{
           height={Math.abs(draft.y2 - draft.y)}
           fill={SELECTION}
           fillOpacity={0.06}
-          stroke={INK}
-          strokeWidth={14}
+          stroke={tool === 'terreno' ? '#7c2d12' : INK}
+          strokeWidth={tool === 'terreno' ? 3 : 14}
+          strokeDasharray={tool === 'terreno' ? '18 5 3 5' : undefined}
           opacity={0.7}
         />
       )}
@@ -857,7 +1095,7 @@ const DraftOverlay: React.FC<{
           opacity={0.7}
         />
       )}
-      {tool !== 'habitacion' && (
+      {tool !== 'habitacion' && tool !== 'terreno' && (
         <line
           x1={draft.x}
           y1={draft.y}
@@ -868,7 +1106,7 @@ const DraftOverlay: React.FC<{
           strokeDasharray="7 5"
         />
       )}
-      <circle cx={draft.x} cy={draft.y} r={4.5} fill={tool === 'pared' || tool === 'habitacion' ? SELECTION : MEASURE} />
+      <circle cx={draft.x} cy={draft.y} r={4.5} fill={tool === 'pared' || tool === 'habitacion' || tool === 'terreno' ? SELECTION : MEASURE} />
       <MeasureLabel x={(draft.x + draft.x2) / 2} y={(draft.y + draft.y2) / 2} text={label} />
     </g>
   );
@@ -925,6 +1163,146 @@ const PanelValue: React.FC<{ label: string; value: string; hint?: string }> = ({
 );
 
 /* ------------------------------------------------------------------ */
+/* Diseño rápido                                                       */
+/* ------------------------------------------------------------------ */
+
+const QuickButton: React.FC<{ label: string; disabled?: boolean; onClick: () => void; children: React.ReactNode }> = ({
+  label,
+  disabled,
+  onClick,
+  children,
+}) => (
+  <button
+    type="button"
+    title={label}
+    aria-label={label}
+    disabled={disabled}
+    onClick={onClick}
+    className="flex h-8 items-center justify-center rounded-lg border border-hairline bg-sunken text-soft transition-colors hover:border-accent-line hover:bg-accent-soft hover:text-strong disabled:cursor-not-allowed disabled:opacity-40"
+  >
+    {children}
+  </button>
+);
+
+/** Alinear, distribuir y girar lo seleccionado: lo que más tiempo ahorra al armar un plano. */
+const QuickDesign: React.FC<{
+  onAlign: (mode: AlignMode) => void;
+  onDistribute: (axis: 'horizontal' | 'vertical') => void;
+  onRotate: (clockwise: boolean) => void;
+  canDistribute: boolean;
+}> = ({ onAlign, onDistribute, onRotate, canDistribute }) => {
+  const icon = 'h-4 w-4';
+  return (
+    <PanelSection title="Diseño rápido" hint="Cada grupo cuenta como un solo bloque.">
+      <div>
+        <p className="mb-1 text-xs font-semibold text-muted">Alinear</p>
+        <div className="grid grid-cols-6 gap-1">
+          <QuickButton label="Alinear a la izquierda" onClick={() => onAlign('left')}>
+            <AlignStartVertical className={icon} />
+          </QuickButton>
+          <QuickButton label="Centrar horizontalmente" onClick={() => onAlign('centerX')}>
+            <AlignCenterVertical className={icon} />
+          </QuickButton>
+          <QuickButton label="Alinear a la derecha" onClick={() => onAlign('right')}>
+            <AlignEndVertical className={icon} />
+          </QuickButton>
+          <QuickButton label="Alinear arriba" onClick={() => onAlign('top')}>
+            <AlignStartHorizontal className={icon} />
+          </QuickButton>
+          <QuickButton label="Centrar verticalmente" onClick={() => onAlign('centerY')}>
+            <AlignCenterHorizontal className={icon} />
+          </QuickButton>
+          <QuickButton label="Alinear abajo" onClick={() => onAlign('bottom')}>
+            <AlignEndHorizontal className={icon} />
+          </QuickButton>
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-1">
+        <QuickButton label="Distribuir en horizontal (mismo espacio entre cada uno)" disabled={!canDistribute} onClick={() => onDistribute('horizontal')}>
+          <AlignHorizontalDistributeCenter className={icon} />
+        </QuickButton>
+        <QuickButton label="Distribuir en vertical (mismo espacio entre cada uno)" disabled={!canDistribute} onClick={() => onDistribute('vertical')}>
+          <AlignVerticalDistributeCenter className={icon} />
+        </QuickButton>
+        <QuickButton label="Girar 90° a la izquierda" onClick={() => onRotate(false)}>
+          <RotateCcw className={icon} />
+        </QuickButton>
+        <QuickButton label="Girar 90° a la derecha" onClick={() => onRotate(true)}>
+          <RotateCw className={icon} />
+        </QuickButton>
+      </div>
+    </PanelSection>
+  );
+};
+
+/** Matriz: repite lo elegido en filas y columnas (por ejemplo, una fila de luminarias). */
+const ArrayForm: React.FC<{
+  rows: number;
+  columns: number;
+  stepX: number;
+  stepY: number;
+  onRows: (value: number) => void;
+  onColumns: (value: number) => void;
+  onStepX: (value: number) => void;
+  onStepY: (value: number) => void;
+  onCreate: () => void;
+  /** Sin título propio, para usarlo dentro de otra sección. */
+  bare?: boolean;
+}> = ({ rows, columns, stepX, stepY, onRows, onColumns, onStepX, onStepY, onCreate, bare }) => {
+  const body = (
+    <>
+      <div className="grid grid-cols-2 gap-2">
+        <NumberField
+          label="Filas"
+          value={rows}
+          onChange={(value) => typeof value === 'number' && onRows(value)}
+          min={1}
+          max={30}
+          presets={[1, 2, 3, 4]}
+        />
+        <NumberField
+          label="Columnas"
+          value={columns}
+          onChange={(value) => typeof value === 'number' && onColumns(value)}
+          min={1}
+          max={30}
+          presets={[2, 3, 4, 6]}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <NumberField
+          label="Separación →"
+          unit="u"
+          value={stepX}
+          onChange={(value) => typeof value === 'number' && onStepX(value)}
+          min={-1000}
+          max={1000}
+          step={5}
+        />
+        <NumberField
+          label="Separación ↓"
+          unit="u"
+          value={stepY}
+          onChange={(value) => typeof value === 'number' && onStepY(value)}
+          min={-1000}
+          max={1000}
+          step={5}
+        />
+      </div>
+      <Button size="sm" variant="secondary" icon={<Grid3x3 className="h-3.5 w-3.5" />} onClick={onCreate} fullWidth>
+        Crear {Math.max(0, rows * columns - 1)} copias
+      </Button>
+    </>
+  );
+  if (bare) return <div className="space-y-2.5">{body}</div>;
+  return (
+    <PanelSection title="Repetir (matriz)" hint="Copia lo elegido en filas y columnas. La separación se propone según su tamaño.">
+      {body}
+    </PanelSection>
+  );
+};
+
+/* ------------------------------------------------------------------ */
 /* Vista                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -951,6 +1329,11 @@ export const PlanView: React.FC<PlanViewProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [tool, setTool] = useState<DrawTool>('select');
   const [snap, setSnap] = useState(true);
+  /** Matriz: cuántas filas y columnas, y la distancia entre una copia y la siguiente. */
+  const [arrayRows, setArrayRows] = useState(1);
+  const [arrayColumns, setArrayColumns] = useState(3);
+  const [arrayStepX, setArrayStepX] = useState(100);
+  const [arrayStepY, setArrayStepY] = useState(100);
   /** Orto: traba el trazo y el movimiento en horizontal y vertical. */
   const [ortho, setOrtho] = useState(false);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -969,6 +1352,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
   /** Capas visibles: sirven para trabajar sobre una foto sin ruido encima. */
   const [visible, setVisible] = useState({
     estructura: true,
+    entorno: true,
     simbolos: true,
     anotaciones: true,
     fondo: true,
@@ -995,6 +1379,21 @@ export const PlanView: React.FC<PlanViewProps> = ({
   const clientRef = useRef(client);
   const onUpdateRef = useRef(onUpdateClient);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  /** Para abrir un plano guardado en un archivo. */
+  const openPlanInputRef = useRef<HTMLInputElement | null>(null);
+  /** Archivo donde se guardó cada plano en esta sesión: «Guardar» vuelve a escribir ahí. */
+  const fileHandlesRef = useRef<Map<string, FileHandleLike>>(new Map());
+  const [isSaveAsOpen, setIsSaveAsOpen] = useState(false);
+  const [saveAsName, setSaveAsName] = useState('');
+  /** Qué se exporta: el dibujo encuadrado o la hoja entera. */
+  const [exportFit, setExportFit] = useState<ExportFit>('dibujo');
+  /** Coordenadas como texto (para poder escribirlas a mano) y brújula. */
+  const [coordsText, setCoordsText] = useState('');
+  const [isCompassOpen, setIsCompassOpen] = useState(false);
+  const [compassHeading, setCompassHeading] = useState(0);
+  const [compassNote, setCompassNote] = useState<string | null>(null);
+  const [compassLive, setCompassLive] = useState(false);
+  const [saveAsFormat, setSaveAsFormat] = useState<'plano' | 'pdf' | 'png'>('plano');
   /** Trazo de pared en curso: en un ref para no rearmar los listeners por cuadro. */
   const draftRef = useRef<DraftWall | null>(null);
   /** Cambios para deshacer y rehacer. */
@@ -1019,6 +1418,40 @@ export const PlanView: React.FC<PlanViewProps> = ({
   activePlanIdRef.current = activePlanId;
 
   const supplies = getSupplies(client);
+
+  /* Las coordenadas se muestran como texto editable: se recargan al cambiar de plano. */
+  useEffect(() => {
+    const site = plansRef.current.find((plan) => plan.id === activePlanId)?.site;
+    setCoordsText(site && typeof site.latitude === 'number' && typeof site.longitude === 'number' ? `${site.latitude}, ${site.longitude}` : '');
+  }, [activePlanId]);
+
+  /* Brújula: mientras el cuadro está abierto, el rumbo sale del sensor del equipo. */
+  useEffect(() => {
+    if (!isCompassOpen) return;
+    setCompassNote(null);
+    setCompassLive(false);
+
+    const onOrientation = (event: Event): void => {
+      const reading = event as DeviceOrientationEvent & { webkitCompassHeading?: number };
+      // iPhone entrega el rumbo ya calculado; Android, el giro respecto del norte (alpha).
+      let heading: number | null = null;
+      if (typeof reading.webkitCompassHeading === 'number') heading = reading.webkitCompassHeading;
+      else if (reading.absolute && typeof reading.alpha === 'number') heading = (360 - reading.alpha) % 360;
+      if (heading === null) return;
+      setCompassLive(true);
+      setCompassHeading(Math.round(((heading % 360) + 360) % 360));
+    };
+    window.addEventListener('deviceorientationabsolute', onOrientation, true);
+    window.addEventListener('deviceorientation', onOrientation, true);
+    const timer = setTimeout(() => {
+      setCompassNote((current) => current ?? 'Este equipo no entrega la brújula. Escribí el rumbo a mano.');
+    }, 2500);
+    return () => {
+      window.removeEventListener('deviceorientationabsolute', onOrientation, true);
+      window.removeEventListener('deviceorientation', onOrientation, true);
+      clearTimeout(timer);
+    };
+  }, [isCompassOpen]);
 
   /* Sincronización con el cliente: los planos se recargan cuando cambian, pero
      la selección y el plano activo solo se reinician al cambiar de cliente (si
@@ -1063,6 +1496,23 @@ export const PlanView: React.FC<PlanViewProps> = ({
     ? activePlan.elements.filter((element) => selectedIds.includes(element.id))
     : [];
   const selected = selectedElements.length === 1 ? selectedElements[0] : null;
+  /** Al elegir algo, la matriz propone separar las copias justo lo que mide, más un respiro. */
+  useEffect(() => {
+    if (!activePlan || selectedIds.length === 0) return;
+    const box = boundsOfElements(activePlan.elements, selectedIds, 0);
+    if (!box) return;
+    setArrayStepX(Math.max(20, Math.round(box.right - box.left + 30)));
+    setArrayStepY(Math.max(20, Math.round(box.bottom - box.top + 30)));
+    // Solo cuando cambia la selección: mover o escalar no tiene que reescribir lo que el usuario puso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds]);
+
+  /** Lo elegido es justo un grupo completo; o hay algo agrupado entre lo elegido. */
+  const selectionHasGroup = selectedElements.some((element) => element.groupId);
+  const selectionIsOneGroup =
+    selectionHasGroup &&
+    new Set(selectedElements.map((element) => element.groupId)).size === 1 &&
+    selectedElements.every((element) => element.groupId);
 
   /** Elementos en orden de pintado: paredes, aberturas y símbolos. */
   const orderedElements = useMemo(
@@ -1090,6 +1540,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       orderedElements.filter((element) => {
         const kind = elementKind(element);
         if (kind === 'symbol') return visible.simbolos;
+        if (isSiteKind(kind)) return visible.entorno;
         if (kind === 'cota' || kind === 'texto') return visible.anotaciones;
         return visible.estructura;
       }),
@@ -1276,6 +1727,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
     const elements = currentElements().filter((element) => {
       const kind = elementKind(element);
       if (kind === 'symbol') return visible.simbolos;
+      if (isSiteKind(kind)) return visible.entorno;
       if (kind === 'cota' || kind === 'texto') return visible.anotaciones;
       return visible.estructura;
     });
@@ -1420,9 +1872,33 @@ export const PlanView: React.FC<PlanViewProps> = ({
         handleDuplicateElement();
         return;
       }
-      if (letra === 's') {
+      if (letra === 'g') {
+        // Ctrl+G agrupa y Ctrl+Mayús+G desagrupa (y no deja pasar la búsqueda del navegador).
         event.preventDefault();
-        void handleDownloadPng();
+        if (event.shiftKey) handleUngroup();
+        else handleGroup();
+        return;
+      }
+      if (letra === 's') {
+        // Ctrl+S guarda el plano en su archivo; Ctrl+Mayús+S pregunta dónde y en qué formato.
+        event.preventDefault();
+        if (event.shiftKey) openSaveAs();
+        else void handleSavePlanFile();
+        return;
+      }
+      if (letra === 'o') {
+        event.preventDefault();
+        openPlanInputRef.current?.click();
+        return;
+      }
+      if (letra === 'p') {
+        event.preventDefault();
+        void handlePrint();
+        return;
+      }
+      if (letra === 'a') {
+        event.preventDefault();
+        handleSelectAll();
         return;
       }
       return;
@@ -1493,6 +1969,11 @@ export const PlanView: React.FC<PlanViewProps> = ({
     }
     if (tecla === 'z' || tecla === 'Z') {
       zoomToFit();
+      return;
+    }
+    if (tecla === 'n' || tecla === 'N') {
+      setTool('norte');
+      setChainStart(null);
       return;
     }
     if (tecla === 'r' || tecla === 'R') {
@@ -1595,6 +2076,130 @@ export const PlanView: React.FC<PlanViewProps> = ({
     );
   };
 
+  /** Coloca la flecha del norte. Hay una sola por plano: si ya había, se mueve y conserva su giro. */
+  const placeNorth = (point: { x: number; y: number }): void => {
+    if (!activePlan) return;
+    const position = snapToPlan(point.x, point.y);
+    const previous = currentElements().find((element) => element.kind === 'norte');
+    const north = createNorth(position.x, position.y, previous?.rotation ?? 0);
+    patchElements(activePlan.id, [...currentElements().filter((element) => element.kind !== 'norte'), north]);
+    setSelectedIds([north.id]);
+    setTool('select');
+    setMessage({ tone: 'info', text: 'Girá la flecha con el tirador de arriba, o con la brújula desde la pestaña Plano.' });
+  };
+
+  /** Coloca la barra de escala con un largo «redondo» según la escala del plano. */
+  const placeScaleBar = (point: { x: number; y: number }): void => {
+    if (!activePlan) return;
+    if (!hasScale(activePlan)) {
+      setMessage({ tone: 'danger', text: 'Primero cargá la escala del plano (herramienta Escala): la barra necesita saber cuánto mide cada cosa.' });
+      setTool('select');
+      return;
+    }
+    const position = snapToPlan(point.x, point.y);
+    const bar = createScaleBar(position.x, position.y, niceBarMeters(metersPerUnit(activePlan)));
+    patchElements(activePlan.id, [...currentElements().filter((element) => element.kind !== 'escalagrafica'), bar]);
+    setSelectedIds([bar.id]);
+    setTool('select');
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Ubicación del inmueble: dirección, GPS, norte y mapa              */
+  /* ---------------------------------------------------------------- */
+
+  const patchSite = (patch: Partial<NonNullable<ClientPlan['site']>>): void => {
+    if (!activePlan) return;
+    patchPlan(activePlan.id, { site: { ...(activePlan.site ?? {}), ...patch } }, true, `ubicacion:${activePlan.id}`);
+  };
+
+  /** Toma las coordenadas del GPS del equipo (pide permiso al navegador). */
+  const handleGetLocation = (): void => {
+    if (!navigator.geolocation) {
+      setMessage({ tone: 'danger', text: 'Este equipo no tiene GPS disponible. Escribí las coordenadas a mano.' });
+      return;
+    }
+    setMessage({ tone: 'info', text: 'Buscando la ubicación… aceptá el permiso del navegador si te lo pide.' });
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const latitude = Math.round(position.coords.latitude * 1e6) / 1e6;
+        const longitude = Math.round(position.coords.longitude * 1e6) / 1e6;
+        patchSite({ latitude, longitude, accuracy: Math.round(position.coords.accuracy) });
+        setCoordsText(`${latitude}, ${longitude}`);
+        setMessage({ tone: 'success', text: `Ubicación tomada (precisión de unos ${Math.round(position.coords.accuracy)} m).` });
+      },
+      (error) => {
+        setMessage({
+          tone: 'danger',
+          text:
+            error.code === error.PERMISSION_DENIED
+              ? 'No diste permiso para usar la ubicación. Podés escribir las coordenadas a mano.'
+              : 'No se pudo obtener la ubicación. Probá al aire libre o escribí las coordenadas a mano.',
+        });
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+    );
+  };
+
+  /** Escribir las coordenadas a mano: «-34.6037, -58.3816». */
+  const handleCoordsText = (value: string): void => {
+    setCoordsText(value);
+    const match = value.trim().match(/^(-?\d{1,2}(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:[.,]\d+)?)$/);
+    if (!match) return;
+    const latitude = Number(match[1].replace(',', '.'));
+    const longitude = Number(match[2].replace(',', '.'));
+    if (Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180) patchSite({ latitude, longitude, accuracy: undefined });
+  };
+
+  const handleOpenMap = (): void => {
+    const site = activePlan?.site;
+    if (!site || typeof site.latitude !== 'number' || typeof site.longitude !== 'number') return;
+    const url = `https://www.openstreetmap.org/?mlat=${site.latitude}&mlon=${site.longitude}#map=19/${site.latitude}/${site.longitude}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  /** Pone (o gira, si ya está) la flecha del norte. `rotation` es cuánto gira respecto de «arriba». */
+  const applyNorth = (rotation: number): void => {
+    if (!activePlan) return;
+    const elements = currentElements();
+    const existing = elements.find((element) => element.kind === 'norte');
+    if (existing) {
+      patchElements(
+        activePlan.id,
+        elements.map((element) => (element.id === existing.id ? { ...element, rotation } : element))
+      );
+      setSelectedIds([existing.id]);
+      return;
+    }
+    const north = createNorth(PLAN_WIDTH - 90, 90, rotation);
+    patchElements(activePlan.id, [...elements, north]);
+    setSelectedIds([north.id]);
+  };
+
+  /** Abre la brújula del dispositivo (en iPhone hay que pedir permiso antes). */
+  const openCompass = async (): Promise<void> => {
+    const sensor = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<'granted' | 'denied'> };
+    try {
+      if (typeof sensor.requestPermission === 'function') {
+        const answer = await sensor.requestPermission();
+        if (answer !== 'granted') {
+          setCompassNote('No diste permiso para usar la brújula. Podés escribir el rumbo a mano.');
+        }
+      }
+    } catch {
+      setCompassNote('No se pudo acceder a la brújula. Podés escribir el rumbo a mano.');
+    }
+    const current = activePlan ? sheetTopBearing(activePlan) : null;
+    if (current !== null) setCompassHeading(Math.round(current));
+    setIsCompassOpen(true);
+  };
+
+  const handleFixNorth = (): void => {
+    // Si la parte de arriba del plano mira al rumbo h, el norte queda girado (360 − h) respecto de «arriba».
+    applyNorth(Math.round((360 - compassHeading + 360) % 360));
+    setIsCompassOpen(false);
+    setMessage({ tone: 'success', text: 'Norte fijado. Se imprime con el plano.' });
+  };
+
   const placeText = (point: { x: number; y: number }): void => {
     if (!activePlan) return;
     const position = snapToPlan(point.x, point.y);
@@ -1656,7 +2261,16 @@ export const PlanView: React.FC<PlanViewProps> = ({
       return;
     }
 
-    if (tool === 'pared' || tool === 'habitacion' || tool === 'cota' || tool === 'medir' || tool === 'escala') {
+    if (
+      tool === 'pared' ||
+      tool === 'habitacion' ||
+      tool === 'terreno' ||
+      tool === 'calle' ||
+      tool === 'limite' ||
+      tool === 'cota' ||
+      tool === 'medir' ||
+      tool === 'escala'
+    ) {
       // Con la pared encadenada, el trazo sigue desde la punta anterior.
       const start =
         tool === 'pared' && chainStart ? chainStart : snapToPlan(Math.max(0, raw.x), Math.max(0, raw.y));
@@ -1677,6 +2291,14 @@ export const PlanView: React.FC<PlanViewProps> = ({
       placeText(point);
       return;
     }
+    if (tool === 'norte') {
+      placeNorth(point);
+      return;
+    }
+    if (tool === 'escalagrafica') {
+      placeScaleBar(point);
+      return;
+    }
 
     placeSymbol(point, symbolOfTool(tool));
   };
@@ -1695,7 +2317,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
       const free = snapToPlan(point.x, point.y);
       // La habitación es un rectángulo: sus lados ya son rectos, no se endereza.
-      const constrained = tool === 'habitacion' ? free : constrainDraft(draft.x, draft.y, free.x, free.y);
+      const constrained = tool === 'habitacion' || tool === 'terreno' ? free : constrainDraft(draft.x, draft.y, free.x, free.y);
       draftRef.current = { ...draft, x2: constrained.x, y2: constrained.y };
       setDraftWall({ ...draftRef.current });
     };
@@ -1733,7 +2355,31 @@ export const PlanView: React.FC<PlanViewProps> = ({
         return;
       }
 
+      if (tool === 'terreno') {
+        if (Math.abs(draft.x2 - draft.x) < MIN_WALL_LENGTH || Math.abs(draft.y2 - draft.y) < MIN_WALL_LENGTH) return;
+        const lot = createLot({ x: draft.x, y: draft.y }, { x: draft.x2, y: draft.y2 });
+        patchElements(activePlan.id, [...currentElements(), ...lot]);
+        setSelectedIds(lot.map((element) => element.id));
+        setTool('select');
+        setMessage({
+          tone: 'success',
+          text: 'Terreno dibujado: son 4 límites agrupados. Arrastrá los tiradores de su caja para ajustarlo, o Ctrl+clic para tocar un lado.',
+        });
+        return;
+      }
+
       if (length < MIN_TWO_POINT_LENGTH) return;
+
+      if (tool === 'calle' || tool === 'limite') {
+        const from = { x: draft.x, y: draft.y };
+        const to = { x: draft.x2, y: draft.y2 };
+        const created = tool === 'calle' ? createStreet(from, to) : createBoundary(from, to);
+        patchElements(activePlan.id, [...currentElements(), created]);
+        setSelectedIds([created.id]);
+        setTool('select');
+        if (tool === 'calle') setMessage({ tone: 'info', text: 'Escribí el nombre de la calle en «Nombre en el plano», en el panel de la derecha.' });
+        return;
+      }
 
       if (tool === 'cota') {
         const cota = createCota({ x: draft.x, y: draft.y }, { x: draft.x2, y: draft.y2 });
@@ -1771,7 +2417,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
     event: React.PointerEvent,
     element: PlanElement,
     mode: DragState['mode'],
-    extra: Pick<DragState, 'room' | 'roomHandle'> = {}
+    extra: Pick<DragState, 'room' | 'roomHandle' | 'frame'> = {},
+    moveIds?: string[]
   ): void => {
     if (!activePlan) return;
 
@@ -1785,7 +2432,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       elementId: element.id,
       origin: { ...element },
       base: currentElements(),
-      ids: mode === 'move' ? selectedIds : [element.id],
+      ids: mode === 'move' || mode === 'scale' ? moveIds ?? selectedIds : [element.id],
       startClientX: event.clientX,
       startClientY: event.clientY,
       scale: planScale(),
@@ -1811,19 +2458,28 @@ export const PlanView: React.FC<PlanViewProps> = ({
       return;
     }
 
+    // Un elemento de un grupo elige al grupo entero; con Ctrl se elige solo ese elemento.
+    const unit = event.ctrlKey || event.metaKey ? [element.id] : expandToGroups(currentElements(), [element.id]);
+
     if (event.shiftKey) {
       // Con Mayús se suma o se saca de la selección, sin mover nada.
       setSelectedIds((current) =>
-        current.includes(element.id) ? current.filter((id) => id !== element.id) : [...current, element.id]
+        current.includes(element.id)
+          ? current.filter((id) => !unit.includes(id))
+          : [...new Set([...current, ...unit])]
       );
       return;
     }
 
-    if (!selectedIds.includes(element.id)) setSelectedIds([element.id]);
+    if (!selectedIds.includes(element.id) || ((event.ctrlKey || event.metaKey) && selectedIds.length > 1)) {
+      setSelectedIds(unit);
+      startDrag(event, element, 'move', {}, unit);
+      return;
+    }
     startDrag(event, element, 'move');
   };
 
-  const handleHandlePointerDown = (event: React.PointerEvent, element: PlanElement, handle: 'a' | 'b' | 'size'): void => {
+  const handleHandlePointerDown = (event: React.PointerEvent, element: PlanElement, handle: 'a' | 'b' | 'size' | 'rotate'): void => {
     event.stopPropagation();
     setSelectedIds([element.id]);
 
@@ -1838,12 +2494,25 @@ export const PlanView: React.FC<PlanViewProps> = ({
       }
     }
 
+    if (handle === 'rotate') {
+      startDrag(event, element, 'rotate');
+      return;
+    }
+
     if (isOpening(element)) {
       startDrag(event, element, handle === 'a' ? 'openingA' : 'openingB');
       return;
     }
 
     startDrag(event, element, handle === 'a' ? 'endpointA' : handle === 'b' ? 'endpointB' : 'resize');
+  };
+
+  /** Tirador de la caja de una selección múltiple: escala todo lo elegido. */
+  const handleFrameHandlePointerDown = (event: React.PointerEvent, frame: Frame, roomHandle: RoomHandle): void => {
+    event.stopPropagation();
+    const first = currentElements().find((element) => element.id === selectedIds[0]);
+    if (!first) return;
+    startDrag(event, first, 'scale', { frame, roomHandle }, expandToGroups(currentElements(), selectedIds));
   };
 
   /** Tirador de la caja de una habitación seleccionada (esquinas y lados). */
@@ -1884,8 +2553,11 @@ export const PlanView: React.FC<PlanViewProps> = ({
         return;
       }
 
-      const ids = elementsInRect(plan.elements, { x1: band.x, y1: band.y, x2: band.x2, y2: band.y2 }).filter((id) =>
-        visibleElements.some((element) => element.id === id)
+      const ids = expandToGroups(
+        plan.elements,
+        elementsInRect(plan.elements, { x1: band.x, y1: band.y, x2: band.x2, y2: band.y2 }).filter((id) =>
+          visibleElements.some((element) => element.id === id)
+        )
       );
       setSelectedIds((current) => (bandAddRef.current ? [...new Set([...current, ...ids])] : ids));
     };
@@ -2027,6 +2699,18 @@ export const PlanView: React.FC<PlanViewProps> = ({
         return;
       }
 
+      if (drag.mode === 'scale' && drag.frame && drag.roomHandle) {
+        const { frame, roomHandle } = drag;
+        const startX = roomHandle.sx < 0 ? frame.left : roomHandle.sx > 0 ? frame.right : (frame.left + frame.right) / 2;
+        const startY = roomHandle.sy < 0 ? frame.top : roomHandle.sy > 0 ? frame.bottom : (frame.top + frame.bottom) / 2;
+        const target = snapPoint(startX + dx, startY + dy, { grid: snap, height: drag.height, radius: 0 });
+        /* Sin teclas se estira a voluntad desde el lado opuesto; Mayús en una
+           esquina conserva las proporciones; Alt escala desde el centro. */
+        const next = resizeFrame(frame, roomHandle, target, { keepRatio: event.shiftKey, fromCenter: event.altKey });
+        patchElements(drag.planId, scaleElements(base, drag.ids, frame, next, drag.height, roomHandle.sx !== 0 && roomHandle.sy !== 0), false);
+        return;
+      }
+
       if (drag.mode === 'openingA' || drag.mode === 'openingB') {
         const resized = resizeOpening(origin, drag.mode === 'openingA' ? 'a' : 'b', dx, dy, base);
         patchElements(
@@ -2037,10 +2721,27 @@ export const PlanView: React.FC<PlanViewProps> = ({
         return;
       }
 
+      if (drag.mode === 'rotate') {
+        // El tirador está arriba de la flecha: el ángulo de arriba (−90°) es el giro cero.
+        const pointer = clientToPlanRaw(event.clientX, event.clientY);
+        if (!pointer) return;
+        let degrees = (Math.atan2(pointer.y - origin.y, pointer.x - origin.x) * 180) / Math.PI + 90;
+        degrees = ((degrees % 360) + 360) % 360;
+        // Con Mayús, de a 15°; el norte casi alineado con un eje se «pega» a él.
+        if (event.shiftKey) degrees = Math.round(degrees / 15) * 15;
+        else if (Math.min(degrees, 360 - degrees) < 3) degrees = 0;
+        patchElements(
+          drag.planId,
+          elements.map((element) => (element.id === origin.id ? { ...element, rotation: Math.round(degrees) % 360 } : element)),
+          false
+        );
+        return;
+      }
+
       if (drag.mode === 'resize') {
         // El tirador está en la esquina (s/2 + 8) de la caja del símbolo, girada con él:
         // el tamaño sale de lo que se alejó el puntero del centro, en el eje de esa diagonal.
-        const startSize = symbolSize(origin);
+        const startSize = origin.kind === 'norte' ? origin.size ?? DEFAULT_NORTH_SIZE : symbolSize(origin);
         const radians = ((origin.rotation ?? 0) * Math.PI) / 180;
         const diagonalX = (Math.cos(radians) - Math.sin(radians)) / Math.SQRT2;
         const diagonalY = (Math.sin(radians) + Math.cos(radians)) / Math.SQRT2;
@@ -2108,7 +2809,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [drag, snap, ortho, patchElements, pushHistory, constrainDraft]);
+  }, [drag, snap, ortho, patchElements, pushHistory, constrainDraft, clientToPlanRaw]);
 
   /* ---------------------------------------------------------------- */
   /* Alta, edición y borrado de planos                                 */
@@ -2236,6 +2937,71 @@ export const PlanView: React.FC<PlanViewProps> = ({
       tone: 'info',
       text: `Se reflejó ${axis === 'vertical' ? 'de izquierda a derecha' : 'de arriba abajo'} respecto del centro de la selección.`,
     });
+  };
+
+  /* Diseño rápido ----------------------------------------------------- */
+
+  const handleAlign = (mode: AlignMode): void => {
+    if (!activePlan) return;
+    patchElements(activePlan.id, alignElements(activePlan.elements, selectedIds, mode, height));
+  };
+
+  const handleDistribute = (axis: 'horizontal' | 'vertical'): void => {
+    if (!activePlan) return;
+    const next = distributeElements(activePlan.elements, selectedIds, axis, height);
+    if (next === activePlan.elements) {
+      setMessage({ tone: 'info', text: 'Para distribuir hacen falta al menos 3 elementos (o grupos).' });
+      return;
+    }
+    patchElements(activePlan.id, next);
+  };
+
+  const handleRotate = (clockwise: boolean): void => {
+    if (!activePlan) return;
+    patchElements(activePlan.id, rotateElements(activePlan.elements, selectedIds, clockwise, height));
+  };
+
+  /** Repite lo seleccionado en filas y columnas. */
+  const handleArray = (): void => {
+    if (!activePlan) return;
+    const { copies, skipped } = arrayElements(activePlan.elements, selectedIds, arrayRows, arrayColumns, arrayStepX, arrayStepY, height);
+    if (copies.length === 0) {
+      setMessage({
+        tone: 'info',
+        text: skipped > 0 ? 'Las copias quedarían fuera de la hoja: achicá la separación.' : 'Poné más de 1 fila o columna.',
+      });
+      return;
+    }
+    patchElements(activePlan.id, [...activePlan.elements, ...copies]);
+    setMessage({
+      tone: 'success',
+      text: `Se crearon ${copies.length} copias${skipped > 0 ? ` (${skipped} quedaban fuera de la hoja y no se crearon)` : ''}. Ctrl+Z las deshace.`,
+    });
+  };
+
+  /** Agrupa lo seleccionado: desde ese momento se elige y se mueve como uno solo. */
+  const handleGroup = (): void => {
+    if (!activePlan) return;
+    const { elements, groupId } = groupElements(activePlan.elements, selectedIds);
+    if (!groupId) {
+      setMessage({ tone: 'info', text: 'Elegí dos o más elementos para agruparlos.' });
+      return;
+    }
+    patchElements(activePlan.id, elements);
+    setSelectedIds(expandToGroups(elements, selectedIds));
+    setMessage({ tone: 'success', text: 'Elementos agrupados. Ctrl+Mayús+G los separa; Ctrl+clic elige uno solo.' });
+  };
+
+  /** Deshace los grupos de lo seleccionado. */
+  const handleUngroup = (): void => {
+    if (!activePlan) return;
+    const { elements, released } = ungroupElements(activePlan.elements, selectedIds);
+    if (released === 0) {
+      setMessage({ tone: 'info', text: 'Lo seleccionado no está agrupado.' });
+      return;
+    }
+    patchElements(activePlan.id, elements);
+    setMessage({ tone: 'success', text: 'Grupo deshecho: los elementos vuelven a ser independientes.' });
   };
 
   /** Une las esquinas de las paredes seleccionadas: las estira o recorta hasta cruzarse. */
@@ -2389,27 +3155,37 @@ export const PlanView: React.FC<PlanViewProps> = ({
   /* ---------------------------------------------------------------- */
 
   /** Arma el PNG del plano (encabezado + fondo + dibujo) para bajar o imprimir. */
-  const buildCanvas = useCallback(async (): Promise<HTMLCanvasElement | null> => {
+  const buildCanvas = useCallback(async (scale = 2, fit: ExportFit = exportFit): Promise<HTMLCanvasElement | null> => {
     const svg = svgRef.current;
     const plan = activePlan;
     if (!svg || !plan) return null;
 
-    const planPixelHeight = planHeight(plan);
+    const sheetHeight = planHeight(plan);
     const clone = svg.cloneNode(true) as SVGSVGElement;
     clone.querySelectorAll('[data-export="hide"]').forEach((node) => node.remove());
     clone.querySelectorAll('[data-background]').forEach((node) => node.remove());
-    // El PNG siempre sale con la hoja entera, sin el zoom ni el desplazamiento
-    // que se estén usando para trabajar.
-    clone.querySelector('[data-view="true"]')?.setAttribute('transform', 'translate(0 0) scale(1)');
+    // Sin el zoom ni el desplazamiento que se estén usando para trabajar.
+    const view = clone.querySelector('[data-view="true"]') as SVGGraphicsElement | null;
+    view?.setAttribute('transform', 'translate(0 0) scale(1)');
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+    // Encuadre: el dibujo con un margen (sin la franja en blanco de la hoja), o la hoja entera.
+    // Con una imagen de fondo se exporta la hoja entera: la foto la llena.
+    let crop: ExportCrop = { x: 0, y: 0, width: PLAN_WIDTH, height: sheetHeight };
+    if (fit === 'dibujo' && !plan.imageDataUrl && view) {
+      crop = measureDrawing(clone, view, sheetHeight) ?? crop;
+    }
+    const planPixelHeight = Math.round((PLAN_WIDTH * crop.height) / crop.width);
+    clone.setAttribute('viewBox', `${crop.x} ${crop.y} ${crop.width} ${crop.height}`);
     clone.setAttribute('width', String(PLAN_WIDTH));
     clone.setAttribute('height', String(planPixelHeight));
 
     const markup = new XMLSerializer().serializeToString(clone);
     const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
 
-    const scale = 2; // Al doble de resolución, para que impreso se lea bien
-    const header = 92;
+    // Por omisión al doble de resolución, para que impreso se lea bien; el PDF pide más.
+    const siteLine = siteSummary(plan);
+    const header = siteLine ? 122 : 92;
     const canvas = document.createElement('canvas');
     canvas.width = PLAN_WIDTH * scale;
     canvas.height = (planPixelHeight + header) * scale;
@@ -2433,6 +3209,11 @@ export const PlanView: React.FC<PlanViewProps> = ({
       .filter(Boolean)
       .join(' · ');
     context.fillText(subtitle, 36, 74);
+    if (siteLine) {
+      context.fillStyle = '#6b7280';
+      context.font = `17px ${PLAN_FONT}`;
+      context.fillText(siteLine, 36, 102);
+    }
 
     if (plan.imageDataUrl) {
       const background = await loadImage(plan.imageDataUrl);
@@ -2446,7 +3227,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
     context.drawImage(drawing, 0, header, PLAN_WIDTH, planPixelHeight);
 
     return canvas;
-  }, [activePlan, client.clientName, supplies]);
+  }, [activePlan, client.clientName, supplies, exportFit]);
 
   const handleDownloadPng = async (): Promise<void> => {
     if (!activePlan) return;
@@ -2471,6 +3252,159 @@ export const PlanView: React.FC<PlanViewProps> = ({
     }
   };
 
+  /* ---------------------------------------------------------------- */
+  /* Archivo: guardar, guardar como, abrir y exportar                  */
+  /* ---------------------------------------------------------------- */
+
+  const reportSaved = (result: Awaited<ReturnType<typeof saveFile>>, what: string): void => {
+    if (result.status === 'cancelled') return;
+    setMessage({
+      tone: 'success',
+      text:
+        result.status === 'saved'
+          ? `${what} se guardó en «${result.name}».`
+          : `${what} se descargó como «${result.name}» (carpeta de descargas).`,
+    });
+  };
+
+  /** Guarda el plano en un archivo (.json) que se puede volver a abrir y editar. */
+  const handleSavePlanFile = async (forcePicker = false, fileName?: string): Promise<void> => {
+    if (!activePlan) return;
+    const blob = new Blob([serializePlan(activePlan, { client: client.clientName })], { type: 'application/json' });
+    const name = `${fileSafeName(fileName ?? activePlan.name)}${PLAN_FILE_EXTENSION}`;
+    const result = await saveFile(
+      blob,
+      name,
+      'Plano de ElectroPro',
+      'application/json',
+      '.json',
+      forcePicker ? null : fileHandlesRef.current.get(activePlan.id)
+    );
+    if (result.status === 'saved') fileHandlesRef.current.set(activePlan.id, result.handle);
+    reportSaved(result, 'El plano');
+  };
+
+  /** Exporta el plano a PDF (A4, con encabezado y escala) para imprimir o entregar. */
+  const handleExportPdf = async (fileName?: string): Promise<void> => {
+    if (!activePlan) return;
+    setBusy(true);
+    try {
+      const canvas = await buildCanvas(3);
+      if (!canvas) {
+        setMessage({ tone: 'danger', text: 'No se pudo preparar el PDF del plano.' });
+        return;
+      }
+      const scaleLabel = printScaleLabel(activePlan);
+      const blob = await canvasToPdf(canvas, {
+        title: activePlan.name,
+        subject: `Plano de ubicación · ${client.clientName}`,
+        footer: [client.clientName, scaleLabel ? `Escala ${scaleLabel}` : ''].filter(Boolean).join(' · '),
+      });
+      const result = await saveFile(blob, `${fileSafeName(fileName ?? activePlan.name)}.pdf`, 'Documento PDF', 'application/pdf', '.pdf');
+      reportSaved(result, 'El PDF');
+    } catch {
+      setMessage({ tone: 'danger', text: 'No se pudo generar el PDF del plano.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Exporta el plano como imagen PNG. */
+  const handleExportPng = async (fileName?: string): Promise<void> => {
+    if (!activePlan) return;
+    setBusy(true);
+    try {
+      const canvas = await buildCanvas(2);
+      const blob = canvas ? await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png')) : null;
+      if (!blob) {
+        setMessage({ tone: 'danger', text: 'No se pudo preparar la imagen del plano.' });
+        return;
+      }
+      const result = await saveFile(blob, `${fileSafeName(fileName ?? activePlan.name)}.png`, 'Imagen PNG', 'image/png', '.png');
+      reportSaved(result, 'La imagen');
+    } catch {
+      setMessage({ tone: 'danger', text: 'No se pudo generar el PNG del plano.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openSaveAs = (): void => {
+    if (!activePlan) return;
+    setSaveAsName(activePlan.name);
+    setIsSaveAsOpen(true);
+  };
+
+  const handleSaveAsConfirm = async (): Promise<void> => {
+    const name = saveAsName.trim() || 'plano';
+    setIsSaveAsOpen(false);
+    if (saveAsFormat === 'pdf') await handleExportPdf(name);
+    else if (saveAsFormat === 'png') await handleExportPng(name);
+    else await handleSavePlanFile(true, name);
+  };
+
+  /** Abre un plano guardado en un archivo y lo suma a los planos de este cliente. */
+  const handleOpenPlanFile = async (file: File | undefined): Promise<void> => {
+    if (!file) return;
+    try {
+      const parsed = parsePlanFile(await readFileText(file), supplies.map((supply) => supply.id));
+      if ('error' in parsed) {
+        setMessage({ tone: 'danger', text: parsed.error });
+        return;
+      }
+      // Un plano con el mismo nombre no se pisa: la copia lleva un número.
+      const taken = new Set(plansRef.current.map((plan) => plan.name));
+      let name = parsed.plan.name;
+      for (let n = 2; taken.has(name); n++) name = `${parsed.plan.name} (${n})`;
+      const plan: ClientPlan = { ...parsed.plan, name };
+
+      applyPlans([...plansRef.current, plan]);
+      setActivePlanId(plan.id);
+      setSelectedIds([]);
+      setMessage({
+        tone: parsed.skipped > 0 ? 'info' : 'success',
+        text: `Se abrió «${plan.name}» con ${plan.elements.length} elementos.${
+          parsed.skipped > 0 ? ` ${parsed.skipped} elementos dañados se descartaron.` : ''
+        }`,
+      });
+    } catch {
+      setMessage({ tone: 'danger', text: 'No se pudo leer el archivo.' });
+    } finally {
+      if (openPlanInputRef.current) openPlanInputRef.current.value = '';
+    }
+  };
+
+  /** Crea una copia del plano activo, para probar cambios o armar otra planta parecida. */
+  const handleDuplicatePlan = (): void => {
+    if (!activePlan) return;
+    const copy = duplicatePlan(activePlan, `${activePlan.name} (copia)`);
+    applyPlans([...plansRef.current, copy]);
+    setActivePlanId(copy.id);
+    setSelectedIds([]);
+    setMessage({ tone: 'success', text: `Se creó «${copy.name}».` });
+  };
+
+  /** Copia de seguridad de todos los clientes (no solo de este plano). */
+  const handleBackupAll = async (): Promise<void> => {
+    const blob = new Blob([StorageService.exportBackup()], { type: 'application/json' });
+    const stamp = new Date().toISOString().split('T')[0];
+    reportSaved(
+      await saveFile(blob, `ElectroPro_CopiaSeguridad_${stamp}.json`, 'Copia de seguridad', 'application/json', '.json'),
+      'La copia de seguridad'
+    );
+  };
+
+  const handleDeleteActivePlan = (): void => {
+    if (!activePlan) return;
+    if (confirm(`¿Borrar el plano «${activePlan.name}»? Guardalo antes en un archivo si lo querés conservar.`)) {
+      handleDeletePlan(activePlan);
+    }
+  };
+
+  const handleSelectAll = (): void => {
+    setSelectedIds(visibleElements.map((element) => element.id));
+  };
+
   const handlePrint = async (): Promise<void> => {
     if (!activePlan) return;
     setBusy(true);
@@ -2490,7 +3424,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       }
       // El nombre lo escribe el usuario: se escapa antes de ponerlo en el HTML.
       const safeTitle = activePlan.name.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
-      const orientation = (activePlan.aspect ?? PLAN_SHEETS[0].aspect) < 1 ? 'portrait' : 'landscape';
+      const orientation = canvas.width < canvas.height ? 'portrait' : 'landscape';
       printWindow.document.write(
         `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${safeTitle}</title>` +
           `<style>@page{size:A4 ${orientation};margin:10mm}body{margin:0}img{width:100%;height:auto}</style>` +
@@ -2537,6 +3471,122 @@ export const PlanView: React.FC<PlanViewProps> = ({
   /* ---------------------------------------------------------------- */
   /* Estados especiales                                                */
   /* ---------------------------------------------------------------- */
+
+  const saveAsModal = (
+    <Modal
+      isOpen={isSaveAsOpen}
+      onClose={() => setIsSaveAsOpen(false)}
+      title="Guardar como"
+      description="Elegí el nombre y el formato. Donde el navegador lo permite, después te deja elegir la carpeta."
+      icon={<Save className="h-4 w-4" />}
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => setIsSaveAsOpen(false)}>
+            Cancelar
+          </Button>
+          <Button variant="primary" onClick={() => void handleSaveAsConfirm()}>
+            Guardar
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <TextField label="Nombre del archivo" value={saveAsName} onChange={setSaveAsName} />
+        {saveAsFormat !== 'plano' && (
+          <SelectField
+            label="Encuadre"
+            value={exportFit}
+            onChange={(value) => setExportFit(value as ExportFit)}
+            options={[
+              { value: 'dibujo', label: 'Ajustado al dibujo (sin espacio en blanco)' },
+              { value: 'hoja', label: 'La hoja completa' },
+            ]}
+            hint="Con una foto de fondo se exporta siempre la hoja completa."
+          />
+        )}
+        <SelectField
+          label="Formato"
+          value={saveAsFormat}
+          onChange={(value) => setSaveAsFormat(value as 'plano' | 'pdf' | 'png')}
+          options={[
+            { value: 'plano', label: 'Plano de ElectroPro (.json): se puede volver a abrir y editar' },
+            { value: 'pdf', label: 'PDF: para imprimir o entregar al cliente' },
+            { value: 'png', label: 'Imagen PNG' },
+          ]}
+          hint={
+            saveAsFormat === 'plano'
+              ? 'Guarda todo: paredes, símbolos, textos, escala y la foto de fondo.'
+              : saveAsFormat === 'pdf'
+              ? 'Hoja A4 con el encabezado, el nombre del cliente y la escala.'
+              : 'Imagen del plano tal como se ve, con el encabezado.'
+          }
+        />
+      </div>
+    </Modal>
+  );
+
+  /** Entrada oculta para «Abrir»: acepta los archivos de plano que guarda esta aplicación. */
+  const openPlanInput = (
+    <input
+      ref={openPlanInputRef}
+      type="file"
+      accept=".json,application/json"
+      className="hidden"
+      onChange={(event) => void handleOpenPlanFile(event.target.files?.[0])}
+    />
+  );
+
+  const compassModal = (
+    <Modal
+      isOpen={isCompassOpen}
+      onClose={() => setIsCompassOpen(false)}
+      title="Tomar el norte"
+      description="Apuntá el celular hacia donde mira la parte de arriba del plano (el lado de arriba de la hoja) y tocá «Fijar el norte»."
+      icon={<Compass className="h-4 w-4" />}
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => setIsCompassOpen(false)}>
+            Cancelar
+          </Button>
+          <Button variant="primary" onClick={handleFixNorth}>
+            Fijar el norte
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex flex-col items-center gap-2">
+          <svg viewBox="-60 -60 120 120" className="h-36 w-36 text-strong" aria-hidden="true">
+            <circle r={52} fill="none" stroke="currentColor" strokeWidth={1.5} opacity={0.4} />
+            <g transform={`rotate(${-compassHeading})`}>
+              <path d="M 0 -46 L 10 8 L 0 2 L -10 8 Z" fill="var(--color-accent)" />
+              <text y={-50} textAnchor="middle" fontSize={14} fontWeight={700} fill="currentColor">
+                N
+              </text>
+            </g>
+            <line x1={0} y1={-52} x2={0} y2={-40} stroke="currentColor" strokeWidth={2} opacity={0.0} />
+          </svg>
+          <p className="font-mono text-2xl font-bold text-strong">
+            {compassHeading}° <span className="text-base font-semibold text-muted">{cardinalName(compassHeading)}</span>
+          </p>
+          <p className="text-xs text-muted">{compassLive ? 'Leyendo la brújula del equipo…' : 'Rumbo hacia el que mira la parte de arriba del plano'}</p>
+        </div>
+        <NumberField
+          label="Rumbo (si no tenés brújula, escribilo)"
+          unit="°"
+          value={compassHeading}
+          onChange={(value) => typeof value === 'number' && setCompassHeading(((Math.round(value) % 360) + 360) % 360)}
+          min={0}
+          max={359}
+          step={5}
+          presets={[0, 90, 180, 270]}
+          presetsLabel="Frecuentes"
+          hint="0° = norte, 90° = este, 180° = sur, 270° = oeste."
+        />
+        {compassNote && <p className="rounded-xl border border-warning-line bg-warning-soft px-3 py-2 text-xs leading-snug text-warning-text">{compassNote}</p>}
+      </div>
+    </Modal>
+  );
 
   const newPlanModal = (
     <Modal
@@ -2738,11 +3788,17 @@ export const PlanView: React.FC<PlanViewProps> = ({
           title="Todavía no hay ningún plano"
           description="Creá el primero: podés dibujar la planta desde cero con las paredes y sus aberturas, o cargar una foto del lugar como fondo y marcar encima. Los tableros y las cargas que ya cargaste se ubican con un clic."
           action={
-            <Button variant="primary" icon={<MapIcon className="h-4 w-4" />} onClick={openNewPlanModal}>
-              Crear el primer plano
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button variant="primary" icon={<MapIcon className="h-4 w-4" />} onClick={openNewPlanModal}>
+                Crear el primer plano
+              </Button>
+              <Button variant="secondary" icon={<FolderOpen className="h-4 w-4" />} onClick={() => openPlanInputRef.current?.click()}>
+                Abrir un plano guardado
+              </Button>
+            </div>
           }
         />
+        {openPlanInput}
         {newPlanModal}
       </div>
     );
@@ -2756,11 +3812,106 @@ export const PlanView: React.FC<PlanViewProps> = ({
   const selectedIsOpening = selected ? isOpening(selected) : false;
   const selectedIsCota = selected ? isCota(selected) : false;
   const selectedIsText = selected ? isText(selected) : false;
+  const selectedIsSite = selected ? isSite(selected) : false;
+
+  const hasSelection = selectedIds.length > 0;
+  const menus: MenuDef[] = [
+    {
+      label: 'Archivo',
+      items: [
+        { label: 'Nuevo plano…', onClick: openNewPlanModal },
+        { label: 'Abrir…', shortcut: 'Ctrl+O', onClick: () => openPlanInputRef.current?.click() },
+        { label: 'Guardar', shortcut: 'Ctrl+S', onClick: () => void handleSavePlanFile(), separatorBefore: true },
+        { label: 'Guardar como…', shortcut: 'Ctrl+Mayús+S', onClick: openSaveAs },
+        { label: 'Exportar a PDF', onClick: () => void handleExportPdf(), separatorBefore: true },
+        { label: 'Exportar a imagen (PNG)', onClick: () => void handleExportPng() },
+        { label: 'Encuadre: ajustado al dibujo', checked: exportFit === 'dibujo', onClick: () => setExportFit('dibujo') },
+        { label: 'Encuadre: la hoja completa', checked: exportFit === 'hoja', onClick: () => setExportFit('hoja') },
+        { label: 'Imprimir…', shortcut: 'Ctrl+P', onClick: () => void handlePrint() },
+        { label: 'Duplicar este plano', onClick: handleDuplicatePlan, separatorBefore: true },
+        { label: 'Borrar este plano…', onClick: handleDeleteActivePlan },
+        { label: 'Copia de seguridad de todos los clientes…', onClick: () => void handleBackupAll(), separatorBefore: true },
+      ],
+    },
+    {
+      label: 'Edición',
+      items: [
+        { label: 'Deshacer', shortcut: 'Ctrl+Z', onClick: handleUndo, disabled: !canUndo(historyRef.current) },
+        { label: 'Rehacer', shortcut: 'Ctrl+Mayús+Z', onClick: handleRedo, disabled: !canRedo(historyRef.current) },
+        { label: 'Cortar', shortcut: 'Ctrl+X', onClick: () => { handleCopy(); handleRemoveSelection(); }, disabled: !hasSelection, separatorBefore: true },
+        { label: 'Copiar', shortcut: 'Ctrl+C', onClick: handleCopy, disabled: !hasSelection },
+        { label: 'Pegar', shortcut: 'Ctrl+V', onClick: handlePaste },
+        { label: 'Duplicar', shortcut: 'Ctrl+D', onClick: handleDuplicateElement, disabled: !hasSelection },
+        { label: 'Seleccionar todo', shortcut: 'Ctrl+A', onClick: handleSelectAll, separatorBefore: true },
+        { label: 'Borrar', shortcut: 'Supr', onClick: handleRemoveSelection, disabled: !hasSelection },
+      ],
+    },
+    {
+      label: 'Ver',
+      items: [
+        { label: 'Acercar', shortcut: '+', onClick: () => zoomBy(1.25) },
+        { label: 'Alejar', shortcut: '-', onClick: () => zoomBy(1 / 1.25) },
+        { label: 'Encuadrar todo lo dibujado', shortcut: 'Z', onClick: zoomToFit },
+        { label: 'Mostrar la hoja entera', shortcut: 'A', onClick: zoomToSheet },
+        { label: 'Rejilla y enganche', shortcut: 'G', checked: snap, onClick: () => setSnap((current) => !current), separatorBefore: true },
+        { label: 'Orto', shortcut: 'O', checked: ortho, onClick: () => setOrtho((current) => !current) },
+        ...(onToggleFocus
+          ? [{ label: focus ? 'Mostrar el menú del programa' : 'Pantalla completa del plano', shortcut: 'F', onClick: onToggleFocus, separatorBefore: true }]
+          : []),
+        { label: 'Atajos de teclado', shortcut: '?', onClick: () => setIsShortcutsOpen(true) },
+      ],
+    },
+    {
+      label: 'Organizar',
+      items: [
+        { label: 'Agrupar', shortcut: 'Ctrl+G', onClick: handleGroup, disabled: selectedIds.length < 2 },
+        { label: 'Desagrupar', shortcut: 'Ctrl+Mayús+G', onClick: handleUngroup, disabled: !selectionHasGroup },
+        { label: 'Unir esquinas de paredes', shortcut: 'U', onClick: handleJoinCorners, disabled: selectedElements.filter(isWall).length < 2, separatorBefore: true },
+        { label: 'Alinear a la izquierda', onClick: () => handleAlign('left'), disabled: selectedIds.length < 2, separatorBefore: true },
+        { label: 'Centrar horizontalmente', onClick: () => handleAlign('centerX'), disabled: selectedIds.length < 2 },
+        { label: 'Alinear a la derecha', onClick: () => handleAlign('right'), disabled: selectedIds.length < 2 },
+        { label: 'Alinear arriba', onClick: () => handleAlign('top'), disabled: selectedIds.length < 2 },
+        { label: 'Centrar verticalmente', onClick: () => handleAlign('centerY'), disabled: selectedIds.length < 2 },
+        { label: 'Alinear abajo', onClick: () => handleAlign('bottom'), disabled: selectedIds.length < 2 },
+        { label: 'Distribuir en horizontal', onClick: () => handleDistribute('horizontal'), disabled: selectedIds.length < 3, separatorBefore: true },
+        { label: 'Distribuir en vertical', onClick: () => handleDistribute('vertical'), disabled: selectedIds.length < 3 },
+        { label: 'Girar 90° a la derecha', onClick: () => handleRotate(true), disabled: !hasSelection, separatorBefore: true },
+        { label: 'Girar 90° a la izquierda', onClick: () => handleRotate(false), disabled: !hasSelection },
+        { label: 'Espejar ↔', onClick: () => handleMirror('vertical'), disabled: !hasSelection },
+        { label: 'Espejar ↕', onClick: () => handleMirror('horizontal'), disabled: !hasSelection },
+      ],
+    },
+    {
+      label: 'Ubicación',
+      items: [
+        { label: 'Poner la flecha del norte', shortcut: 'N', onClick: () => setTool('norte') },
+        { label: 'Tomar el norte con la brújula…', onClick: () => void openCompass() },
+        { label: 'Calle', onClick: () => setTool('calle'), separatorBefore: true },
+        { label: 'Límite del terreno', onClick: () => setTool('limite') },
+        { label: 'Terreno (4 límites)', onClick: () => setTool('terreno') },
+        { label: 'Barra de escala', onClick: () => setTool('escalagrafica') },
+        { label: 'Datos del inmueble y GPS…', onClick: () => setPanelTab('plano'), separatorBefore: true },
+        { label: 'Tomar mi ubicación (GPS)', onClick: handleGetLocation },
+        { label: 'Ver en el mapa', onClick: handleOpenMap, disabled: typeof activePlan.site?.latitude !== 'number' },
+      ],
+    },
+    {
+      label: 'Plano',
+      items: [
+        { label: 'Propiedades del plano…', onClick: () => setPanelTab('plano') },
+        { label: 'Imagen de fondo…', onClick: () => fileInputRef.current?.click() },
+        { label: 'Calibrar la escala', shortcut: '9', onClick: () => setTool('escala') },
+        { label: 'Capas', onClick: () => setPanelTab('capas'), separatorBefore: true },
+      ],
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-2 lg:h-[calc(100dvh-var(--app-header-h)-1.75rem)]">
       {/* ---------------- Barra del plano ---------------- */}
       <div className="flex flex-shrink-0 flex-wrap items-center gap-2 rounded-2xl border border-hairline bg-surface px-2 py-1.5">
+        <PlanMenuBar menus={menus} />
+        <span className="h-6 w-px flex-shrink-0 bg-hairline" />
         {focus && onGoToSurvey && (
           <Button
             size="sm"
@@ -3022,9 +4173,9 @@ export const PlanView: React.FC<PlanViewProps> = ({
                       element={element}
                       selected={selectedIds.includes(element.id)}
                       onPointerDown={handleElementPointerDown}
-                      onHandlePointerDown={handleHandlePointerDown}
                       wallStyle={wallStyle}
                       hatchId={hatchId}
+                      unitMeters={activePlan.metersPerUnit ?? 0}
                     />
                   ))}
 
@@ -3039,6 +4190,59 @@ export const PlanView: React.FC<PlanViewProps> = ({
                       selected={selectedIds.includes(element.id)}
                     />
                   ))}
+
+                  {/* Varios elementos (o un grupo): caja con 8 tiradores para escalar, como en cualquier programa de dibujo */}
+                  {tool === 'select' && selectedIds.length > 1 && !roomSelection && (() => {
+                    const box = boundsOfElements(activePlan.elements, selectedIds);
+                    if (!box) return null;
+                    const unit = planScale();
+                    return (
+                      <g data-export="hide">
+                        <rect
+                          x={box.left}
+                          y={box.top}
+                          width={box.right - box.left}
+                          height={box.bottom - box.top}
+                          fill="none"
+                          stroke={SELECTION}
+                          strokeWidth={1.2 * unit}
+                          strokeDasharray={selectionIsOneGroup ? `${3 * unit} ${4 * unit}` : undefined}
+                          pointerEvents="none"
+                        />
+                        <text x={box.left} y={box.top - 5 * unit} fontSize={11 * unit} fontWeight={600} fill={SELECTION} pointerEvents="none">
+                          {selectionIsOneGroup ? 'Grupo' : 'Selección'} · {selectedIds.length}
+                        </text>
+                        {ROOM_HANDLES.map((handle) => {
+                          const hx = handle.sx < 0 ? box.left : handle.sx > 0 ? box.right : (box.left + box.right) / 2;
+                          const hy = handle.sy < 0 ? box.top : handle.sy > 0 ? box.bottom : (box.top + box.bottom) / 2;
+                          return (
+                            <Grip
+                              key={`${handle.sx}${handle.sy}`}
+                              cx={hx}
+                              cy={hy}
+                              unit={unit}
+                              cursor={handle.cursor}
+                              onPointerDown={(event) => handleFrameHandlePointerDown(event, box, handle)}
+                            />
+                          );
+                        })}
+                      </g>
+                    );
+                  })()}
+
+                  {/* Tiradores del elemento elegido: capa superior, para que ninguna zona de agarre los tape */}
+                  {tool === 'select' &&
+                    selectedIds.length === 1 &&
+                    visibleElements
+                      .filter((element) => element.id === selectedIds[0])
+                      .map((element) => (
+                        <PlanHandles
+                          key={`tirador-${element.id}`}
+                          element={element}
+                          unit={planScale()}
+                          onHandlePointerDown={handleHandlePointerDown}
+                        />
+                      ))}
 
                   {/* Habitación seleccionada: caja con tiradores en las esquinas y los lados */}
                   {roomSelection && tool === 'select' && (
@@ -3060,17 +4264,12 @@ export const PlanView: React.FC<PlanViewProps> = ({
                         const hy =
                           roomHandle.sy < 0 ? roomSelection.top : roomHandle.sy > 0 ? roomSelection.bottom : (roomSelection.top + roomSelection.bottom) / 2;
                         return (
-                          <rect
+                          <Grip
                             key={`${roomHandle.sx}${roomHandle.sy}`}
-                            x={hx - 7}
-                            y={hy - 7}
-                            width={14}
-                            height={14}
-                            rx={2}
-                            fill={BACKGROUND_FILL}
-                            stroke={SELECTION}
-                            strokeWidth={2.5}
-                            style={{ cursor: roomHandle.cursor }}
+                            cx={hx}
+                            cy={hy}
+                            unit={planScale()}
+                            cursor={roomHandle.cursor}
                             onPointerDown={(event) => handleRoomHandlePointerDown(event, roomSelection, roomHandle)}
                           />
                         );
@@ -3272,6 +4471,16 @@ export const PlanView: React.FC<PlanViewProps> = ({
                         {describeSelection(activePlan.elements, selectedIds)}
                       </Badge>
                     </div>
+                    {roomSelection && (
+                      <PanelValue
+                        label="Superficie"
+                        value={formatArea(activePlan, (roomSelection.right - roomSelection.left) * (roomSelection.bottom - roomSelection.top))}
+                        hint={`${formatLength(activePlan, roomSelection.right - roomSelection.left)} × ${formatLength(
+                          activePlan,
+                          roomSelection.bottom - roomSelection.top
+                        )}${hasScale(activePlan) ? '' : ' (cargá la escala para verlo en metros)'}`}
+                      />
+                    )}
                     <p className="text-xs leading-snug text-muted">
                       Se mueven juntos: arrastrá cualquiera, o usá las flechas (con Mayús, una rejilla). Mayús+clic suma o
                       saca elementos.
@@ -3313,6 +4522,28 @@ export const PlanView: React.FC<PlanViewProps> = ({
                       >
                         Espejar ↕
                       </Button>
+                      {!selectionIsOneGroup && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          icon={<Group className="h-3.5 w-3.5" />}
+                          onClick={handleGroup}
+                          fullWidth
+                        >
+                          Agrupar
+                        </Button>
+                      )}
+                      {selectionHasGroup && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          icon={<Ungroup className="h-3.5 w-3.5" />}
+                          onClick={handleUngroup}
+                          fullWidth
+                        >
+                          Desagrupar
+                        </Button>
+                      )}
                       {selectedElements.filter(isWall).length >= 2 && (
                         <Button
                           size="sm"
@@ -3336,6 +4567,24 @@ export const PlanView: React.FC<PlanViewProps> = ({
                         Borrar los {selectedIds.length}
                       </Button>
                     </div>
+
+                    <QuickDesign
+                      onAlign={handleAlign}
+                      onDistribute={handleDistribute}
+                      onRotate={handleRotate}
+                      canDistribute={selectedIds.length >= 3}
+                    />
+                    <ArrayForm
+                      rows={arrayRows}
+                      columns={arrayColumns}
+                      stepX={arrayStepX}
+                      stepY={arrayStepY}
+                      onRows={setArrayRows}
+                      onColumns={setArrayColumns}
+                      onStepX={setArrayStepX}
+                      onStepY={setArrayStepY}
+                      onCreate={handleArray}
+                    />
                   </div>
                 ) : selected ? (
                   /* --- Un elemento: el formulario, agrupado por tema --- */
@@ -3398,6 +4647,21 @@ export const PlanView: React.FC<PlanViewProps> = ({
                         placeholder={`${elementTypeLabel(selected)} (por omisión)`}
                         hint="Vacío, el plano no escribe ningún nombre: el dibujo ya dice lo que es."
                       />
+                      {!isStructure(selected) && (
+                        <NumberField
+                          label="Tamaño del texto"
+                          unit="u"
+                          value={selected.labelSize ?? 15}
+                          onChange={(value) => {
+                            if (typeof value === 'number') handleUpdateElement({ labelSize: value });
+                          }}
+                          min={6}
+                          max={90}
+                          presets={[10, 15, 20, 30]}
+                          presetsLabel="Frecuentes"
+                          hint="Cambia el nombre en el plano sin modificar el tamaño del símbolo."
+                        />
+                      )}
                       {!isStructure(selected) && (
                         <SelectField
                           label="Plantilla"
@@ -3548,6 +4812,105 @@ export const PlanView: React.FC<PlanViewProps> = ({
                       </PanelSection>
                     )}
 
+                    {selectedIsSite && selected && (
+                      <PanelSection
+                        title="Entorno"
+                        hint={
+                          selected.kind === 'calle'
+                            ? 'Escribí el nombre en «Nombre en el plano»: se escribe a lo largo de la calzada.'
+                            : selected.kind === 'norte'
+                            ? 'Girá la flecha con el tirador de arriba o desde acá. Hay una sola por plano.'
+                            : selected.kind === 'escalagrafica'
+                            ? 'La barra mide lo que dice sobre el papel: se mantiene aunque el plano se imprima reducido.'
+                            : 'Un lado del terreno: línea municipal o medianera. Podés nombrarlo («Frente a calle Mitre»).'
+                        }
+                      >
+                        {selected.kind === 'calle' && (
+                          <NumberField
+                            label="Ancho de la calzada"
+                            unit="u"
+                            value={selected.thickness ?? 90}
+                            onChange={(value) => typeof value === 'number' && handleUpdateElement({ thickness: value })}
+                            min={30}
+                            max={300}
+                            step={5}
+                            presets={[60, 90, 130]}
+                            presetsLabel="Frecuentes"
+                          />
+                        )}
+                        {selected.kind === 'norte' && (
+                          <>
+                            <NumberField
+                              label="Giro de la flecha"
+                              unit="°"
+                              value={selected.rotation ?? 0}
+                              onChange={(value) => typeof value === 'number' && handleUpdateElement({ rotation: ((Math.round(value) % 360) + 360) % 360 })}
+                              min={0}
+                              max={359}
+                              step={5}
+                              presets={[0, 90, 180, 270]}
+                              presetsLabel="Frecuentes"
+                              hint="0° = el norte está hacia arriba de la hoja."
+                            />
+                            <NumberField
+                              label="Tamaño"
+                              unit="u"
+                              value={selected.size ?? DEFAULT_NORTH_SIZE}
+                              onChange={(value) => typeof value === 'number' && handleUpdateElement({ size: value })}
+                              min={30}
+                              max={200}
+                              step={5}
+                              presets={[50, 70, 100]}
+                              presetsLabel="Frecuentes"
+                            />
+                            <Button size="sm" variant="secondary" icon={<Compass className="h-3.5 w-3.5" />} onClick={() => void openCompass()} fullWidth>
+                              Tomar el norte con la brújula
+                            </Button>
+                          </>
+                        )}
+                        {selected.kind === 'escalagrafica' && (
+                          <>
+                            <NumberField
+                              label="La barra representa"
+                              unit="m"
+                              value={selected.length ?? 10}
+                              onChange={(value) => typeof value === 'number' && handleUpdateElement({ length: value })}
+                              min={0.5}
+                              max={500}
+                              step={1}
+                              presets={[2, 5, 10, 20]}
+                              presetsLabel="Frecuentes"
+                            />
+                            {hasScale(activePlan) && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => handleUpdateElement({ length: niceBarMeters(metersPerUnit(activePlan)) })}
+                                fullWidth
+                              >
+                                Largo automático
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </PanelSection>
+                    )}
+
+                    <PanelSection title="Repetir" hint="Copia este elemento en filas y columnas, separadas parejo.">
+                      <ArrayForm
+                        bare
+                        rows={arrayRows}
+                        columns={arrayColumns}
+                        stepX={arrayStepX}
+                        stepY={arrayStepY}
+                        onRows={setArrayRows}
+                        onColumns={setArrayColumns}
+                        onStepX={setArrayStepX}
+                        onStepY={setArrayStepY}
+                        onCreate={handleArray}
+                      />
+                    </PanelSection>
+
                     <PanelSection title="Ubicación" hint="En unidades de la hoja, con el cero arriba a la izquierda.">
                       <NumberField
                         label="Horizontal"
@@ -3640,7 +5003,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
                         />
                       ) : (
                         !selectedIsWall &&
-                        !selectedIsText && (
+                        !selectedIsText &&
+                        !selectedIsSite && (
                           <Field label="Giro">
                             <SegmentedControl
                               size="sm"
@@ -3927,6 +5291,79 @@ export const PlanView: React.FC<PlanViewProps> = ({
                   />
                 </PanelSection>
 
+                <PanelSection title="Ubicación del inmueble" hint="Se imprime en el encabezado del plano y del PDF.">
+                  <TextField
+                    label="Dirección"
+                    value={activePlan.site?.address ?? ''}
+                    onChange={(value) => patchSite({ address: value })}
+                    placeholder="Av. San Martín 1234"
+                  />
+                  <TextField
+                    label="Entre calles o esquina"
+                    value={activePlan.site?.betweenStreets ?? ''}
+                    onChange={(value) => patchSite({ betweenStreets: value })}
+                    placeholder="Belgrano y Mitre · esquina Rivadavia"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <TextField
+                      label="Barrio y localidad"
+                      value={activePlan.site?.locality ?? ''}
+                      onChange={(value) => patchSite({ locality: value })}
+                    />
+                    <TextField
+                      label="Parcela o lote"
+                      value={activePlan.site?.lot ?? ''}
+                      onChange={(value) => patchSite({ lot: value })}
+                      placeholder="Mz 12, Pc 4"
+                    />
+                  </div>
+                  <TextField
+                    label="Coordenadas (latitud, longitud)"
+                    value={coordsText}
+                    onChange={handleCoordsText}
+                    placeholder="-34.60372, -58.38159"
+                    hint={
+                      typeof activePlan.site?.accuracy === 'number'
+                        ? `Tomadas con el GPS, con precisión de unos ${activePlan.site.accuracy} m.`
+                        : 'Del GPS del equipo, o copiadas de un mapa.'
+                    }
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="secondary" icon={<Locate className="h-3.5 w-3.5" />} onClick={handleGetLocation}>
+                      Tomar mi ubicación (GPS)
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<ExternalLink className="h-3.5 w-3.5" />}
+                      onClick={handleOpenMap}
+                      disabled={typeof activePlan.site?.latitude !== 'number'}
+                    >
+                      Ver en el mapa
+                    </Button>
+                  </div>
+                  <div className="rounded-xl border border-hairline bg-sunken px-3 py-2.5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Orientación</p>
+                    <p className="mt-0.5 text-xs leading-snug text-soft">
+                      {sheetTopBearing(activePlan) === null
+                        ? 'Todavía no hay flecha del norte en este plano.'
+                        : `La parte de arriba de la hoja mira al ${cardinalName(sheetTopBearing(activePlan) as number)} (${Math.round(
+                            sheetTopBearing(activePlan) as number
+                          )}°).`}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button size="sm" variant="secondary" icon={<Compass className="h-3.5 w-3.5" />} onClick={() => void openCompass()}>
+                        Tomar el norte con la brújula
+                      </Button>
+                      {sheetTopBearing(activePlan) === null && (
+                        <Button size="sm" variant="ghost" onClick={() => applyNorth(0)}>
+                          Poner la flecha del norte
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </PanelSection>
+
                 <PanelSection title="Hoja y escala">
                   <SelectField
                     label="Proporción de la hoja"
@@ -4072,6 +5509,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
                 {(
                   [
                     ['estructura', 'Planta: paredes y aberturas'],
+                    ['entorno', 'Entorno: calles, límites, norte y escala'],
                     ['simbolos', 'Símbolos eléctricos'],
                     ['anotaciones', 'Cotas y textos'],
                     ['fondo', 'Imagen de fondo'],
@@ -4184,6 +5622,59 @@ export const PlanView: React.FC<PlanViewProps> = ({
                 </button>
                 <p className="mt-2 text-xs leading-snug text-muted">
                   {tool === 'select' ? 'Elegí Pared para empezar la planta, o Habitación para dibujar 4 paredes de una vez.' : toolHint(tool)}
+                </p>
+              </div>
+
+              {/* Ubicación en el terreno: calles, límites, norte y escala. */}
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Ubicar en el terreno</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      ...SITE_TOOLS.filter((site) => site.type === 'calle' || site.type === 'limite').map((site) => ({
+                        tool: site.type as DrawTool,
+                        label: site.label,
+                        short: shortLabel(site.type),
+                        icon: site.icon,
+                        hint: site.hint,
+                      })),
+                      { tool: 'terreno' as DrawTool, label: 'Terreno', short: 'Terreno', icon: LOT_TOOL_ICON, hint: toolHint('terreno') },
+                      ...SITE_TOOLS.filter((site) => site.type === 'norte' || site.type === 'escalagrafica').map((site) => ({
+                        tool: site.type as DrawTool,
+                        label: site.label,
+                        short: shortLabel(site.type),
+                        icon: site.icon,
+                        hint: site.hint,
+                      })),
+                    ]
+                  ).map((entry) => {
+                    const active = tool === entry.tool;
+                    return (
+                      <button
+                        key={entry.tool}
+                        type="button"
+                        onClick={() => setTool(entry.tool)}
+                        aria-pressed={active}
+                        title={entry.hint}
+                        className={cx(
+                          'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-colors',
+                          active
+                            ? 'border-accent-line bg-accent-soft'
+                            : 'border-hairline bg-sunken hover:border-accent-line hover:bg-accent-soft'
+                        )}
+                      >
+                        <svg viewBox="-20 -20 40 40" className="h-9 w-9 text-strong" aria-hidden="true">
+                          <g stroke="currentColor">{entry.icon}</g>
+                        </svg>
+                        <span className={cx('text-xs leading-tight', active ? 'font-bold text-strong' : 'font-semibold text-soft')}>
+                          {entry.short}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs leading-snug text-muted">
+                  Calles con nombre, terreno, flecha del norte y barra de escala: lo que ubica el inmueble.
                 </p>
               </div>
 
@@ -4306,6 +5797,9 @@ export const PlanView: React.FC<PlanViewProps> = ({
         </div>
       </div>
 
+      {openPlanInput}
+      {saveAsModal}
+      {compassModal}
       {newPlanModal}
       {scaleModal}
       {shortcutsModal}

@@ -166,6 +166,10 @@ export const ClientModal: React.FC<ClientModalProps> = ({
     if (!clientName.trim()) return;
 
     const updated: ClientRecord = {
+      // Todo lo que el formulario no edita (planos, acometidas y lo que se agregue
+      // más adelante) se conserva tal cual: antes se armaba un registro nuevo y lo
+      // que no estaba en esta lista se perdía al guardar.
+      ...initialClient,
       id: initialClient?.id || `client_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       clientName: clientName.trim(),
       documentId: documentId.trim(),

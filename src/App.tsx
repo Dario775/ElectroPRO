@@ -13,8 +13,10 @@ import { ClientList } from './components/ClientList';
 import { ClientModal } from './components/ClientModal';
 import { PlanView } from './components/PlanView';
 import { SettingsModal } from './components/SettingsModal';
+import { PwaBanner } from './components/PwaBanner';
 import { ClientRecord, TechnicianProfile } from './types/electrical';
 import { StorageService, DEFAULT_TECHNICIAN } from './services/storageService';
+import { kvClear } from './services/kvStore';
 import { CurrencyProvider } from './context/CurrencyContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ViewId, buildWorkflow } from './utils/workflow';
@@ -109,12 +111,18 @@ function AppContent() {
     }
   };
 
+  /** Recarga los clientes tras restaurar una copia, sin cambiar el cliente que se está viendo. */
+  const handleDataRestored = () => {
+    setClients(StorageService.getClients());
+  };
+
   const handleSaveTechnician = (newProfile: TechnicianProfile) => {
     StorageService.saveTechnicianProfile(newProfile);
     setTechnician(newProfile);
   };
 
   const handleResetSampleData = () => {
+    kvClear();
     localStorage.clear();
     const loadedClients = StorageService.getClients();
     const loadedTech = StorageService.getTechnicianProfile();
@@ -308,7 +316,10 @@ function AppContent() {
         technician={technician}
         onSaveTechnician={handleSaveTechnician}
         onResetSampleData={handleResetSampleData}
+        onDataRestored={handleDataRestored}
       />
+
+      <PwaBanner />
     </>
   );
 }

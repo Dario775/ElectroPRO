@@ -3,6 +3,7 @@ import {
   BudgetItemType,
 } from '../types/electrical';
 import { CatalogMaterial, DEFAULT_MATERIALS_CATALOG } from './budgetGeneratorService';
+import { kvGet, kvSet } from './kvStore';
 
 /**
  * Catálogo de productos editable y guardado en el equipo.
@@ -43,8 +44,7 @@ export interface CatalogItemInput {
 
 function readStored(): CatalogMaterial[] | null {
   try {
-    if (typeof localStorage === 'undefined') return null;
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = kvGet(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return null;
@@ -56,8 +56,7 @@ function readStored(): CatalogMaterial[] | null {
 
 function writeStored(items: CatalogMaterial[]): void {
   try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    kvSet(STORAGE_KEY, JSON.stringify(items));
   } catch {
     /* almacenamiento no disponible */
   }
@@ -65,8 +64,7 @@ function writeStored(items: CatalogMaterial[]): void {
 
 function readStoredBrands(): CatalogBrand[] | null {
   try {
-    if (typeof localStorage === 'undefined') return null;
-    const raw = localStorage.getItem(STORAGE_KEY_BRANDS);
+    const raw = kvGet(STORAGE_KEY_BRANDS);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return null;
@@ -78,8 +76,7 @@ function readStoredBrands(): CatalogBrand[] | null {
 
 function writeStoredBrands(brands: CatalogBrand[]): void {
   try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(STORAGE_KEY_BRANDS, JSON.stringify(brands));
+    kvSet(STORAGE_KEY_BRANDS, JSON.stringify(brands));
   } catch {
     /* almacenamiento no disponible */
   }

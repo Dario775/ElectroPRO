@@ -1,10 +1,98 @@
 import { ClientRecord, TechnicianProfile, ApplianceLoad } from '../types/electrical';
+import { kvGet, kvSet } from './kvStore';
 import { BudgetGeneratorService } from './budgetGeneratorService';
 import { normalizeClient } from '../utils/supplies';
 
 const STORAGE_KEY_CLIENTS = 'electropro_clients_v1';
 const STORAGE_KEY_ACTIVE_CLIENT = 'electropro_active_client_id_v1';
 const STORAGE_KEY_TECHNICIAN = 'electropro_technician_profile_v1';
+const STORAGE_KEY_RECOVERY = 'electropro_recovery_points_v1';
+/** Cuántos puntos de recuperación se guardan. */
+const MAX_RECOVERY_POINTS = 3;
+
+/* ------------------------------------------------------------------ */
+/* Puntos de recuperación                                              */
+/* ------------------------------------------------------------------ */
+
+interface ClientInventory {
+  name: string;
+  plans: number;
+  elements: number;
+  loads: number;
+  supplies: number;
+}
+
+export interface RecoveryPoint {
+  /** Cuándo se guardó la copia (es el estado anterior al cambio que quitó datos). */
+  at: string;
+  reason: string;
+  raw: string;
+}
+
+export interface RecoverySummary {
+  index: number;
+  at: string;
+  reason: string;
+  clients: number;
+  plans: number;
+}
+
+function inventoryOf(clients: ClientRecord[]): Map<string, ClientInventory> {
+  return new Map(
+    clients.map((client) => [
+      client.id,
+      {
+        name: client.clientName,
+        plans: (client.plans ?? []).length,
+        elements: (client.plans ?? []).reduce((total, plan) => total + plan.elements.length, 0),
+        loads: client.loads.length,
+        supplies: (client.supplies ?? []).length,
+      },
+    ])
+  );
+}
+
+/**
+ * Si un guardado quita datos de golpe (un plano, un cliente, la mitad de las
+ * cargas…) devuelve de qué se trata. Sirve para conservar antes la versión
+ * anterior: así una pérdida por error se puede deshacer.
+ */
+function describeLoss(before: Map<string, ClientInventory>, after: Map<string, ClientInventory>): string | null {
+  const losses: string[] = [];
+  for (const [id, previous] of before) {
+    const current = after.get(id);
+    if (!current) {
+      losses.push(`se quitó el cliente «${previous.name}»`);
+      continue;
+    }
+    if (current.plans < previous.plans) losses.push(`«${previous.name}» pasó de ${previous.plans} a ${current.plans} planos`);
+    else if (previous.elements >= 5 && current.elements < previous.elements / 2) {
+      losses.push(`«${previous.name}»: los planos pasaron de ${previous.elements} a ${current.elements} elementos`);
+    }
+    if (previous.loads >= 4 && current.loads < previous.loads / 2) {
+      losses.push(`«${previous.name}»: las cargas pasaron de ${previous.loads} a ${current.loads}`);
+    }
+    if (current.supplies < previous.supplies) losses.push(`«${previous.name}» perdió acometidas`);
+  }
+  return losses.length > 0 ? losses.join('; ') : null;
+}
+
+let lastInventory: Map<string, ClientInventory> | null = null;
+
+function readRecoveryPoints(): RecoveryPoint[] {
+  try {
+    const raw = kvGet(STORAGE_KEY_RECOVERY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed) ? (parsed as RecoveryPoint[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function addRecoveryPoint(raw: string, reason: string): void {
+  const points = [{ at: new Date().toISOString(), reason, raw }, ...readRecoveryPoints()].slice(0, MAX_RECOVERY_POINTS);
+  kvSet(STORAGE_KEY_RECOVERY, JSON.stringify(points));
+}
 
 export const DEFAULT_TECHNICIAN: TechnicianProfile = {
   name: 'Ing. Carlos Mendoza',
@@ -834,15 +922,15 @@ export const StorageService = {
   // --- CLIENT RECORDS ---
   getClients(): ClientRecord[] {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY_CLIENTS);
+      const raw = kvGet(STORAGE_KEY_CLIENTS);
       if (!raw) {
         // Seed with sample client
         const initial = [INITIAL_SAMPLE_CLIENT, INITIAL_MARKET_CLIENT];
-        localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(initial));
+        kvSet(STORAGE_KEY_CLIENTS, JSON.stringify(initial));
         return initial;
       }
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed.map((c: ClientRecord) => {
           let updatedClient = c;
           if (!c.panels || c.panels.length === 0) {
@@ -914,9 +1002,88 @@ export const StorageService = {
 
   saveClients(clients: ClientRecord[]): void {
     try {
-      localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(clients.map((client) => normalizeClient(client))));
+      const normalized = clients.map((client) => normalizeClient(client));
+      const previousRaw = kvGet(STORAGE_KEY_CLIENTS);
+
+      // Antes de pisar los datos, si el cambio quita planos, clientes o cargas, queda una copia de lo anterior.
+      if (previousRaw) {
+        if (!lastInventory) {
+          try {
+            lastInventory = inventoryOf(JSON.parse(previousRaw) as ClientRecord[]);
+          } catch {
+            lastInventory = null;
+          }
+        }
+        const nextInventory = inventoryOf(normalized);
+        const loss = lastInventory ? describeLoss(lastInventory, nextInventory) : null;
+        if (loss) addRecoveryPoint(previousRaw, loss);
+        lastInventory = nextInventory;
+      } else {
+        lastInventory = inventoryOf(normalized);
+      }
+
+      kvSet(STORAGE_KEY_CLIENTS, JSON.stringify(normalized));
     } catch (e) {
       console.error('Failed saving clients:', e);
+    }
+  },
+
+  // --- RECUPERACIÓN ---
+  /** Copias que se guardaron justo antes de un cambio que quitó datos, de la más nueva a la más vieja. */
+  getRecoveryPoints(): RecoverySummary[] {
+    return readRecoveryPoints().map((point, index) => {
+      let clients = 0;
+      let plans = 0;
+      try {
+        const parsed = JSON.parse(point.raw) as ClientRecord[];
+        clients = parsed.length;
+        plans = parsed.reduce((total, client) => total + (client.plans ?? []).length, 0);
+      } catch {
+        /* copia ilegible: se lista igual */
+      }
+      return { index, at: point.at, reason: point.reason, clients, plans };
+    });
+  },
+
+  /**
+   * Trae de vuelta lo que falta (clientes, planos y acometidas) sin pisar lo
+   * que se hizo después: lo que ya está queda como está.
+   */
+  restoreRecoveryPoint(index: number): { clients: number; plans: number; supplies: number } | null {
+    const point = readRecoveryPoints()[index];
+    if (!point) return null;
+    try {
+      const saved = JSON.parse(point.raw) as ClientRecord[];
+      const current = this.getClients();
+      const result = { clients: 0, plans: 0, supplies: 0 };
+
+      const merged = [...current];
+      for (const old of saved) {
+        const position = merged.findIndex((client) => client.id === old.id);
+        if (position < 0) {
+          merged.push(old);
+          result.clients++;
+          continue;
+        }
+        const client = merged[position];
+        const known = new Set((client.plans ?? []).map((plan) => plan.id));
+        const missing = (old.plans ?? []).filter((plan) => !known.has(plan.id));
+        const restoreSupplies = (old.supplies ?? []).length > (client.supplies ?? []).length;
+        if (missing.length > 0 || restoreSupplies) {
+          merged[position] = {
+            ...client,
+            plans: [...(client.plans ?? []), ...missing],
+            supplies: restoreSupplies ? old.supplies : client.supplies,
+          };
+          result.plans += missing.length;
+          if (restoreSupplies) result.supplies += (old.supplies ?? []).length;
+        }
+      }
+      this.saveClients(merged);
+      return result;
+    } catch (e) {
+      console.error('No se pudo restaurar la copia:', e);
+      return null;
     }
   },
 
@@ -928,7 +1095,15 @@ export const StorageService = {
   saveClient(client: ClientRecord): void {
     const clients = this.getClients();
     const index = clients.findIndex((c) => c.id === client.id);
-    const updated = normalizeClient({ ...client, updatedAt: new Date().toISOString() });
+    // Si quien guarda ni siquiera trae los planos o las acometidas (por ejemplo, un formulario
+    // que no los edita), se conservan los guardados en lugar de borrarse. Un campo que viene
+    // vacío a propósito (`plans: []`) sí se respeta.
+    const merged: ClientRecord = { ...client };
+    if (index >= 0) {
+      if (!('plans' in client)) merged.plans = clients[index].plans;
+      if (!('supplies' in client)) merged.supplies = clients[index].supplies;
+    }
+    const updated = normalizeClient({ ...merged, updatedAt: new Date().toISOString() });
 
     if (index >= 0) {
       clients[index] = updated;
@@ -944,7 +1119,7 @@ export const StorageService = {
   },
 
   getActiveClientId(): string {
-    const active = localStorage.getItem(STORAGE_KEY_ACTIVE_CLIENT);
+    const active = kvGet(STORAGE_KEY_ACTIVE_CLIENT);
     if (active) return active;
     const clients = this.getClients();
     const fallback = clients[0]?.id || INITIAL_SAMPLE_CLIENT.id;
@@ -953,15 +1128,15 @@ export const StorageService = {
   },
 
   setActiveClientId(id: string): void {
-    localStorage.setItem(STORAGE_KEY_ACTIVE_CLIENT, id);
+    kvSet(STORAGE_KEY_ACTIVE_CLIENT, id);
   },
 
   // --- TECHNICIAN PROFILE ---
   getTechnicianProfile(): TechnicianProfile {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY_TECHNICIAN);
+      const raw = kvGet(STORAGE_KEY_TECHNICIAN);
       if (!raw) {
-        localStorage.setItem(STORAGE_KEY_TECHNICIAN, JSON.stringify(DEFAULT_TECHNICIAN));
+        kvSet(STORAGE_KEY_TECHNICIAN, JSON.stringify(DEFAULT_TECHNICIAN));
         return DEFAULT_TECHNICIAN;
       }
       const parsed = JSON.parse(raw);
@@ -975,7 +1150,7 @@ export const StorageService = {
 
   saveTechnicianProfile(profile: TechnicianProfile): void {
     try {
-      localStorage.setItem(STORAGE_KEY_TECHNICIAN, JSON.stringify(profile));
+      kvSet(STORAGE_KEY_TECHNICIAN, JSON.stringify(profile));
     } catch (e) {
       console.error('Failed saving technician profile:', e);
     }
@@ -995,10 +1170,18 @@ export const StorageService = {
   importBackup(jsonString: string): boolean {
     try {
       const data = JSON.parse(jsonString);
+      if (!data || !Array.isArray(data.clients)) return false;
+      if (data.format === 'electropro-storage') {
+        if (data.version !== 1 || !data.entries || typeof data.entries !== 'object') return false;
+        const entries = Object.entries(data.entries);
+        if (entries.some(([key, value]) => !key.startsWith('electropro_') || typeof value !== 'string')) return false;
+        for (const [key, value] of entries) kvSet(key, value as string);
+        return true;
+      }
       if (data.technician) {
         this.saveTechnicianProfile(data.technician);
       }
-      if (Array.isArray(data.clients) && data.clients.length > 0) {
+      if (Array.isArray(data.clients)) {
         this.saveClients(data.clients);
         if (data.clients[0]?.id) {
           this.setActiveClientId(data.clients[0].id);

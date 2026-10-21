@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Herramienta profesional para electricistas: cálculo de consumo mensual, amperaje, factor de potencia, balanceo de fases, diagnóstico de instalaciones y presupuestos/reportes PDF.",
   "scripts": {
+    "test": "node --test tests/*.test.mjs",
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",

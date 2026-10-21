@@ -4,8 +4,25 @@ Herramienta profesional para **electricistas e instaladores certificados**: audi
 consumo y amperaje, factor de potencia, balanceo de fases, diagnóstico de instalaciones, presupuesto de
 materiales y emisión de reportes PDF para el cliente.
 
-Aplicación **SPA 100 % del lado del cliente**: no hay backend ni base de datos. Todos los datos del técnico y de
-sus clientes viven en el `localStorage` del navegador, por lo que funciona sin conexión.
+Aplicación **SPA 100 % del lado del cliente**: no hay backend ni base de datos en la nube. Todos los datos del
+técnico y de sus clientes viven en **IndexedDB** del dispositivo (`src/services/kvStore.ts`; migra solos los datos
+que hubiera en `localStorage` y usa éste como respaldo si IndexedDB no está disponible), por lo que funciona sin
+conexión.
+
+### Aplicación instalable (PWA)
+
+- `public/manifest.webmanifest` + íconos en `public/icons/`: se instala desde el navegador (Instalar / Agregar a
+  pantalla de inicio) y se abre a pantalla completa. En Ajustes hay un botón para instalarla y el estado del
+  almacenamiento.
+- `public/sw.js`: service worker que guarda la aplicación en el dispositivo para abrirla sin red. El build
+  (`vite.config.ts`) le estampa la versión; una versión nueva se descarga en segundo plano y la app avisa
+  («Hay una versión nueva») antes de actualizar. Solo se registra en el build de producción.
+- Publicación: son archivos estáticos (`npm run build` → `dist/`); sirve cualquier hosting estático con HTTPS
+  (el `base` es relativo, funciona en la raíz o en una subcarpeta).
+- Los datos **no salen del dispositivo**: no hay copia en otro lado. La copia de seguridad en JSON de la lista de
+  clientes es la única forma de pasarlos a otro equipo.
+- Aspecto nativo: letra fina (pesos de `index.css`), bordes de 0,5 px en pantallas de alta densidad, sin rebote de
+  pantalla, áreas seguras para muescas y barra de gestos.
 
 Origen: proyecto exportado de Google AI Studio (de ahí `metadata.json` y el `.env.example` heredado).
 
@@ -28,7 +45,7 @@ Verificado en este repositorio:
 | Render de las 14 pantallas con datos reales | `npx tsx render-views.tsx` | ✅ sin errores de ejecución |
 | Render de la aplicación completa | `npx tsx render-check.tsx` | ✅ marca, navegación y estado inicial |
 | Maquetación del PDF de presupuesto | `npx tsx check.ts` + `node verify.mjs` | ✅ 9 escenarios sin desbordes |
-| Pruebas automatizadas (cálculo eléctrico y diagnóstico) | `node --test tests/electrical.test.mjs` | ✅ 20 pruebas con `node:test` |
+| Pruebas automatizadas (cálculo eléctrico, diagnóstico y almacenamiento) | `npm test` | ✅ 23 pruebas con `node:test` |
 
 ---
 
@@ -68,45 +85,63 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
 
 ```
 .
-├── index.html                     Shell HTML, fuentes (Inter, Chakra Petch, JetBrains Mono), meta/OG
-├── vite.config.ts                 React + Tailwind 4 + alias '@' → raíz del proyecto
+├── index.html                     Shell HTML, fuentes, manifiesto e íconos de la PWA
+├── vite.config.ts                 React + Tailwind 4, base relativa y sello de versión del service worker
 ├── tsconfig.json                  TypeScript en modo strict, noEmit, jsx react-jsx
-├── package.json                   Scripts y dependencias
+├── package.json                   Scripts (dev, build, test, lint) y dependencias
 ├── metadata.json                  Metadatos de AI Studio (nombre, descripción, capacidades)
+├── public/                        manifest.webmanifest, sw.js (sin conexión), favicon e íconos
+├── tests/                         Pruebas con node:test (npm test)
+│   ├── electrical.test.mjs        Motor de cálculo, criterios AEA y alimentador del diagnóstico
+│   └── storage.test.mjs           Persistencia: fallos de escritura, reintentos y borrados
 └── src/
-    ├── main.tsx                   Punto de entrada React
-    ├── index.css                  Entrada de Tailwind
-    ├── App.tsx                    Estado global: clientes, perfil del técnico, pestaña activa
+    ├── main.tsx                   Punto de entrada: carga los datos, monta React y registra la PWA
+    ├── pwa.ts                     Instalación y actualización de la aplicación
+    ├── index.css                  Tailwind y tokens del tema claro/oscuro
+    ├── App.tsx                    Estado global: clientes, perfil del técnico, vista activa
     ├── types/electrical.ts        Modelo de dominio completo (fuente de verdad de los tipos)
-    ├── context/CurrencyContext    Conversión y formato USD ⇄ ARS con cotización configurable
-    ├── data/defaultAppliances.ts  Catálogo semilla de ~50 artefactos por categoría
+    ├── context/                   CurrencyContext (USD ⇄ ARS) y ThemeContext (tema claro/oscuro)
+    ├── data/defaultAppliances.ts  Catálogo semilla de artefactos por categoría
     ├── utils/
     │   ├── electricalMath.ts      Motor de cálculo eléctrico (funciones puras)
+    │   ├── aea.ts                 Criterios AEA 90364-7-771: secciones mm², térmicas IEC, factores, simultaneidad
     │   ├── diagnosticEngine.ts    Evaluación de seguridad y plan de acción
     │   ├── supplies.ts            Acometidas múltiples: normalización y consultas por suministro
     │   ├── workflow.ts            Etapas, pasos, módulos y progreso del recorrido
     │   ├── plan.ts                Geometría del plano: hojas, rejilla y vínculo con el relevamiento
-    │   └── history.ts             Deshacer y rehacer: pasos, agrupado y tope (puro y sin React)
+    │   ├── history.ts             Deshacer y rehacer: pasos, agrupado y tope (puro y sin React)
+    │   └── cx.ts                  Unión de clases CSS
     ├── services/
-    │   ├── storageService.ts      Persistencia en localStorage + datos de ejemplo + migraciones
-    │   ├── budgetGeneratorService.ts  Generación automática de presupuestos y catálogo de materiales
-    │   ├── pdfReportService.ts    Reporte técnico de auditoría en PDF
-    │   └── budgetPdfService.ts    Presupuesto en PDF
+    │   ├── kvStore.ts             Almacenamiento en IndexedDB con respaldo en localStorage y reintentos
+    │   ├── storageService.ts      Clientes, perfil, datos de ejemplo y migraciones
+    │   ├── catalogService.ts      Catálogo de productos editable y guardado en el equipo
+    │   ├── budgetGeneratorService.ts  Presupuesto automático y catálogo de materiales de fábrica
+    │   ├── pdfReportService.ts    Informe técnico en PDF
+    │   ├── budgetPdfService.ts    Presupuesto en PDF
+    │   └── planFileService.ts     Plano: guardar como, abrir y exportar a PDF
     └── components/
-        ├── Header.tsx             Cabecera: selector de cliente y navegación por pestañas
-        ├── AuditView.tsx          Inventario de cargas y consumos
-        ├── PhaseBalanceView.tsx   Balance y auto-balanceo de fases
+        ├── AppShell.tsx           Cáscara: barra superior, navegación y franja de contexto
+        ├── TopBar.tsx             Cliente activo, moneda y tema
+        ├── WorkflowNav.tsx        Navegación por etapas, pasos y módulos
+        ├── PwaBanner.tsx          Avisos de instalación y de versión nueva
+        ├── SupplyView.tsx         Suministro y acometidas
         ├── PanelsView.tsx         Tableros eléctricos, protecciones y jerarquía
         ├── DiagnosticView.tsx     Mediciones de campo, índice de seguridad y plan de trabajo
+        ├── AuditView.tsx          Cargas, consumos y demanda simultánea
         ├── ConsumptionHistoryView.tsx  Facturación real vs. auditoría (con gráficas)
+        ├── PhaseBalanceView.tsx   Balance y auto-balanceo de fases
+        ├── CalculatorsView.tsx    Calculadoras: sección, caída de tensión, térmica y cable, capacitores, Ohm
         ├── BudgetView.tsx         Presupuestos, materiales y estados
-        ├── CalculatorsView.tsx    5 calculadoras eléctricas
+        ├── MaterialCatalogModal.tsx  Catálogo de productos por marca
         ├── ReportPreview.tsx      Vista previa e impresión del informe
-        ├── PlanView.tsx           Módulo: plano de ubicación (lienzo, plantillas y PNG)
+        ├── PlanView.tsx           Módulo: plano de ubicación (lienzo, herramientas y propiedades)
+        ├── PlanMenuBar.tsx        Menús del plano: Archivo, Edición, Ver, Organizar y Plano
         ├── planSymbols.tsx        Plantillas de símbolos eléctricos dibujadas en SVG
+        ├── planSite.tsx           Entorno del plano: calles, límites, norte y escala gráfica
         ├── ClientList.tsx         Cartera de clientes + copia de seguridad JSON
         ├── ClientModal.tsx        Alta/edición de cliente y datos tarifarios
-        └── SettingsModal.tsx      Perfil del técnico, moneda y datos de ejemplo
+        ├── SettingsModal.tsx      Perfil del técnico, moneda, instalación y datos de ejemplo
+        └── ui/                    Primitivas: Button, Card, Collapsible, Form, Modal, ThemeToggle
 ```
 
 ### Convenciones
@@ -709,7 +744,11 @@ a letra.
 
 ## Persistencia de datos
 
-Todo se guarda en `localStorage` del navegador:
+Los datos de trabajo se guardan en IndexedDB; tema, moneda y cotización permanecen en `localStorage`. Si IndexedDB no está disponible se usa localStorage como respaldo.
+
+Las escrituras fallidas se conservan en memoria y se reintentan hasta tres veces (1, 2 y 4 segundos). El aviso permanece hasta que se guarde todo y permite reintentar o descargar `ElectroPro_Rescate.json`, con clientes, perfil, catálogo y puntos de recuperación. Se importa desde Clientes como las copias habituales. Si no hay almacenamiento disponible, la copia debe descargarse antes de cerrar la sesión. Una operación asíncrona al cerrar el navegador no garantiza el guardado.
+
+`npm test` ejecuta las pruebas de persistencia con Node 24: fallo y reintento, conservación de borrados, escrituras consecutivas y rescate sin almacenamiento. Todavía falta verificar IndexedDB y el aviso en un navegador real.
 
 | Clave | Contenido |
 |---|---|
@@ -764,5 +803,3 @@ Todo se guarda en `localStorage` del navegador:
 13. **El plano no calcula ambientes ni luminarias**: con las paredes cerradas se podría detectar el recinto, calcular su
     superficie y proponer los puntos de luz por el método de los lúmenes (o los W/m²), que es una cuenta que hoy se hace
     aparte.
-14. **El plano no entra todavía en el informe PDF**: el módulo exporta el PNG y lo imprime, pero `pdfReportService.ts`
-    no inserta el plano ni sus anexos en el informe técnico del cliente.
