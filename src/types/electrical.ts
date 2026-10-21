@@ -24,12 +24,38 @@ export interface ApplianceLoad {
   voltage: number; // 110, 120, 208, 220, 230, 240, 380, 440
   systemPhase: PhaseType;
   assignedPhase: PhaseAssignment;
+  /** Rótulo del circuito ("C-3 Tomas de cocina"); se mantiene igual al de `circuitId`. */
   circuitName: string;
+  /** Térmica del circuito; se mantiene igual a la de `circuitId`. */
   breakerRatingAmps: number;
   panelId?: string; // ID del tablero eléctrico al que está conectado
+  /** Circuito del tablero al que está conectada (ver `ElectricalCircuit`). */
+  circuitId?: string;
   hoursPerDay: number;
   daysPerMonth: number;
   notes?: string;
+}
+
+/** Tipo de circuito según la AEA 771: iluminación, tomas o uso especial (aire, bomba, termotanque). */
+export type CircuitType = 'IUG' | 'TUG' | 'ESPECIAL';
+
+/**
+ * Circuito de un tablero: una térmica, su cable y las cargas que alimenta.
+ * Es lo que se dibuja en el esquema unifilar.
+ */
+export interface ElectricalCircuit {
+  id: string;
+  panelId: string;
+  /** "C-3" */
+  code: string;
+  /** "Tomas de cocina" */
+  description: string;
+  kind: CircuitType;
+  breakerAmps: number;
+  /** Sección del cable, como en `CABLE_SECTIONS` ("2,5 mm²"). */
+  cableSection?: string;
+  /** Largo desde el tablero hasta la boca más lejana, para la caída de tensión. */
+  lengthMeters?: number;
 }
 
 export interface CatalogItem {
@@ -432,6 +458,8 @@ export interface ClientRecord {
    * comparar la demanda real con la térmica general. Sin dato se toma 0,7.
    */
   simultaneityFactor?: number;
+  /** Circuitos de todos los tableros. Si falta, se arma con el circuito de cada carga. */
+  circuits?: ElectricalCircuit[];
   /**
    * Marca que el técnico verificó el suministro en el lugar (tipo de acometida,
    * tensiones y térmica general). Los valores se cargan al crear el cliente y

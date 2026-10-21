@@ -25,7 +25,9 @@ import { describeSupply, getSupplies, supplyOfPanel } from '../utils/supplies';
 import { cableOptions } from '../utils/aea';
 import { calculateDemand, calculatePhaseBalance } from '../utils/electricalMath';
 import { buildPanelTree } from '../utils/panelTree';
+import { assignLoadToCircuit, dinModulesOf, syncCircuits } from '../utils/circuits';
 import { PanelTree, type PanelTreeGroup, type PanelTreeStats } from './PanelTree';
+import { CircuitsSection } from './CircuitsSection';
 import { Button } from './ui/Button';
 import { Badge, Callout, SectionHeader } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
@@ -109,6 +111,13 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
     return visiblePanels[0] ?? panels[0];
   }, [panels, visiblePanels, selectedPanelId]);
 
+  // Circuitos de cada tablero (los clientes viejos los arman con el circuito de cada carga)
+  const synced = useMemo(() => syncCircuits(client), [client]);
+  const circuitOfLoad = useMemo(
+    () => new Map(synced.loads.map((load) => [load.id, load.circuitId ?? ''])),
+    [synced]
+  );
+
   // Panel metrics calculations
   const panelAnalytics = useMemo(() => {
     return panels.map((panel) => {
@@ -139,7 +148,13 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
         (panel.mainBreakerPoles === '3P+N' || panel.mainBreakerPoles === '4P' ? 4 : 2) +
         (panel.hasDifferential ? (panel.differentialPoles === '4P' ? 4 : 2) : 0) +
         (panel.hasSurgeProtector ? 2 : 0) +
-        assignedLoads.length * 1; // 1 DIN per circuit breaker
+        // Térmica de cada circuito: bipolar en monofásico, tetrapolar en trifásico
+        (synced.circuits ?? [])
+          .filter((circuit) => circuit.panelId === panel.id)
+          .reduce((acc, circuit) => {
+            const threePhase = synced.loads.some((l) => l.circuitId === circuit.id && l.systemPhase === '3F');
+            return acc + dinModulesOf(threePhase ? 3 : 2);
+          }, 0);
 
       const dinUtilization = panel.totalDinModules > 0
         ? Math.round((estimatedDinOccupied / panel.totalDinModules) * 100)
@@ -216,7 +231,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
         issues,
       };
     });
-  }, [panels, client]);
+  }, [panels, client, synced]);
 
   // Esquema: un árbol por acometida, armado con el tablero de origen de cada uno
   const treeGroups: PanelTreeGroup[] = useMemo(
@@ -730,7 +745,20 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                     {currentAnalytics.assignedLoads.map((load) => (
                       <tr key={load.id} className="hover:bg-raised/30">
                         <td className="py-2 px-2.5 font-bold text-accent-text">
-                          {load.circuitName || 'C-General'}
+                          <select
+                            aria-label={`Circuito de ${load.name}`}
+                            value={circuitOfLoad.get(load.id) ?? ''}
+                            onChange={(e) => onUpdateClient(assignLoadToCircuit(synced, load.id, e.target.value))}
+                            className="max-w-[150px] rounded-md border border-field-line bg-sunken px-1.5 py-1 font-mono text-xs font-bold text-accent-text"
+                          >
+                            {(synced.circuits ?? [])
+                              .filter((circuit) => circuit.panelId === activePanel.id)
+                              .map((circuit) => (
+                                <option key={circuit.id} value={circuit.id}>
+                                  {circuit.code} {circuit.description}
+                                </option>
+                              ))}
+                          </select>
                         </td>
                         <td className="py-2 px-2.5 font-sans text-strong truncate max-w-[180px]">
                           {load.name}
@@ -893,6 +921,28 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
           </div>
         </div>
       </div>
+      </Collapsible>
+
+      {/* Circuitos del tablero y su esquema unifilar */}
+      <Collapsible
+        id="panels-circuits"
+        title={`Circuitos y unifilar: ${activePanel.name}`}
+        icon={<Zap className="h-4 w-4" />}
+        description="Cada circuito con su térmica, su cable y sus cargas, revisado con la AEA. El esquema unifilar se arma solo y se puede descargar."
+        summary={`${(synced.circuits ?? []).filter((c) => c.panelId === activePanel.id).length} circuitos`}
+        defaultOpen
+      >
+        <CircuitsSection
+          client={synced}
+          panel={activePanel}
+          supply={supplyOf(activePanel)}
+          feederFrom={
+            activePanel.parentPanelId && panels.some((p) => p.id === activePanel.parentPanelId)
+              ? `desde ${panels.find((p) => p.id === activePanel.parentPanelId)?.name}`
+              : 'desde el medidor'
+          }
+          onUpdateClient={onUpdateClient}
+        />
       </Collapsible>
 
       {/* 4. MODAL: ALTA Y EDICIÓN DE TABLERO */}

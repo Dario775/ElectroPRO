@@ -5,6 +5,7 @@ import {
   MonthlyConsumptionRecord,
   ServiceSupply,
 } from '../types/electrical';
+import { syncCircuits } from './circuits';
 
 /**
  * Manejo de las acometidas (suministros) de un cliente.
@@ -78,7 +79,8 @@ export function normalizeClient(client: ClientRecord): ClientRecord {
     supplyId: record.supplyId && validIds.has(record.supplyId) ? record.supplyId : primary.id,
   }));
 
-  return {
+  // Cada carga con un circuito de su tablero (los clientes viejos los arman acá)
+  return syncCircuits({
     ...client,
     supplies,
     panels,
@@ -93,7 +95,7 @@ export function normalizeClient(client: ClientRecord): ClientRecord {
     supplyVerified: primary.verified,
     supplyVerifiedAt: primary.verifiedAt,
     diagnosticMeasurements: primary.measurements,
-  };
+  });
 }
 
 /** Acometidas del cliente (nunca vacío). */

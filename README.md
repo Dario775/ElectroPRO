@@ -94,6 +94,7 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
 ├── tests/                         Pruebas con node:test (npm test)
 │   ├── electrical.test.mjs        Motor de cálculo, criterios AEA y alimentador del diagnóstico
 │   ├── panelTree.test.mjs         Árbol de tableros: orígenes, datos rotos y selectividad
+│   ├── circuits.test.mjs          Circuitos: armado desde las cargas, edición y revisión AEA
 │   └── storage.test.mjs           Persistencia: fallos de escritura, reintentos y borrados
 └── src/
     ├── main.tsx                   Punto de entrada: carga los datos, monta React y registra la PWA
@@ -109,6 +110,7 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
     │   ├── diagnosticEngine.ts    Evaluación de seguridad y plan de acción
     │   ├── supplies.ts            Acometidas múltiples: normalización y consultas por suministro
     │   ├── panelTree.ts           Árbol de tableros de cada acometida (de quién se alimenta cada uno)
+    │   ├── circuits.ts            Circuitos: armado desde las cargas, edición y revisión AEA de cada uno
     │   ├── workflow.ts            Etapas, pasos, módulos y progreso del recorrido
     │   ├── plan.ts                Geometría del plano: hojas, rejilla y vínculo con el relevamiento
     │   ├── history.ts             Deshacer y rehacer: pasos, agrupado y tope (puro y sin React)
@@ -129,6 +131,8 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
         ├── SupplyView.tsx         Suministro y acometidas
         ├── PanelsView.tsx         Tableros eléctricos, protecciones y jerarquía
         ├── PanelTree.tsx          Esquema del inmueble: medidor → principal → seccionales
+        ├── CircuitsSection.tsx    Circuitos del tablero: revisión AEA, edición y descarga del unifilar
+        ├── SingleLineDiagram.tsx  Esquema unifilar en SVG
         ├── DiagnosticView.tsx     Mediciones de campo, índice de seguridad y plan de trabajo
         ├── AuditView.tsx          Cargas, consumos y demanda simultánea
         ├── ConsumptionHistoryView.tsx  Facturación real vs. auditoría (con gráficas)
@@ -194,7 +198,7 @@ cuando hacen falta y no cuentan para el progreso (ver *Módulos* más abajo).
 |---|---|
 | **Auditoría de Cargas** | Alta de artefactos desde catálogo o manual, normalización a vatios, corriente y consumo mensual, costo proyectado y verificación contra el breaker principal |
 | **Balance de Fases** | Reparto de cargas por fase, desbalance NEMA, corriente de neutro y **auto-balanceo** automático de cargas entre L1/L2/L3 |
-| **Tableros & Esquema** | Inventario de tableros con protecciones, jerarquía entre ellos y mediciones por tablero |
+| **Tableros & Esquema** | Inventario de tableros con protecciones y mediciones; árbol real de tableros (medidor → principal → seccionales); **circuitos** de cada tablero revisados con la AEA (térmica, cable, sección mínima y caída de tensión) y **esquema unifilar** que se arma solo y se descarga en SVG |
 | **Diagnóstico & Plan** | Mediciones in situ → índice de seguridad, nivel de riesgo y plan de acción priorizado (crítica/alta/media/preventiva) con materiales y horas estimadas |
 | **Historial de Consumo** | Facturación mensual real vs. consumo calculado por el inventario de cargas, con gráficas y "diagnóstico forense" (detecta fugas a tierra, medidor descalibrado o cargas no declaradas) |
 | **Presupuesto & Materiales** | Presupuesto generado automáticamente desde tableros, cargas y diagnóstico; **catálogo de 90 productos por marca** (filtrá por marca, categoría o búsqueda y agregá con un clic), markup, impuestos, descuentos, estados y PDF |
