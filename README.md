@@ -95,6 +95,8 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
 │   ├── electrical.test.mjs        Motor de cálculo, criterios AEA y alimentador del diagnóstico
 │   ├── panelTree.test.mjs         Árbol de tableros: orígenes, datos rotos y selectividad
 │   ├── circuits.test.mjs          Circuitos: armado desde las cargas, edición y revisión AEA
+│   ├── persistence.test.mjs       Guardado: clientes dañados, varias pestañas e importación
+│   ├── projectFile.test.mjs       Archivo .electropro: formato, abrir, reemplazar, copia e indicador
 │   └── storage.test.mjs           Persistencia: fallos de escritura, reintentos y borrados
 └── src/
     ├── main.tsx                   Punto de entrada: carga los datos, monta React y registra la PWA
@@ -122,10 +124,13 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
     │   ├── budgetGeneratorService.ts  Presupuesto automático y catálogo de materiales de fábrica
     │   ├── pdfReportService.ts    Informe técnico en PDF
     │   ├── budgetPdfService.ts    Presupuesto en PDF
-    │   └── planFileService.ts     Plano: guardar como, abrir y exportar a PDF
+    │   ├── planFileService.ts     Plano: guardar como, abrir y exportar a PDF
+    │   ├── projectFileService.ts  Proyecto como archivo .electropro: formato, abrir, recientes y estado
+    │   └── fileHandleStore.ts     Archivo vinculado a cada proyecto (para «Guardar» sobre el mismo)
     └── components/
         ├── AppShell.tsx           Cáscara: barra superior, navegación y franja de contexto
         ├── TopBar.tsx             Cliente activo, moneda y tema
+        ├── FileMenu.tsx           Menú Archivo del proyecto e indicador de guardado
         ├── WorkflowNav.tsx        Navegación por etapas, pasos y módulos
         ├── PwaBanner.tsx          Avisos de instalación y de versión nueva
         ├── SupplyView.tsx         Suministro y acometidas
@@ -756,6 +761,28 @@ Los datos de trabajo se guardan en IndexedDB; tema, moneda y cotización permane
 Las escrituras fallidas se conservan en memoria y se reintentan hasta tres veces (1, 2 y 4 segundos). El aviso permanece hasta que se guarde todo y permite reintentar o descargar `ElectroPro_Rescate.json`, con clientes, perfil, catálogo y puntos de recuperación. Se importa desde Clientes como las copias habituales. Si no hay almacenamiento disponible, la copia debe descargarse antes de cerrar la sesión. Una operación asíncrona al cerrar el navegador no garantiza el guardado.
 
 `npm test` ejecuta las pruebas de persistencia con Node 24: fallo y reintento, conservación de borrados, escrituras consecutivas y rescate sin almacenamiento. Todavía falta verificar IndexedDB y el aviso en un navegador real.
+
+### Proyecto como archivo (`.electropro`)
+
+Cada cliente se puede guardar como un archivo propio para seguir editándolo en otro momento o en otro equipo.
+El menú **Archivo** (barra superior) tiene:
+
+| Opción | Qué hace |
+|---|---|
+| **Nuevo proyecto** | Abre la ficha de un cliente nuevo |
+| **Abrir…** (Ctrl+O) | Abre un `.electropro`. Si ese proyecto ya está en el equipo pregunta: **reemplazar** (lo de antes queda en una copia de rescate) o **abrir como copia** |
+| **Abrir reciente** | Los últimos proyectos guardados o abiertos; si ya no está en el equipo, lo reabre desde su archivo cuando el navegador lo permite |
+| **Guardar** (Ctrl+S) | En Chrome y Edge de escritorio escribe sobre el mismo archivo, también después de reabrir la app (pide permiso). En los demás navegadores descarga una copia nueva |
+| **Guardar como…** (Ctrl+Mayús+S) | Elegir otro nombre o carpeta |
+| **Exportar** | Informe técnico (PDF), presupuesto (PDF) y copia de seguridad de todos los clientes |
+
+- Al lado del menú, el indicador dice **Sin archivo**, **Archivo al día** o **Archivo sin guardar** (hay cambios que no
+  están en el archivo). Se calcula con la `revision` del cliente y la revisión que quedó escrita en el archivo.
+- En el módulo del plano, Ctrl+S sigue guardando el archivo del plano.
+- El formato (`src/services/projectFileService.ts`) lleva `format: 'electropro-proyecto'` y `version`: un archivo de
+  una versión más nueva no se abre a medias, y un plano o una copia de seguridad se reconocen y se dice dónde abrirlos.
+  El cliente del archivo pasa por la misma revisión que la importación.
+- El archivo vinculado a cada proyecto se recuerda en IndexedDB (`src/services/fileHandleStore.ts`).
 
 ### Que no se pierda trabajo
 

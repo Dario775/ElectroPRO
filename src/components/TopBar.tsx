@@ -35,6 +35,8 @@ export interface TopBarProps {
   onOpenNewClientModal: () => void;
   onOpenSettingsModal: () => void;
   onGoToClients: () => void;
+  /** Menú Archivo del proyecto (con su indicador de guardado). */
+  fileMenu?: React.ReactNode;
 }
 
 const RATE_PRESETS = [1150, 1200, 1250, 1300];
@@ -47,6 +49,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenNewClientModal,
   onOpenSettingsModal,
   onGoToClients,
+  fileMenu,
 }) => {
   const [clientMenuOpen, setClientMenuOpen] = useState(false);
   const [rateMenuOpen, setRateMenuOpen] = useState(false);
@@ -101,6 +104,9 @@ export const TopBar: React.FC<TopBarProps> = ({
             <span className="hidden text-xs text-muted sm:block">Cálculos, auditoría y presupuestos</span>
           </div>
         </div>
+
+        {/* Archivo del proyecto */}
+        {fileMenu}
 
         <div className="mx-auto" />
 

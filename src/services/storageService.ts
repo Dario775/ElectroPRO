@@ -1066,6 +1066,20 @@ function migrateClient(c: ClientRecord): ClientRecord {
   return normalizeClient(updatedClient);
 }
 
+/**
+ * Revisa y migra un cliente que viene de afuera (un archivo de proyecto, una copia).
+ * Devuelve el cliente listo para usar o por qué no sirve.
+ */
+export function readClientRecord(item: unknown): { client: ClientRecord } | { error: string } {
+  const problem = clientProblem(item);
+  if (problem) return { error: problem };
+  try {
+    return { client: migrateClient(item as ClientRecord) };
+  } catch {
+    return { error: 'sus datos no se pudieron leer' };
+  }
+}
+
 export const StorageService = {
   // --- CLIENT RECORDS ---
   getClients(): ClientRecord[] {
@@ -1251,6 +1265,12 @@ export const StorageService = {
     } catch {
       return point.raw;
     }
+  },
+
+  /** Guarda una copia de rescate de todos los clientes tal como están ahora. */
+  keepRecoveryCopy(reason: string): void {
+    const raw = kvGet(STORAGE_KEY_CLIENTS);
+    if (raw) addRecoveryPoint(raw, reason);
   },
 
   getClientById(id: string): ClientRecord | null {

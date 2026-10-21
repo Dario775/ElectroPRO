@@ -14,6 +14,7 @@ import { ClientModal } from './components/ClientModal';
 import { PlanView } from './components/PlanView';
 import { SettingsModal } from './components/SettingsModal';
 import { PwaBanner } from './components/PwaBanner';
+import { FileMenu } from './components/FileMenu';
 import { ClientRecord, TechnicianProfile } from './types/electrical';
 import { StorageService, DEFAULT_TECHNICIAN } from './services/storageService';
 import { EXTERNAL_CHANGE_EVENT, kvClear } from './services/kvStore';
@@ -126,6 +127,13 @@ function AppContent() {
   /** Recarga los clientes tras restaurar una copia, sin cambiar el cliente que se está viendo. */
   const handleDataRestored = () => {
     setClients(StorageService.getClients());
+  };
+
+  /** Se abrió un proyecto desde un archivo (o de los recientes): se recargan los clientes y se activa. */
+  const handleProjectOpened = (clientId: string) => {
+    setClients(StorageService.getClients());
+    setActiveClientId(clientId);
+    StorageService.setActiveClientId(clientId);
   };
 
   const handleSaveTechnician = (newProfile: TechnicianProfile) => {
@@ -307,6 +315,15 @@ function AppContent() {
         }}
         onOpenNewClientModal={openNewClientModal}
         onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
+        fileMenu={
+          <FileMenu
+            activeClient={activeClient}
+            technician={technician}
+            shortcutsEnabled={activeView !== 'plan'}
+            onNewProject={openNewClientModal}
+            onProjectOpened={handleProjectOpened}
+          />
+        }
         onGoToClients={() => handleNavigate('clients')}
       >
         {activeClient ? renderView() : noClientContent}

@@ -30,6 +30,8 @@ const MIGRATED_KEYS = [
   'electropro_technician_profile_v1',
   'electropro_materials_catalog_v1',
   'electropro_catalog_brands_v1',
+  'electropro_project_files_v1',
+  'electropro_recent_projects_v1',
 ];
 const FLUSH_DELAY_MS = 120;
 
