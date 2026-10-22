@@ -654,7 +654,7 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
                     {/* Qué va a pasar al agregarlo: fase, tensión y corriente.
                         Así el usuario sabe el resultado antes de tocar el botón. */}
                     <p className="rounded-lg border border-hairline bg-surface px-2 py-1.5 text-xs leading-snug text-muted">
-                      Se agrega a <strong className="text-strong">{assignment.assignedPhase}</strong> a{' '}
+                      Se agrega a <strong className="text-strong">{placement.assignedPhase}</strong> a{' '}
                       <strong className="text-strong">{assignment.voltage} V</strong> · demanda{' '}
                       <strong className="text-accent-text">{amps.toFixed(1)} A</strong> ·{' '}
                       {placement.isNew ? 'circuito nuevo ' : 'en '}
@@ -756,7 +756,14 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
                     Ver solo el tablero
                     <select
                       value={selectedPanelFilter}
-                      onChange={(e) => setSelectedPanelFilter(e.target.value)}
+                      onChange={(e) => {
+                        setSelectedPanelFilter(e.target.value);
+                        // El catálogo agrega en el tablero que se está mirando
+                        if (e.target.value !== 'all') {
+                          setCatalogPanelId(e.target.value);
+                          setCatalogCircuit('auto');
+                        }
+                      }}
                       className="h-9 rounded-xl border border-field-line bg-sunken px-2.5 text-xs font-bold text-strong focus:border-accent focus:outline-none"
                     >
                       <option value="all">Todos</option>

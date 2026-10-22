@@ -159,3 +159,59 @@ test('trifásico: un motor trifásico va a 380 V y los monofásicos a la fase co
   const loads = [{ assignedPhase: 'L1' }, { assignedPhase: 'L2' }];
   assert.equal(predictAssignment(cli('Trifásico (3F+N)', 220, 380, loads), item()).assignedPhase, 'L3');
 });
+
+// --- Un circuito monofásico va en una sola fase -----------------------------------
+
+const tri = { ...supply, serviceType: 'Trifásico (3F+N)' };
+
+test('un equipo que se suma a un circuito toma la fase de ese circuito', () => {
+  const base = client([circuit('c1', 'tp', { kind: 'IUG', breakerAmps: 10, cableSection: '1,5 mm²' })], [load('l1', { category: 'Iluminación', powerWatts: 10, assignedPhase: 'L3', circuitId: 'c1' })]);
+  const result = c.addLoadToCircuit(base, load('l2', { category: 'Iluminación', powerWatts: 10, assignedPhase: 'L2' }), { panelId: 'tp', target: 'auto', supply: tri });
+  const added = result.loads.find((l) => l.id === 'l2');
+  assert.equal(added.circuitId, 'c1');
+  assert.equal(added.assignedPhase, 'L3');
+  const preview = c.previewCircuitPlacement(base, load('l3', { category: 'Iluminación', powerWatts: 10, assignedPhase: 'L1' }), { panelId: 'tp', target: 'auto', supply: tri });
+  assert.equal(preview.assignedPhase, 'L3');
+});
+
+test('la revisión avisa cuando un circuito monofásico tiene equipos en dos fases', () => {
+  const loads = [load('a', { assignedPhase: 'L2' }), load('b', { assignedPhase: 'L3' })];
+  const r = c.analyzeCircuit(circuit('k', 'tp'), loads, tri, 1);
+  assert.ok(r.issues.some((i) => /una sola fase/.test(i.text)), JSON.stringify(r.issues));
+  const ok = c.analyzeCircuit(circuit('k', 'tp'), [load('a', { assignedPhase: 'L2' }), load('b', { assignedPhase: 'L2' })], tri, 1);
+  assert.ok(!ok.issues.some((i) => /una sola fase/.test(i.text)));
+});
+
+test('la corriente de un circuito chico no se redondea a cero', () => {
+  assert.equal(c.formatAmps(0.09), '0,09');
+  assert.equal(c.formatAmps(0), '0');
+  assert.equal(c.formatAmps(12.34), '12,3');
+});
+
+test('repartir las fases mueve circuitos enteros, sin partirlos', async () => {
+  const { autoBalanceLoads } = await import('../src/utils/electricalMath.ts');
+  const loads = [
+    load('a1', { powerWatts: 2000, circuitId: 'A' }),
+    load('a2', { powerWatts: 2000, circuitId: 'A' }),
+    load('b1', { powerWatts: 1500, circuitId: 'B' }),
+    load('c1', { powerWatts: 1500, circuitId: 'C' }),
+    load('suelta', { powerWatts: 800 }),
+  ];
+  const balanced = autoBalanceLoads(loads, 'Trifásico (3F+N)', 220);
+  const phaseOf = (id) => balanced.find((l) => l.id === id).assignedPhase;
+  assert.equal(phaseOf('a1'), phaseOf('a2'));
+  assert.notEqual(phaseOf('b1'), phaseOf('a1'));
+  assert.notEqual(phaseOf('c1'), phaseOf('b1'));
+  assert.notEqual(phaseOf('c1'), phaseOf('a1')); // tres circuitos, tres fases
+});
+
+test('«pasar todo a una fase» deja el circuito entero en esa fase y no toca los demás', () => {
+  const base = client(
+    [circuit('c1', 'tp'), circuit('c2', 'tp')],
+    [load('a', { assignedPhase: 'L2', circuitId: 'c1' }), load('b', { assignedPhase: 'L3', circuitId: 'c1' }), load('x', { assignedPhase: 'L1', circuitId: 'c2' })]
+  );
+  const fixed = c.setCircuitPhase(base, 'c1', 'L3');
+  assert.deepEqual(fixed.loads.map((l) => l.assignedPhase), ['L3', 'L3', 'L1']);
+  assert.equal(c.analyzeCircuit(fixed.circuits[0], fixed.loads.filter((l) => l.circuitId === 'c1'), tri, 1).issues.some((i) => /una sola fase/.test(i.text)), false);
+  assert.equal(c.suggestedCircuitPhase(base.loads.filter((l) => l.circuitId === 'c1')), 'L2');
+});

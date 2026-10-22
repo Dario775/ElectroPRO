@@ -35,6 +35,8 @@ interface PanelTreeProps {
   /** Tableros de los que puede alimentarse uno (sin círculos ni otra acometida). */
   feedOptionsFor: (panel: ElectricalPanel) => ElectricalPanel[];
   onChangeParent: (panel: ElectricalPanel, parentId: string) => void;
+  /** «C-7 Carnicería (C40 4P)», si el tablero cuelga de un circuito del de arriba. */
+  feederCircuitOf?: (panel: ElectricalPanel) => string | undefined;
 }
 
 const PANEL_TYPE_LABEL: Record<ElectricalPanel['type'], string> = {
@@ -89,6 +91,9 @@ const PanelTreeItem: React.FC<NodeProps> = (props) => {
         <div className="mb-1 pl-1 text-xs text-muted">
           {feederText(panel)}
           {parentName && <span className="text-faint"> · desde {parentName}</span>}
+          {props.feederCircuitOf?.(panel) && (
+            <strong className="text-accent-text"> · por {props.feederCircuitOf(panel)}</strong>
+          )}
         </div>
 
         <button

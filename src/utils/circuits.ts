@@ -3,6 +3,9 @@ import type {
   CircuitType,
   ClientRecord,
   ElectricalCircuit,
+  ElectricalPanel,
+  PanelDifferential,
+  PhaseAssignment,
   PhaseType,
   ServiceSupply,
 } from '../types/electrical';
@@ -220,7 +223,33 @@ export interface CircuitAnalysis {
 
 type SupplyVoltages = Pick<ServiceSupply, 'serviceType' | 'nominalVoltage' | 'lineVoltage'>;
 
+/** Lo que hace falta del tablero para revisar un circuito: su diferencial y los tableros que alimenta. */
+export interface CircuitContext {
+  /** `null`: el circuito no tiene diferencial. Si falta, no se revisa. */
+  differential?: PanelDifferential | null;
+  /** Tableros que se alimentan de este circuito. */
+  feeds?: ElectricalPanel[];
+}
+
+/** Sensibilidad que pide la AEA para tomas e iluminación. */
+const PERSONAL_PROTECTION_MA = 30;
+
 const fmt = (n: number) => n.toLocaleString('es-AR', { maximumFractionDigits: 1 });
+
+/** Corriente para mostrar: con dos decimales debajo de 1 A, así un circuito chico no aparece en «0 A». */
+export function formatAmps(amps: number): string {
+  if (amps === 0) return '0';
+  return amps.toLocaleString('es-AR', { maximumFractionDigits: amps < 1 ? 2 : 1 });
+}
+
+/** Fase en la que está un circuito monofásico: la de la mayoría de sus equipos. */
+function phaseOfCircuit(loads: ApplianceLoad[]): PhaseAssignment | undefined {
+  const counts = new Map<PhaseAssignment, number>();
+  for (const l of loads) {
+    if (l.systemPhase === '1F') counts.set(l.assignedPhase, (counts.get(l.assignedPhase) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+}
 
 /**
  * Térmica IEC y cable de la AEA para una corriente de proyecto. Si la térmica que hay ya es
@@ -260,7 +289,8 @@ export function analyzeCircuit(
   circuit: ElectricalCircuit,
   loads: ApplianceLoad[],
   supply: SupplyVoltages,
-  simultaneity?: number
+  simultaneity?: number,
+  context: CircuitContext = {}
 ): CircuitAnalysis {
   const summary = calculatePhaseBalance(loads, supply.serviceType, supply.nominalVoltage, supply.lineVoltage);
   const demand = calculateDemand(loads, summary, simultaneity);
@@ -271,7 +301,42 @@ export function analyzeCircuit(
   if (demandAmps > circuit.breakerAmps) {
     issues.push({
       level: 'danger',
-      text: `La térmica de ${circuit.breakerAmps} A es chica: la carga pide ${fmt(demandAmps)} A.`,
+      text: `La térmica de ${circuit.breakerAmps} A es chica: la carga pide ${formatAmps(demandAmps)} A.`,
+    });
+  }
+  const { differential } = context;
+  if (differential === null && circuit.kind !== 'ESPECIAL') {
+    issues.push({
+      level: 'danger',
+      text: `La AEA pide diferencial de ${PERSONAL_PROTECTION_MA} mA para tomas e iluminación: este circuito no tiene.`,
+    });
+  }
+  if (differential && differential.sensitivityMa > PERSONAL_PROTECTION_MA && circuit.kind !== 'ESPECIAL') {
+    issues.push({
+      level: 'warning',
+      text: `El diferencial «${differential.label}» es de ${differential.sensitivityMa} mA: para tomas e iluminación tiene que ser de ${PERSONAL_PROTECTION_MA} mA.`,
+    });
+  }
+  if (differential && differential.amps < circuit.breakerAmps) {
+    issues.push({
+      level: 'warning',
+      text: `El diferencial «${differential.label}» de ${differential.amps} A queda chico para la térmica de ${circuit.breakerAmps} A que tiene debajo.`,
+    });
+  }
+  for (const fed of context.feeds ?? []) {
+    if ((fed.entryKind ?? 'termica') !== 'corte' && circuit.breakerAmps <= fed.mainBreakerAmps) {
+      issues.push({
+        level: 'warning',
+        text: `Alimenta a ${fed.name}: su térmica (${circuit.breakerAmps} A) tiene que ser mayor que la de cabecera de ese tablero (${fed.mainBreakerAmps} A) para que haya selectividad.`,
+      });
+    }
+  }
+
+  const phases = [...new Set(loads.filter((l) => l.systemPhase === '1F').map((l) => l.assignedPhase))].sort();
+  if (phases.length > 1) {
+    issues.push({
+      level: 'warning',
+      text: `Un circuito monofásico va en una sola fase: este tiene equipos en ${phases.join(' y ')}.`,
     });
   }
   if (!IEC_BREAKERS.includes(circuit.breakerAmps)) {
@@ -355,6 +420,27 @@ export interface PlacementPreview {
   /** "C-3 Tomas de cocina" */
   label: string;
   breakerAmps: number;
+  /** Fase en la que queda el equipo: la del circuito si se suma a uno monofásico. */
+  assignedPhase: PhaseAssignment;
+}
+
+/** Fase que se propone para dejar un circuito monofásico en una sola fase: la de la mayoría. */
+export function suggestedCircuitPhase(loads: ApplianceLoad[]): PhaseAssignment | undefined {
+  return phaseOfCircuit(loads);
+}
+
+/** Pasa todos los equipos monofásicos de un circuito a una fase. No modifica el cliente que recibe. */
+export function setCircuitPhase(client: ClientRecord, circuitId: string, phase: PhaseAssignment): ClientRecord {
+  return {
+    ...client,
+    loads: client.loads.map((l) => (l.circuitId === circuitId && l.systemPhase === '1F' ? { ...l, assignedPhase: phase } : l)),
+  };
+}
+
+/** El equipo en la fase del circuito al que se suma (los monofásicos van en una sola fase). */
+function inCircuitPhase(load: ApplianceLoad, circuitLoads: ApplianceLoad[]): ApplianceLoad {
+  const phase = load.systemPhase === '1F' ? phaseOfCircuit(circuitLoads) : undefined;
+  return phase ? { ...load, assignedPhase: phase } : load;
 }
 
 /** Circuito nuevo para una carga, ya con la térmica y el cable que pide la AEA. */
@@ -385,7 +471,9 @@ function autoCircuit(client: ClientRecord, load: ApplianceLoad, panelId: string,
     .map((circuit) => ({
       circuit,
       watts: loadsOf(circuit.id).reduce((acc, l) => acc + l.powerWatts * l.quantity, 0),
-      fits: analyzeCircuit(circuit, [...loadsOf(circuit.id), load], supply, 1).demandAmps <= circuit.breakerAmps,
+      fits:
+        analyzeCircuit(circuit, [...loadsOf(circuit.id), inCircuitPhase(load, loadsOf(circuit.id))], supply, 1).demandAmps <=
+        circuit.breakerAmps,
     }))
     .filter((option) => option.fits)
     .sort((a, b) => a.watts - b.watts)[0]?.circuit;
@@ -405,15 +493,23 @@ export function previewCircuitPlacement(
         ? autoCircuit(synced, load, options.panelId, options.supply)
         : undefined;
   const circuit = chosen ?? circuitForLoad(synced, load, options.panelId, options.supply);
-  return { isNew: !chosen, circuit, label: circuitLabel(circuit), breakerAmps: circuit.breakerAmps };
+  const placed = chosen ? inCircuitPhase(load, synced.loads.filter((l) => l.circuitId === chosen.id)) : load;
+  return {
+    isNew: !chosen,
+    circuit,
+    label: circuitLabel(circuit),
+    breakerAmps: circuit.breakerAmps,
+    assignedPhase: placed.assignedPhase,
+  };
 }
 
 /** Agrega una carga a su circuito (existente o uno nuevo). No modifica el cliente que recibe. */
 export function addLoadToCircuit(client: ClientRecord, load: ApplianceLoad, options: PlacementOptions): ClientRecord {
   const synced = syncCircuits(client);
-  const { circuit, isNew } = previewCircuitPlacement(synced, load, options);
+  const { circuit, isNew, assignedPhase } = previewCircuitPlacement(synced, load, options);
   const placed: ApplianceLoad = {
     ...load,
+    assignedPhase,
     panelId: circuit.panelId,
     circuitId: circuit.id,
     circuitName: circuitLabel(circuit),

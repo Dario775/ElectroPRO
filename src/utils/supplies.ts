@@ -6,6 +6,7 @@ import type {
   ServiceSupply,
 } from '../types/electrical';
 import { syncCircuits } from './circuits';
+import { normalizePanelDevices } from './panelDevices';
 
 /**
  * Manejo de las acometidas (suministros) de un cliente.
@@ -79,8 +80,9 @@ export function normalizeClient(client: ClientRecord): ClientRecord {
     supplyId: record.supplyId && validIds.has(record.supplyId) ? record.supplyId : primary.id,
   }));
 
-  // Cada carga con un circuito de su tablero (los clientes viejos los arman acá)
-  return syncCircuits({
+  // Cada carga con un circuito de su tablero (los clientes viejos los arman acá), y cada
+  // circuito bajo un diferencial de su tablero
+  return normalizePanelDevices(syncCircuits({
     ...client,
     supplies,
     panels,
@@ -95,7 +97,7 @@ export function normalizeClient(client: ClientRecord): ClientRecord {
     supplyVerified: primary.verified,
     supplyVerifiedAt: primary.verifiedAt,
     diagnosticMeasurements: primary.measurements,
-  });
+  }));
 }
 
 /** Acometidas del cliente (nunca vacío). */

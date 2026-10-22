@@ -25,9 +25,11 @@ import { describeSupply, getSupplies, supplyOfPanel } from '../utils/supplies';
 import { cableOptions } from '../utils/aea';
 import { calculateDemand, calculatePhaseBalance } from '../utils/electricalMath';
 import { buildPanelTree, feedOptions, newPanelFrom, removePanel } from '../utils/panelTree';
-import { assignLoadToCircuit, dinModulesOf, syncCircuits } from '../utils/circuits';
+import { assignLoadToCircuit, syncCircuits } from '../utils/circuits';
+import { circuitRotulo, differentialsOf, frontRows, normalizePanelDevices, polesOf, usedModules } from '../utils/panelDevices';
 import { PanelTree, type PanelTreeGroup, type PanelTreeStats } from './PanelTree';
 import { CircuitsSection } from './CircuitsSection';
+import { PanelFront } from './PanelFront';
 import { Button } from './ui/Button';
 import { Badge, Callout, SectionHeader } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
@@ -112,7 +114,9 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
   }, [panels, visiblePanels, selectedPanelId]);
 
   // Circuitos de cada tablero (los clientes viejos los arman con el circuito de cada carga)
-  const synced = useMemo(() => syncCircuits(client), [client]);
+  const synced = useMemo(() => normalizePanelDevices(syncCircuits(client)), [client]);
+  /** El tablero con sus diferenciales y accesorios ya armados (los viejos pasan a «diferencial 1»). */
+  const syncedPanelOf = (panel: ElectricalPanel): ElectricalPanel => synced.panels?.find((p) => p.id === panel.id) ?? panel;
   const circuitOfLoad = useMemo(
     () => new Map(synced.loads.map((load) => [load.id, load.circuitId ?? ''])),
     [synced]
@@ -144,17 +148,10 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
         : 0;
 
       // DIN occupancy estimation
-      const estimatedDinOccupied =
-        (panel.mainBreakerPoles === '3P+N' || panel.mainBreakerPoles === '4P' ? 4 : 2) +
-        (panel.hasDifferential ? (panel.differentialPoles === '4P' ? 4 : 2) : 0) +
-        (panel.hasSurgeProtector ? 2 : 0) +
-        // Térmica de cada circuito: bipolar en monofásico, tetrapolar en trifásico
-        (synced.circuits ?? [])
-          .filter((circuit) => circuit.panelId === panel.id)
-          .reduce((acc, circuit) => {
-            const threePhase = synced.loads.some((l) => l.circuitId === circuit.id && l.systemPhase === '3F');
-            return acc + dinModulesOf(threePhase ? 3 : 2);
-          }, 0);
+      // Módulos ocupados según el frente real: entrada, diferenciales, térmicas con sus polos y accesorios
+      const estimatedDinOccupied = usedModules(
+        frontRows(syncedPanelOf(panel), (synced.circuits ?? []).filter((c) => c.panelId === panel.id), synced.loads)
+      );
 
       const dinUtilization = panel.totalDinModules > 0
         ? Math.round((estimatedDinOccupied / panel.totalDinModules) * 100)
@@ -315,7 +312,22 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
   };
 
   // Save Panel
-  const handleSavePanel = (savedPanel: ElectricalPanel) => {
+  const handleSavePanel = (edited: ElectricalPanel) => {
+    const list = differentialsOf(edited);
+    const fromForm = {
+      amps: edited.differentialAmps ?? edited.mainBreakerAmps,
+      sensitivityMa: edited.differentialSensitivityMa ?? 30,
+      poles: edited.differentialPoles ?? '2P',
+    };
+    let differentials = list;
+    if (edited.hasDifferential && list.length === 0) {
+      differentials = [{ id: `dif_${edited.id}_1`, label: '1', ...fromForm }];
+    } else if (!edited.hasDifferential && list.length === 1) {
+      differentials = [];
+    } else if (list.length > 0) {
+      differentials = [{ ...list[0], ...fromForm }, ...list.slice(1)];
+    }
+    const savedPanel: ElectricalPanel = { ...edited, differentials };
     let updatedPanels: ElectricalPanel[];
     const exists = panels.some((p) => p.id === savedPanel.id);
     if (exists) {
@@ -458,6 +470,12 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
           onAddPanel={handleAddPanel}
           feedOptionsFor={(panel) => feedOptions(panel, panels, supplyOf(panel).id)}
           onChangeParent={handleChangeParent}
+          feederCircuitOf={(panel) => {
+            const circuit = (synced.circuits ?? []).find((c) => c.id === panel.feederCircuitId);
+            if (!circuit) return undefined;
+            const loads = synced.loads.filter((l) => l.circuitId === circuit.id);
+            return `${circuit.code} ${circuitRotulo(circuit)} (${circuit.curve ?? 'C'}${circuit.breakerAmps} ${polesOf(circuit, loads)})`;
+          }}
         />
       </Collapsible>
 
@@ -935,7 +953,7 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       >
         <CircuitsSection
           client={synced}
-          panel={activePanel}
+          panel={syncedPanelOf(activePanel)}
           supply={supplyOf(activePanel)}
           feederFrom={
             activePanel.parentPanelId && panels.some((p) => p.id === activePanel.parentPanelId)
@@ -944,6 +962,17 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
           }
           onUpdateClient={onUpdateClient}
         />
+      </Collapsible>
+
+      {/* Frente del tablero: como está en el riel, con sus rótulos */}
+      <Collapsible
+        id="panels-front"
+        title={`Frente del tablero y rótulos: ${activePanel.name}`}
+        icon={<Layers className="h-4 w-4" />}
+        description="Las filas de riel con cada aparato en su lugar y su ancho real, para reconocerlo al abrir la tapa. Se acomoda igual a como quedó y los rótulos salen en PDF a tamaño real."
+        summary={`${frontRows(syncedPanelOf(activePanel), (synced.circuits ?? []).filter((c) => c.panelId === activePanel.id), synced.loads).length} filas`}
+      >
+        <PanelFront client={synced} panel={syncedPanelOf(activePanel)} onUpdateClient={onUpdateClient} />
       </Collapsible>
 
       {/* 4. MODAL: ALTA Y EDICIÓN DE TABLERO */}

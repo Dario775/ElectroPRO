@@ -56,6 +56,39 @@ export interface ElectricalCircuit {
   cableSection?: string;
   /** Largo desde el tablero hasta la boca más lejana, para la caída de tensión. */
   lengthMeters?: number;
+  /** Rótulo que se pega debajo de la térmica («ILUM», «CAJAS»). Si falta, se usa la descripción. */
+  label?: string;
+  /** Polos de la térmica. Si falta: bipolar en monofásico, tetrapolar en trifásico. */
+  poles?: BreakerPoles;
+  curve?: BreakerCurve;
+  /** Diferencial bajo el que está; `null` = sin diferencial. Si falta, el primero del tablero. */
+  differentialId?: string | null;
+}
+
+export type BreakerPoles = '1P' | '1P+N' | '2P' | '3P' | '3P+N' | '4P';
+export type BreakerCurve = 'B' | 'C' | 'D';
+
+/** Un disyuntor diferencial del tablero, con su grupo de circuitos debajo. */
+export interface PanelDifferential {
+  id: string;
+  /** Rótulo editable: «1», «ID salón»… */
+  label: string;
+  amps: number;
+  sensitivityMa: number;
+  poles: '2P' | '4P';
+}
+
+/** Lo que hay a la entrada del tablero: una térmica, un interruptor de corte (sin protección) o los dos. */
+export type PanelEntryKind = 'termica' | 'corte' | 'termica_y_corte';
+
+export type PanelAccessoryKind = 'dps' | 'bornera_tierra' | 'bornera_neutro' | 'repartidor' | 'otro';
+
+/** Lo que ocupa lugar en el riel sin ser un circuito: borneras, repartidor, descargador. */
+export interface PanelAccessory {
+  id: string;
+  kind: PanelAccessoryKind;
+  label: string;
+  modules: number;
 }
 
 export interface CatalogItem {
@@ -191,6 +224,27 @@ export interface ElectricalPanel {
   measurements?: PanelMeasurements;
 
   notes?: string;
+
+  /** Entrada del tablero. Si falta, una térmica (`mainBreaker*`). */
+  entryKind?: PanelEntryKind;
+  /** Rótulo del interruptor de corte de la entrada («CORTE GRAL»). */
+  entryLabel?: string;
+  /** Rótulo de la térmica de entrada («GENERAL»). */
+  mainBreakerLabel?: string;
+  /** Corriente del interruptor de corte, cuando lo hay. */
+  switchAmps?: number;
+  /**
+   * Diferenciales del tablero, cada uno con su grupo de circuitos. Si falta, se arma uno
+   * con los datos de `hasDifferential`/`differential*`, que quedan como espejo del primero.
+   */
+  differentials?: PanelDifferential[];
+  accessories?: PanelAccessory[];
+  /** Circuito del tablero de origen que alimenta a este («Carnicería» C40 4P). */
+  feederCircuitId?: string;
+  /** Orden físico en el frente: filas de riel con los aparatos de izquierda a derecha. */
+  frontRows?: string[][];
+  /** Módulos DIN que entran en cada fila de riel. */
+  modulesPerRow?: number;
 }
 
 export type SupportedCurrency = 'USD' | 'ARS';

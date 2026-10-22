@@ -3,23 +3,48 @@
  */
 import React, { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Download, Edit2, Info, Plus, Sparkles, Trash2 } from 'lucide-react';
-import type { CircuitType, ClientRecord, ElectricalCircuit, ElectricalPanel, ServiceSupply } from '../types/electrical';
+import type {
+  BreakerCurve,
+  BreakerPoles,
+  CircuitType,
+  ClientRecord,
+  ElectricalCircuit,
+  ElectricalPanel,
+  ServiceSupply,
+} from '../types/electrical';
 import { IEC_BREAKERS } from '../utils/aea';
 import {
   CIRCUIT_CABLES,
   CIRCUIT_TYPE_LABEL,
   analyzeCircuit,
   newCircuit,
+  formatAmps,
   removeCircuit,
+  setCircuitPhase,
+  suggestedCircuitPhase,
   upsertCircuit,
   type CircuitIssueLevel,
 } from '../utils/circuits';
+import {
+  circuitRotulo,
+  differentialOf,
+  differentialsOf,
+  panelsFedBy,
+  polesOf,
+  protectionGroups,
+  setFeederCircuit,
+} from '../utils/panelDevices';
+import { feedOptions } from '../utils/panelTree';
 import { cx } from '../utils/cx';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Card';
 import { NumberField, SelectField, TextField } from './ui/Form';
 import { Modal } from './ui/Modal';
-import { SingleLineDiagram, type DiagramCircuit } from './SingleLineDiagram';
+import { SingleLineDiagram, type DiagramCircuit, type DiagramGroup } from './SingleLineDiagram';
+import { PanelProtections } from './PanelProtections';
+
+const POLES: BreakerPoles[] = ['1P', '1P+N', '2P', '3P', '3P+N', '4P'];
+const CURVES: BreakerCurve[] = ['B', 'C', 'D'];
 
 interface CircuitsSectionProps {
   /** Cliente con los circuitos ya sincronizados (`syncCircuits`). */
@@ -50,21 +75,46 @@ const fileName = (text: string) =>
 
 export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel, supply, feederFrom, onUpdateClient }) => {
   const [editing, setEditing] = useState<ElectricalCircuit | null>(null);
+  /** Tablero que alimenta el circuito que se está editando ('' = ninguno). */
+  const [editingFeeds, setEditingFeeds] = useState('');
   const [selectedId, setSelectedId] = useState<string>('');
   const svgRef = useRef<SVGSVGElement>(null);
 
   const rows: DiagramCircuit[] = useMemo(() => {
     const circuits = (client.circuits ?? []).filter((c) => c.panelId === panel.id);
-    return circuits.map((circuit) => ({
-      circuit,
-      analysis: analyzeCircuit(
+    return circuits.map((circuit) => {
+      const loads = client.loads.filter((l) => l.circuitId === circuit.id);
+      const feeds = panelsFedBy(client, circuit.id);
+      return {
         circuit,
-        client.loads.filter((l) => l.circuitId === circuit.id),
-        supply,
-        client.simultaneityFactor
-      ),
+        poles: polesOf(circuit, loads),
+        feeds: feeds.map((p) => p.name),
+        analysis: analyzeCircuit(circuit, loads, supply, client.simultaneityFactor, {
+          differential: differentialOf(circuit, panel),
+          feeds,
+        }),
+      };
+    });
+  }, [client, panel, supply]);
+
+  // El unifilar, como el tablero real: cada diferencial con su grupo
+  const groups: DiagramGroup[] = useMemo(() => {
+    const byId = new Map(rows.map((row) => [row.circuit.id, row]));
+    return protectionGroups(panel, rows.map((row) => row.circuit)).map((group) => ({
+      differential: group.differential,
+      circuits: group.circuits.map((c) => byId.get(c.id) as DiagramCircuit),
     }));
-  }, [client, panel.id, supply]);
+  }, [rows, panel]);
+
+  const differentials = differentialsOf(panel);
+  /** Tableros que pueden colgar de este (de la misma acometida, sin armar un círculo). */
+  const feedablePanels = (client.panels ?? []).filter(
+    (p) => p.id !== panel.id && feedOptions(p, client.panels ?? [], p.supplyId ?? supply.id).some((o) => o.id === panel.id)
+  );
+  const openEditor = (circuit: ElectricalCircuit) => {
+    setEditing(circuit);
+    setEditingFeeds(panelsFedBy(client, circuit.id)[0]?.id ?? '');
+  };
 
   const loadCount = (circuitId: string) => client.loads.filter((l) => l.circuitId === circuitId).length;
   const needsFix = (row: DiagramCircuit) =>
@@ -96,7 +146,17 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
 
   const saveEditing = () => {
     if (!editing) return;
-    onUpdateClient(upsertCircuit(client, { ...editing, code: editing.code.trim() || 'C-?', description: editing.description.trim() }));
+    let next = upsertCircuit(client, {
+      ...editing,
+      code: editing.code.trim() || 'C-?',
+      description: editing.description.trim(),
+      label: editing.label?.trim() || undefined,
+    });
+    // El tablero que alimenta: se descuelga el anterior y se cuelga el elegido
+    const previous = panelsFedBy(next, editing.id).map((p) => p.id);
+    for (const id of previous) if (id !== editingFeeds) next = setFeederCircuit(next, id, null);
+    if (editingFeeds && !previous.includes(editingFeeds)) next = setFeederCircuit(next, editingFeeds, editing.id);
+    onUpdateClient(next);
     setEditing(null);
   };
 
@@ -107,6 +167,9 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
 
   return (
     <div className="space-y-4">
+      {/* Entrada y diferenciales */}
+      <PanelProtections client={client} panel={panel} onUpdateClient={onUpdateClient} />
+
       {/* Acciones */}
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone="neutral">
@@ -123,7 +186,7 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
               Aplicar la AEA a {fixable.length} {fixable.length === 1 ? 'circuito' : 'circuitos'}
             </Button>
           )}
-          <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setEditing(newCircuit(panel.id, client.circuits ?? []))}>
+          <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => openEditor({ ...newCircuit(panel.id, client.circuits ?? []), differentialId: differentials[0]?.id ?? null })}>
             Agregar circuito
           </Button>
           <Button size="sm" variant="ghost" icon={<Download className="h-4 w-4" />} onClick={downloadDiagram}>
@@ -138,7 +201,7 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
           ref={svgRef}
           panel={panel}
           feederFrom={feederFrom}
-          circuits={rows}
+          groups={groups}
           selectedId={selectedId}
           onSelect={setSelectedId}
         />
@@ -150,6 +213,10 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
           const { circuit, analysis } = row;
           const loads = loadCount(circuit.id);
           const problems = analysis.issues.filter((i) => i.level !== 'info');
+          // Circuito monofásico repartido en dos fases: se ofrece dejarlo en la de la mayoría
+          const mixedPhase = analysis.issues.some((i) => /una sola fase/.test(i.text))
+            ? suggestedCircuitPhase(client.loads.filter((l) => l.circuitId === circuit.id))
+            : undefined;
           return (
             <li
               key={circuit.id}
@@ -161,7 +228,7 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
             >
               <div className="flex flex-wrap items-center gap-1.5">
                 <strong className="font-mono text-accent-text">{circuit.code}</strong>
-                <span className="min-w-0 flex-1 truncate font-semibold text-strong">{circuit.description || 'Sin nombre'}</span>
+                <span className="min-w-0 flex-1 truncate font-semibold text-strong">{circuitRotulo(circuit)}</span>
                 {problems.length === 0 ? (
                   <CheckCircle2 className="h-4 w-4 text-success-text" aria-label="Cumple" />
                 ) : (
@@ -169,11 +236,16 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
                 )}
               </div>
               <div className="mt-1 text-xs text-muted">
-                {CIRCUIT_TYPE_LABEL[circuit.kind]} · {circuit.breakerAmps} A · {circuit.cableSection ?? 'cable sin cargar'}
+                {CIRCUIT_TYPE_LABEL[circuit.kind]} · {circuit.curve ?? 'C'}
+                {circuit.breakerAmps} {row.poles} · {circuit.cableSection ?? 'cable sin cargar'}
                 {circuit.lengthMeters ? ` · ${circuit.lengthMeters} m` : ''}
               </div>
               <div className="mt-0.5 text-xs text-muted">
-                IB {fmt(analysis.demandAmps)} A · {loads} {loads === 1 ? 'carga' : 'cargas'} · {analysis.phaseLabel}
+                {differentialOf(circuit, panel) ? `Bajo el diferencial «${differentialOf(circuit, panel)?.label}»` : 'Sin diferencial'}
+                {row.feeds.length > 0 && <strong className="text-accent-text"> · alimenta a {row.feeds.join(', ')}</strong>}
+              </div>
+              <div className="mt-0.5 text-xs text-muted">
+                IB {formatAmps(analysis.demandAmps)} A · {loads} {loads === 1 ? 'carga' : 'cargas'} · {analysis.phaseLabel}
                 {analysis.dropPercent !== undefined ? ` · caída ${fmt(analysis.dropPercent)} %` : ''}
               </div>
 
@@ -189,7 +261,12 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
               )}
 
               <div className="mt-2 flex flex-wrap gap-1.5">
-                <Button size="sm" variant="ghost" icon={<Edit2 className="h-3.5 w-3.5" />} onClick={() => setEditing(circuit)}>
+                {mixedPhase && (
+                  <Button size="sm" variant="secondary" onClick={() => onUpdateClient(setCircuitPhase(client, circuit.id, mixedPhase))}>
+                    Pasar todo a {mixedPhase}
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" icon={<Edit2 className="h-3.5 w-3.5" />} onClick={() => openEditor(circuit)}>
                   Editar
                 </Button>
                 {needsFix(row) && (
@@ -233,6 +310,13 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField label="Código" value={editing.code} onChange={(code) => setEditing({ ...editing, code })} placeholder="C-1" />
             <TextField
+              label="Rótulo (lo que se pega debajo de la térmica)"
+              value={editing.label ?? ''}
+              onChange={(label) => setEditing({ ...editing, label })}
+              placeholder={editing.description || 'ILUM'}
+              hint="Escribilo como quieras. Si lo dejás vacío se usa «Qué alimenta»."
+            />
+            <TextField
               label="Qué alimenta"
               value={editing.description}
               onChange={(description) => setEditing({ ...editing, description })}
@@ -250,6 +334,35 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
               value={String(editing.breakerAmps)}
               onChange={(value) => setEditing({ ...editing, breakerAmps: Number(value) })}
               options={breakerOptions(editing.breakerAmps)}
+            />
+            <SelectField
+              label="Polos"
+              value={editing.poles ?? ''}
+              onChange={(value) => setEditing({ ...editing, poles: (value || undefined) as BreakerPoles | undefined })}
+              options={[{ value: '', label: 'Automático (bipolar o tetrapolar)' }, ...POLES.map((p) => ({ value: p, label: p }))]}
+            />
+            <SelectField
+              label="Curva"
+              value={editing.curve ?? 'C'}
+              onChange={(value) => setEditing({ ...editing, curve: value as BreakerCurve })}
+              options={CURVES.map((c) => ({ value: c, label: `Curva ${c}` }))}
+              help="B para cargas electrónicas, C para uso general, D para motores que arrancan con mucha corriente."
+            />
+            <SelectField
+              label="Diferencial"
+              value={editing.differentialId === null ? 'ninguno' : editing.differentialId ?? differentials[0]?.id ?? 'ninguno'}
+              onChange={(value) => setEditing({ ...editing, differentialId: value === 'ninguno' ? null : value })}
+              options={[
+                ...differentials.map((dif) => ({ value: dif.id, label: `«${dif.label}» · ${dif.amps} A · ${dif.sensitivityMa} mA` })),
+                { value: 'ninguno', label: 'Sin diferencial' },
+              ]}
+            />
+            <SelectField
+              label="Alimenta a otro tablero"
+              value={editingFeeds}
+              onChange={setEditingFeeds}
+              options={[{ value: '', label: 'No' }, ...feedablePanels.map((p) => ({ value: p.id, label: p.name }))]}
+              help="Para la térmica que baja a un tablero seccional (por ejemplo, «Carnicería» C40 de 4 polos): ese tablero queda colgado de este circuito."
             />
             <SelectField
               label="Sección del cable"

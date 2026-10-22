@@ -98,6 +98,7 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
 │   ├── persistence.test.mjs       Guardado: clientes dañados, varias pestañas e importación
 │   ├── projectFile.test.mjs       Archivo .electropro: formato, abrir, reemplazar, copia e indicador
 │   ├── loadPlacement.test.mjs     En qué circuito va cada equipo nuevo y en qué fase y tensión
+│   ├── panelDevices.test.mjs      Diferenciales, polos, frente del tablero, rótulos y su PDF
 │   └── storage.test.mjs           Persistencia: fallos de escritura, reintentos y borrados
 └── src/
     ├── main.tsx                   Punto de entrada: carga los datos, monta React y registra la PWA
@@ -115,6 +116,7 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
     │   ├── panelTree.ts           Árbol de tableros de cada acometida (de quién se alimenta cada uno)
     │   ├── circuits.ts            Circuitos: armado desde las cargas, edición, revisión AEA y dónde va cada equipo nuevo
     │   ├── loadAssignment.ts      Fase y tensión de un equipo del catálogo según el suministro
+    │   ├── panelDevices.ts        Aparatos del tablero: entrada, diferenciales, accesorios, frente por filas y rótulos
     │   ├── workflow.ts            Etapas, pasos, módulos y progreso del recorrido
     │   ├── plan.ts                Geometría del plano: hojas, rejilla y vínculo con el relevamiento
     │   ├── history.ts             Deshacer y rehacer: pasos, agrupado y tope (puro y sin React)
@@ -128,6 +130,7 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
     │   ├── budgetPdfService.ts    Presupuesto en PDF
     │   ├── planFileService.ts     Plano: guardar como, abrir y exportar a PDF
     │   ├── projectFileService.ts  Proyecto como archivo .electropro: formato, abrir, recientes y estado
+    │   ├── panelLabelsPdf.ts      Rótulos del tablero en PDF a tamaño real
     │   └── fileHandleStore.ts     Archivo vinculado a cada proyecto (para «Guardar» sobre el mismo)
     └── components/
         ├── AppShell.tsx           Cáscara: barra superior, navegación y franja de contexto
@@ -139,7 +142,9 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
         ├── PanelsView.tsx         Tableros eléctricos, protecciones y jerarquía
         ├── PanelTree.tsx          Esquema del inmueble: medidor → principal → seccionales
         ├── CircuitsSection.tsx    Circuitos del tablero: revisión AEA, edición y descarga del unifilar
-        ├── SingleLineDiagram.tsx  Esquema unifilar en SVG
+        ├── SingleLineDiagram.tsx  Esquema unifilar en SVG, agrupado por diferencial
+        ├── PanelProtections.tsx   Entrada (corte/térmica) y diferenciales del tablero
+        ├── PanelFront.tsx         Frente del tablero por filas de riel, con rótulos editables
         ├── DiagnosticView.tsx     Mediciones de campo, índice de seguridad y plan de trabajo
         ├── AuditView.tsx          Cargas, consumos y demanda simultánea
         ├── ConsumptionHistoryView.tsx  Facturación real vs. auditoría (con gráficas)
@@ -204,8 +209,8 @@ cuando hacen falta y no cuentan para el progreso (ver *Módulos* más abajo).
 | Pantalla | Qué resuelve |
 |---|---|
 | **Auditoría de Cargas** | Alta de artefactos desde catálogo o manual, normalización a vatios, corriente y consumo mensual, costo proyectado y verificación contra el breaker principal. Cada equipo se agrega **en un circuito**: elegido a mano, uno nuevo o **automático** (luces y tomas se suman a un circuito de su tipo que tenga lugar; aires, hornos y motores van en uno propio con térmica y cable de la AEA). La térmica se edita por circuito |
-| **Balance de Fases** | Reparto de cargas por fase, desbalance NEMA, corriente de neutro y **auto-balanceo** automático de cargas entre L1/L2/L3 |
-| **Tableros & Esquema** | Inventario de tableros con protecciones y mediciones; árbol real de tableros (medidor → principal → seccionales), con **«+ Tablero que sale de acá»** y **«Se alimenta de»** en cada tablero para armar y cambiar las conexiones desde el dibujo (el tablero nuevo sale en su acometida, con la térmica un escalón por debajo y el alimentador de la AEA; no se ofrecen conexiones en círculo, y al quitar un tablero los que colgaban de él pasan al de arriba); **circuitos** de cada tablero revisados con la AEA (térmica, cable, sección mínima y caída de tensión) y **esquema unifilar** que se arma solo y se descarga en SVG |
+| **Balance de Fases** | Reparto de cargas por fase, desbalance NEMA, corriente de neutro y **auto-balanceo** automático entre L1/L2/L3, que mueve **circuitos enteros** (un circuito monofásico va en una sola fase; un equipo que se suma a un circuito toma su fase, y la revisión avisa y ofrece «Pasar todo a Lx» si un circuito quedó en dos fases) |
+| **Tableros & Esquema** | Inventario de tableros con protecciones y mediciones; árbol real de tableros (medidor → principal → seccionales), con **«+ Tablero que sale de acá»** y **«Se alimenta de»** en cada tablero para armar y cambiar las conexiones desde el dibujo (el tablero nuevo sale en su acometida, con la térmica un escalón por debajo y el alimentador de la AEA; no se ofrecen conexiones en círculo, y al quitar un tablero los que colgaban de él pasan al de arriba); **circuitos** de cada tablero revisados con la AEA (térmica, cable, sección mínima, caída de tensión, diferencial de 30 mA y selectividad con el tablero que alimentan) y **esquema unifilar** como el tablero real (corte general y/o térmica, varios diferenciales cada uno con su grupo, circuitos sin diferencial, polos y curva) que se descarga en SVG. **Frente del tablero**: las filas de riel con cada aparato en su lugar y su ancho en módulos, que se acomoda a mano, con accesorios (borneras, repartidor, DPS) y **rótulos editables** que salen en PDF a tamaño real (17,5 mm por módulo) para recortar y pegar |
 | **Diagnóstico & Plan** | Mediciones in situ → índice de seguridad, nivel de riesgo y plan de acción priorizado (crítica/alta/media/preventiva) con materiales y horas estimadas |
 | **Historial de Consumo** | Facturación mensual real vs. consumo calculado por el inventario de cargas, con gráficas y "diagnóstico forense" (detecta fugas a tierra, medidor descalibrado o cargas no declaradas) |
 | **Presupuesto & Materiales** | Presupuesto generado automáticamente desde tableros, cargas y diagnóstico; **catálogo de 90 productos por marca** (filtrá por marca, categoría o búsqueda y agregá con un clic), markup, impuestos, descuentos, estados y PDF |

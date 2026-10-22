@@ -421,7 +421,8 @@ export function calculateDemand(
 
 /**
  * Auto-Balance Optimizer Algorithm:
- * Redistributes 1-Phase loads among L1, L2, L3 to minimize unbalance.
+ * Redistributes 1-Phase loads among L1, L2, L3 to minimize unbalance, moving each
+ * circuit as a whole (all the loads of a circuit share its phase).
  */
 export function autoBalanceLoads(
   loads: ApplianceLoad[],
@@ -447,24 +448,31 @@ export function autoBalanceLoads(
     return result;
   }
 
-  if (serviceType === 'Bifásico (2F+N)') {
-    // Sort 1F loads by descending current
-    adjustable1FIndices.sort((a, b) => {
-      const ampsA = calculateCurrent(
-        result[a].powerWatts * result[a].quantity,
-        result[a].voltage || nominalVoltage,
-        result[a].powerFactor,
-        '1F'
-      );
-      const ampsB = calculateCurrent(
-        result[b].powerWatts * result[b].quantity,
-        result[b].voltage || nominalVoltage,
-        result[b].powerFactor,
-        '1F'
-      );
-      return ampsB - ampsA;
+  // Los equipos de un mismo circuito van juntos: un circuito monofásico es una sola fase.
+  // Cada grupo (un circuito, o un equipo suelto) se mueve entero.
+  const groups = new Map<string, number[]>();
+  adjustable1FIndices.forEach((idx) => {
+    const key = result[idx].circuitId ? `circuito:${result[idx].circuitId}` : `equipo:${idx}`;
+    groups.set(key, [...(groups.get(key) ?? []), idx]);
+  });
+  const ampsOf = (idx: number) =>
+    calculateCurrent(
+      result[idx].powerWatts * result[idx].quantity,
+      result[idx].voltage || nominalVoltage,
+      result[idx].powerFactor,
+      '1F'
+    );
+  // De mayor a menor corriente
+  const units = [...groups.values()]
+    .map((indices) => ({ indices, amps: indices.reduce((acc, idx) => acc + ampsOf(idx), 0) }))
+    .sort((a, b) => b.amps - a.amps);
+  const assign = (indices: number[], phase: PhaseAssignment) => {
+    indices.forEach((idx) => {
+      result[idx].assignedPhase = phase;
     });
+  };
 
+  if (serviceType === 'Bifásico (2F+N)') {
     let l1Current = 0;
     let l2Current = 0;
 
@@ -483,40 +491,17 @@ export function autoBalanceLoads(
     });
 
     // Greedy partition
-    adjustable1FIndices.forEach((idx) => {
-      const item = result[idx];
-      const amps = calculateCurrent(
-        item.powerWatts * item.quantity,
-        item.voltage || nominalVoltage,
-        item.powerFactor,
-        '1F'
-      );
+    units.forEach(({ indices, amps }) => {
       if (l1Current <= l2Current) {
-        item.assignedPhase = 'L1';
+        assign(indices, 'L1');
         l1Current += amps;
       } else {
-        item.assignedPhase = 'L2';
+        assign(indices, 'L2');
         l2Current += amps;
       }
     });
   } else {
     // Trifásico
-    adjustable1FIndices.sort((a, b) => {
-      const ampsA = calculateCurrent(
-        result[a].powerWatts * result[a].quantity,
-        result[a].voltage || nominalVoltage,
-        result[a].powerFactor,
-        '1F'
-      );
-      const ampsB = calculateCurrent(
-        result[b].powerWatts * result[b].quantity,
-        result[b].voltage || nominalVoltage,
-        result[b].powerFactor,
-        '1F'
-      );
-      return ampsB - ampsA;
-    });
-
     let l1Current = 0;
     let l2Current = 0;
     let l3Current = 0;
@@ -556,22 +541,15 @@ export function autoBalanceLoads(
     });
 
     // Greedy allocation to least loaded phase
-    adjustable1FIndices.forEach((idx) => {
-      const item = result[idx];
-      const amps = calculateCurrent(
-        item.powerWatts * item.quantity,
-        item.voltage || nominalVoltage,
-        item.powerFactor,
-        '1F'
-      );
+    units.forEach(({ indices, amps }) => {
       if (l1Current <= l2Current && l1Current <= l3Current) {
-        item.assignedPhase = 'L1';
+        assign(indices, 'L1');
         l1Current += amps;
       } else if (l2Current <= l1Current && l2Current <= l3Current) {
-        item.assignedPhase = 'L2';
+        assign(indices, 'L2');
         l2Current += amps;
       } else {
-        item.assignedPhase = 'L3';
+        assign(indices, 'L3');
         l3Current += amps;
       }
     });
