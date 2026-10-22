@@ -7,20 +7,14 @@
  * imagen real para el tipo (ver `deviceImages.ts`), se usa en lugar del dibujo.
  */
 import React from 'react';
+import type { BoardPartKind } from '../../types/electrical';
+import type { PartPhoto } from '../../services/partImages';
+import { imageCrop } from '../../utils/imageFit';
+import { DEVICE_H, MODULE_W } from './deviceMetrics';
 
-/** Ancho de un módulo DIN y alto de un aparato, en unidades del dibujo. */
-export const MODULE_W = 30;
-export const DEVICE_H = 118;
+export { DEVICE_H, MODULE_W };
 
-export type DeviceArtKind =
-  | 'termica'
-  | 'diferencial'
-  | 'corte'
-  | 'dps'
-  | 'bornera_tierra'
-  | 'bornera_neutro'
-  | 'repartidor'
-  | 'otro';
+export type DeviceArtKind = BoardPartKind;
 
 export interface DeviceArtProps {
   kind: DeviceArtKind;
@@ -28,6 +22,10 @@ export interface DeviceArtProps {
   amps?: number;
   curve?: string;
   sensitivityMa?: number;
+  /** Función del cable (borne de paso): R, S, T, N o tierra. */
+  phase?: string;
+  /** Foto propia (con su ajuste) que reemplaza al dibujo: llena la caja del aparato. */
+  photo?: PartPhoto;
   /** Imagen real que reemplaza al dibujo, si se cargó una. */
   imageHref?: string;
   /** `module`: se repite por módulo; `stretch`: se estira al ancho del aparato. */
@@ -77,6 +75,11 @@ export const DeviceDefs: React.FC = () => (
       <stop offset="0" stopColor="#4d6988" />
       <stop offset="0.4" stopColor="#7899bd" />
       <stop offset="1" stopColor="#4d6988" />
+    </linearGradient>
+    <linearGradient id="pf-tube" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stopColor="#5f656e" />
+      <stop offset="0.45" stopColor="#c2c7ce" />
+      <stop offset="1" stopColor="#5f656e" />
     </linearGradient>
     <pattern id="pf-duct" width="10" height="10" patternUnits="userSpaceOnUse">
       <rect width="10" height="10" fill="#dde0e5" />
@@ -267,6 +270,42 @@ const TerminalBlock: React.FC<{ modules: number; gradient: string; mark: string;
   );
 };
 
+const ROLE_MARK: Record<string, string> = { L1: 'R', L2: 'S', L3: 'T', N: 'N', PE: 'PE' };
+
+/** Borne de paso sobre riel: una entrada arriba y otra abajo, del color de su función. */
+const PassTerminal: React.FC<{ modules: number; phase?: string }> = ({ modules, phase }) => {
+  const width = modules * MODULE_W;
+  const gradient = phase === 'PE' ? 'url(#pf-green)' : phase === 'N' ? 'url(#pf-blue)' : '#d9dce1';
+  const dark = phase === 'PE' || phase === 'N';
+  return (
+    <g>
+      <rect x={2} y={0} width={width - 4} height={DEVICE_H} rx={3} fill={gradient} stroke="#4b5563" strokeWidth={1} />
+      {phase === 'PE' && <rect x={2} y={DEVICE_H / 2 - 3} width={width - 4} height={6} fill="#f2d21b" opacity={0.95} />}
+      {[3, DEVICE_H - 15].map((y) => (
+        <rect key={y} x={width / 2 - 8} y={y} width={16} height={12} rx={2} fill="#15181c" />
+      ))}
+      <Screw cx={width / 2} cy={34} r={5} />
+      <Screw cx={width / 2} cy={DEVICE_H - 34} r={5} />
+      <FaceText x={width / 2} y={DEVICE_H / 2 + 3} size={9} fill={dark ? '#ffffff' : '#23272d'}>
+        {ROLE_MARK[phase ?? 'L1'] ?? 'R'}
+      </FaceText>
+    </g>
+  );
+};
+
+/** Tope de riel: la pieza que sujeta los aparatos en los extremos. */
+const EndStop: React.FC<{ modules: number }> = ({ modules }) => {
+  const width = modules * MODULE_W;
+  return (
+    <g>
+      <rect x={width / 2 - 8} y={26} width={16} height={66} rx={3} fill="url(#pf-terminal)" stroke={EDGE} strokeWidth={1} />
+      <rect x={width / 2 - 11} y={22} width={22} height={7} rx={2} fill="#9aa1ab" stroke={EDGE} strokeWidth={0.8} />
+      <rect x={width / 2 - 11} y={89} width={22} height={7} rx={2} fill="#9aa1ab" stroke={EDGE} strokeWidth={0.8} />
+      <Screw cx={width / 2} cy={59} r={4.5} />
+    </g>
+  );
+};
+
 const Generic: React.FC<{ modules: number }> = ({ modules }) => {
   const width = modules * MODULE_W;
   return (
@@ -295,10 +334,37 @@ const DeviceImage: React.FC<{ href: string; modules: number; tiling: 'module' | 
       ))}
     </g>
   ) : (
-    <image href={href} x={0} y={0} width={modules * MODULE_W} height={DEVICE_H} preserveAspectRatio="none" />
+    <image href={href} x={0} y={0} width={modules * MODULE_W} height={DEVICE_H} preserveAspectRatio="xMidYMid meet" />
   );
 
+/** Foto del aparato: llena la caja sin deformarse, según el ajuste elegido (zoom y desplazamiento). */
+const PhotoLayer: React.FC<{ photo: PartPhoto; modules: number }> = ({ photo, modules }) => {
+  const width = modules * MODULE_W;
+  if (photo.fit?.stretch) {
+    return (
+      <svg x={0} y={0} width={width} height={DEVICE_H} viewBox={`0 0 ${width} ${DEVICE_H}`}>
+        <image href={photo.href} x={0} y={0} width={width} height={DEVICE_H} preserveAspectRatio="none" />
+      </svg>
+    );
+  }
+  if (photo.width && photo.height) {
+    const crop = imageCrop({ width: photo.width, height: photo.height }, width, DEVICE_H, photo.fit);
+    return (
+      <svg x={0} y={0} width={width} height={DEVICE_H} viewBox={`${crop.x} ${crop.y} ${crop.w} ${crop.h}`} preserveAspectRatio="none">
+        <image href={photo.href} x={0} y={0} width={photo.width} height={photo.height} preserveAspectRatio="none" />
+      </svg>
+    );
+  }
+  // Foto guardada sin medidas: se llena la caja recortando lo que sobre.
+  return (
+    <svg x={0} y={0} width={width} height={DEVICE_H} viewBox={`0 0 ${width} ${DEVICE_H}`}>
+      <image href={photo.href} x={0} y={0} width={width} height={DEVICE_H} preserveAspectRatio="xMidYMid slice" />
+    </svg>
+  );
+};
+
 export const DeviceArt: React.FC<DeviceArtProps> = (props) => {
+  if (props.photo) return <PhotoLayer photo={props.photo} modules={props.modules} />;
   if (props.imageHref) {
     return <DeviceImage href={props.imageHref} modules={props.modules} tiling={props.imageTiling ?? 'stretch'} />;
   }
@@ -317,6 +383,10 @@ export const DeviceArt: React.FC<DeviceArtProps> = (props) => {
       return <TerminalBlock modules={props.modules} gradient="url(#pf-blue)" mark="NEUTRO" />;
     case 'repartidor':
       return <TerminalBlock modules={props.modules} gradient="url(#pf-steel)" mark="REPARTIDOR" />;
+    case 'borne':
+      return <PassTerminal modules={props.modules} phase={props.phase} />;
+    case 'tope':
+      return <EndStop modules={props.modules} />;
     default:
       return <Generic modules={props.modules} />;
   }

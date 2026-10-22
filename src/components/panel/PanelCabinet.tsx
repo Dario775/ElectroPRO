@@ -8,16 +8,16 @@
 import React from 'react';
 import type { FrontItem } from '../../utils/panelDevices';
 import { DEVICE_H, DeviceArt, DeviceDefs, MODULE_W, type DeviceArtKind } from './deviceArt';
+import { artKindOf } from './deviceMetrics';
+import { LABEL_H, PartLabel } from './partLabel';
 import { DEVICE_IMAGES, DEVICE_IMAGE_TILING } from './deviceImages';
 import { WIRE_STYLES, rolesInUse, wireTerminals, type WireRole } from './wiring';
+import { readImageStore, slotPhoto } from '../../services/partImages';
 
 /* Medidas del gabinete, en unidades del dibujo. */
 const SIDE = 54;
 const TITLE_H = 82;
 const DUCT_H = 18;
-const LABEL_H = 66;
-/** Parte de la tira del rótulo que ocupa el nombre; abajo va el código del circuito. */
-const LABEL_TEXT_H = 52;
 /** Aire entre una canaleta y los aparatos de la fila de abajo. */
 const DUCT_GAP = 20;
 /** Alto de una fila: aparato, rótulo y la canaleta de abajo, que es también la de arriba de la fila siguiente. */
@@ -37,14 +37,6 @@ export interface PanelCabinetProps {
   images?: Partial<Record<DeviceArtKind, string>>;
   /** Tender los cables de colores entre los bornes y las canaletas. */
   showWires?: boolean;
-}
-
-/** Qué se dibuja para cada aparato del frente. */
-export function artKindOf(item: FrontItem): DeviceArtKind {
-  if (item.kind === 'corte') return 'corte';
-  if (item.kind === 'diferencial') return 'diferencial';
-  if (item.kind === 'accesorio') return item.accessoryKind ?? 'otro';
-  return 'termica';
 }
 
 /** Medidas totales del dibujo para un conjunto de filas. */
@@ -80,54 +72,6 @@ const Gland: React.FC<{ x: number; y: number }> = ({ x, y }) => (
     <ellipse cx={x} cy={y + 26} rx={7} ry={2.4} fill="#0f1114" />
   </g>
 );
-
-/** Ancho aproximado de un texto en mayúsculas negrita, por unidad de tamaño de letra. */
-const CHAR_WIDTH = 0.64;
-
-/** Parte un rótulo en dos renglones lo más parejos posible, cortando en espacios. */
-function splitInTwo(text: string): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length < 2) return [text];
-  let best = [text];
-  let bestGap = Infinity;
-  for (let cut = 1; cut < words.length; cut++) {
-    const lines = [words.slice(0, cut).join(' '), words.slice(cut).join(' ')];
-    const gap = Math.abs(lines[0].length - lines[1].length);
-    if (gap < bestGap) {
-      best = lines;
-      bestGap = gap;
-    }
-  }
-  return best;
-}
-
-export interface LabelLayout {
-  vertical: boolean;
-  fontSize: number;
-  lines: string[];
-}
-
-/**
- * Cómo se escribe un rótulo en su tira: en horizontal si entra con letra legible; si no,
- * girado a 90° (como en los tableros reales), en uno o dos renglones y con la letra
- * achicada hasta que entre.
- */
-export function labelLayout(text: string, itemWidth: number): LabelLayout {
-  const horizontal = (itemWidth - 6) / (Math.max(1, text.length) * CHAR_WIDTH);
-  if (horizontal >= 7.5) return { vertical: false, fontSize: Math.min(10.5, horizontal), lines: [text] };
-
-  const room = LABEL_TEXT_H - 8;
-  const oneLine = room / (Math.max(1, text.length) * CHAR_WIDTH);
-  const twoLines = splitInTwo(text);
-  const longest = Math.max(...twoLines.map((line) => line.length));
-  const twoLineSize = Math.min(room / (longest * CHAR_WIDTH), (itemWidth - 6) / (twoLines.length * 1.15));
-
-  // Un renglón mientras la letra sea legible; si no, dos renglones.
-  if (oneLine >= 7.5 || twoLines.length === 1) {
-    return { vertical: true, fontSize: Math.max(5.5, Math.min(10, oneLine, itemWidth - 8)), lines: [text] };
-  }
-  return { vertical: true, fontSize: Math.max(5.5, Math.min(9, twoLineSize)), lines: twoLines };
-}
 
 /** Un aparato ya ubicado en el dibujo. */
 interface Placed {
@@ -217,6 +161,7 @@ export const PanelCabinet: React.FC<PanelCabinetProps> = ({
   const { width, height } = cabinetSize(rows, perRow);
   const railWidth = width - SIDE * 2;
   const placed = layoutRows(rows);
+  const photos = readImageStore();
   const ductRect = (y: number): React.ReactNode => (
     <rect
       key={`duct-${y}`}
@@ -335,6 +280,7 @@ export const PanelCabinet: React.FC<PanelCabinetProps> = ({
               amps={item.amps}
               curve={item.curve}
               sensitivityMa={item.sensitivityMa}
+              photo={slotPhoto(photos, kind, item.modules)}
               imageHref={images[kind]}
               imageTiling={DEVICE_IMAGE_TILING[kind]}
             />
@@ -349,9 +295,6 @@ export const PanelCabinet: React.FC<PanelCabinetProps> = ({
 
       {/* 5. Rótulos y selección */}
       {placed.map(({ item, rowIndex, x, deviceY, width: itemWidth }) => {
-        const rotulo = item.label.toUpperCase();
-        const clipId = `pf-clip-${rowIndex}-${x}`;
-        const { vertical, fontSize, lines } = labelLayout(rotulo, itemWidth);
         const selected = item.key === selectedKey;
 
         return (
@@ -361,50 +304,7 @@ export const PanelCabinet: React.FC<PanelCabinetProps> = ({
             onClick={() => select(item.key)}
             style={{ cursor: onSelect ? 'pointer' : 'default' }}
           >
-            <clipPath id={clipId}>
-              <rect x={3} y={DEVICE_H + 6} width={itemWidth - 6} height={LABEL_H} />
-            </clipPath>
-            <rect x={3} y={DEVICE_H + 6} width={itemWidth - 6} height={LABEL_H} rx={2.5} fill="#ffffff" stroke="#b8bec6" strokeWidth={1} />
-            <g clipPath={`url(#${clipId})`}>
-              {lines.map((line, lineIndex) => {
-                // Los renglones quedan centrados en la tira, uno junto al otro.
-                const offset = (lineIndex - (lines.length - 1) / 2) * fontSize * 1.15;
-                const centerX = itemWidth / 2;
-                const centerY = DEVICE_H + 6 + LABEL_TEXT_H / 2;
-                return (
-                  <text
-                    key={lineIndex}
-                    x={0}
-                    y={0}
-                    transform={
-                      vertical
-                        ? `translate(${centerX + offset + fontSize * 0.34} ${centerY}) rotate(-90)`
-                        : `translate(${centerX} ${centerY + fontSize * 0.34})`
-                    }
-                    fontSize={fontSize}
-                    fontWeight={800}
-                    fill="#23272d"
-                    textAnchor="middle"
-                    fontFamily="Inter, 'Segoe UI', Arial, sans-serif"
-                  >
-                    {line}
-                  </text>
-                );
-              })}
-              {item.code && (
-                <text
-                  x={itemWidth / 2}
-                  y={DEVICE_H + 6 + LABEL_H - 6}
-                  fontSize={7.5}
-                  fontWeight={600}
-                  fill="#6b7280"
-                  textAnchor="middle"
-                  fontFamily="Inter, 'Segoe UI', Arial, sans-serif"
-                >
-                  {item.code}
-                </text>
-              )}
-            </g>
+            <PartLabel uid={`${rowIndex}-${x}`} label={item.label} code={item.code} width={itemWidth} />
             {selected && (
               <rect
                 x={-1}

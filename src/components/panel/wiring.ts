@@ -1,14 +1,15 @@
 /**
  * Qué cable va a cada borne de un aparato, y de qué color (código AEA).
  *
- * Es solo lógica, sin dibujo: `PanelCabinet` la usa para tender los cables. Cada
- * módulo DIN de un aparato modular tiene un borne arriba y otro abajo; las
- * borneras de barra tienen dos agujeros por módulo.
+ * Es solo lógica, sin dibujo: el frente realista y el editor la usan para tender
+ * los cables. Cada módulo DIN de un aparato modular tiene un borne arriba y otro
+ * abajo; las borneras de barra tienen dos agujeros por módulo.
  */
+import type { BoardPartKind, BoardWireRole } from '../../types/electrical';
 import type { FrontItem } from '../../utils/panelDevices';
-import { MODULE_W } from './deviceArt';
+import { MODULE_W } from './deviceMetrics';
 
-export type WireRole = 'L1' | 'L2' | 'L3' | 'N' | 'PE';
+export type WireRole = BoardWireRole;
 
 export interface WireStyle {
   /** Color del aislante. */
@@ -26,6 +27,8 @@ export const WIRE_STYLES: Record<WireRole, WireStyle> = {
   N: { main: '#3db7ee', label: 'Neutro (celeste)' },
   PE: { main: '#2e9e48', stripe: '#f2d21b', label: 'Tierra (verde y amarillo)' },
 };
+
+export const WIRE_ROLES: WireRole[] = ['L1', 'L2', 'L3', 'N', 'PE'];
 
 export interface WireTerminal {
   /** Posición horizontal del borne, desde el borde izquierdo del aparato. */
@@ -71,39 +74,62 @@ export function rolesOfPoles(poles: string | undefined, modules: number, assignm
   }
 }
 
+/** Datos de un aparato que definen sus bornes. */
+export interface TerminalSource {
+  kind: BoardPartKind;
+  modules: number;
+  poles?: string;
+  phase?: string;
+}
+
+/** Los bornes con cable de un aparato, según su tipo, ancho, polos y fase. */
+export function terminalSpecs({ kind, modules, poles, phase }: TerminalSource): WireTerminal[] {
+  const holes = modules * 2;
+  const holeX = (index: number): number => (MODULE_W / 2) * index + MODULE_W / 4;
+  const block = (role: WireRole): WireTerminal[] =>
+    Array.from({ length: holes }, (_, index) => ({ x: holeX(index), role, sides: ['bottom'] }));
+
+  switch (kind) {
+    case 'bornera_tierra':
+      return block('PE');
+    case 'bornera_neutro':
+      return block('N');
+    case 'repartidor':
+      return block('L1');
+    case 'dps':
+      return rolesOfPoles(undefined, modules).map((role, index) => ({
+        x: MODULE_W * index + MODULE_W / 2,
+        role,
+        sides: ['bottom'],
+      }));
+    case 'otro':
+    case 'tope':
+      return [];
+    case 'borne':
+      // Borne de paso: una sola función, arriba y abajo. La elige el campo de fase.
+      return [{ x: MODULE_W / 2, role: WIRE_ROLES.find((role) => role === phase) ?? 'L1', sides: ['top', 'bottom'] }];
+    default:
+      return rolesOfPoles(poles, modules, phase)
+        .slice(0, modules)
+        .map((role, index) => ({ x: MODULE_W * index + MODULE_W / 2, role, sides: ['top', 'bottom'] }));
+  }
+}
+
+function partKindOfItem(item: FrontItem): BoardPartKind {
+  if (item.kind === 'accesorio') return item.accessoryKind ?? 'otro';
+  if (item.kind === 'diferencial') return 'diferencial';
+  if (item.kind === 'corte') return 'corte';
+  return 'termica';
+}
+
 /** Los bornes con cable de un aparato del frente. */
 export function wireTerminals(item: FrontItem): WireTerminal[] {
-  if (item.kind === 'accesorio') {
-    const holes = item.modules * 2;
-    const holeX = (index: number): number => (MODULE_W / 2) * index + MODULE_W / 4;
-    const block = (role: WireRole): WireTerminal[] =>
-      Array.from({ length: holes }, (_, index) => ({ x: holeX(index), role, sides: ['bottom'] }));
-    switch (item.accessoryKind) {
-      case 'bornera_tierra':
-        return block('PE');
-      case 'bornera_neutro':
-        return block('N');
-      case 'repartidor':
-        return block('L1');
-      case 'dps':
-        return rolesOfPoles(undefined, item.modules).map((role, index) => ({
-          x: MODULE_W * index + MODULE_W / 2,
-          role,
-          sides: ['bottom'],
-        }));
-      default:
-        return [];
-    }
-  }
-
-  return rolesOfPoles(item.poles, item.modules, item.phase)
-    .slice(0, item.modules)
-    .map((role, index) => ({ x: MODULE_W * index + MODULE_W / 2, role, sides: ['top', 'bottom'] }));
+  return terminalSpecs({ kind: partKindOfItem(item), modules: item.modules, poles: item.poles, phase: item.phase });
 }
 
 /** Los colores que aparecen en el tablero, para la leyenda, en orden de código. */
 export function rolesInUse(items: FrontItem[]): WireRole[] {
   const used = new Set<WireRole>();
   for (const item of items) for (const terminal of wireTerminals(item)) used.add(terminal.role);
-  return (['L1', 'L2', 'L3', 'N', 'PE'] as WireRole[]).filter((role) => used.has(role));
+  return WIRE_ROLES.filter((role) => used.has(role));
 }

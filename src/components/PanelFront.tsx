@@ -21,6 +21,8 @@ import {
 import { generatePanelLabelsPdf } from '../services/panelLabelsPdf';
 import { downloadBlob, svgToPngBlob } from '../services/svgExport';
 import { PanelCabinet } from './panel/PanelCabinet';
+import { BoardEditor } from './panel/board/BoardEditor';
+import { PartPhotoSlots } from './panel/PartPhotoSlots';
 import { cx } from '../utils/cx';
 import { Badge } from './ui/Card';
 import { Button, IconButton } from './ui/Button';
@@ -57,7 +59,9 @@ const ADDABLE: PanelAccessoryKind[] = ['bornera_tierra', 'bornera_neutro', 'repa
 export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateClient }) => {
   const [selected, setSelected] = useState<string>('');
   const [accessoryKind, setAccessoryKind] = useState<PanelAccessoryKind>('bornera_tierra');
-  const [view, setView] = useState<'realista' | 'simple'>('realista');
+  const [view, setView] = useState<'realista' | 'editor' | 'simple'>('realista');
+  const [photosVersion, setPhotosVersion] = useState(0);
+  const [showPhotos, setShowPhotos] = useState(false);
   const [showWires, setShowWires] = useState(true);
   const [exportError, setExportError] = useState('');
   const cabinetRef = useRef<HTMLDivElement>(null);
@@ -132,13 +136,14 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
           Agregar al tablero
         </Button>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <SegmentedControl<'realista' | 'simple'>
+          <SegmentedControl<'realista' | 'editor' | 'simple'>
             size="sm"
             ariaLabel="Aspecto del frente"
             value={view}
             onChange={setView}
             options={[
               { value: 'realista', label: 'Realista' },
+              { value: 'editor', label: 'Editor' },
               { value: 'simple', label: 'Simple' },
             ]}
           />
@@ -175,9 +180,45 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
 
       {exportError && <p className="text-xs font-semibold text-danger-text">{exportError}</p>}
 
-      <p className="text-xs text-muted">
+      <p className={cx('text-xs text-muted', view === 'editor' && 'hidden')}>
         Tocá un aparato para moverlo o cambiarle el rótulo. El ancho de cada uno es el de sus módulos DIN, como en el riel.
       </p>
+
+      {/* Editor: armado a mano con cables */}
+      {view === 'editor' && (
+        <BoardEditor
+          key={panel.id}
+          panel={panel}
+          rows={rows}
+          perRow={perRow}
+          photosVersion={photosVersion}
+          onPhotosChange={() => setPhotosVersion((n) => n + 1)}
+          onUpdatePanel={(patch) => updatePanel(patch)}
+        />
+      )}
+
+      {/* Fotos propias de los aparatos: sirven en el frente realista y en el editor */}
+      {view !== 'simple' && (
+        <div className="rounded-xl border border-hairline bg-sunken p-3">
+          <button
+            type="button"
+            onClick={() => setShowPhotos((open) => !open)}
+            aria-expanded={showPhotos}
+            className="flex w-full items-center justify-between text-left text-sm font-bold text-strong"
+          >
+            Fotos de los aparatos
+            <span className="text-xs font-semibold text-muted">{showPhotos ? 'Ocultar' : 'Cargar fotos propias'}</span>
+          </button>
+          {showPhotos && (
+            <div className="mt-3">
+              <PartPhotoSlots
+                onChange={() => setPhotosVersion((n) => n + 1)}
+                keepImageIds={(panel.board?.parts ?? []).flatMap((part) => (part.imageId ? [part.imageId] : []))}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Frente realista */}
       {view === 'realista' && (
@@ -244,7 +285,7 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
       )}
 
       {/* Aparato elegido */}
-      {selectedItem && (
+      {view !== 'editor' && selectedItem && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-accent-line bg-accent-soft p-3 text-sm">
           <strong className="text-strong">{selectedItem.code ? `${selectedItem.code} · ` : ''}{KIND_TITLE[selectedItem.kind]}</strong>
           <label className="flex items-center gap-2 text-xs font-semibold text-muted">

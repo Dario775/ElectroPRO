@@ -245,6 +245,124 @@ export interface ElectricalPanel {
   frontRows?: string[][];
   /** Módulos DIN que entran en cada fila de riel. */
   modulesPerRow?: number;
+  /** Tablero armado a mano en el editor: aparatos sobre rieles y cables. */
+  board?: BoardLayout;
+}
+
+/* ------------------------------------------------------------------ *
+ * Editor de tableros                                                  *
+ * ------------------------------------------------------------------ */
+
+/** Tipos de aparato que se pueden ubicar en el editor. */
+export type BoardPartKind =
+  | 'termica'
+  | 'diferencial'
+  | 'corte'
+  | 'dps'
+  | 'bornera_tierra'
+  | 'bornera_neutro'
+  | 'repartidor'
+  | 'borne'
+  | 'tope'
+  | 'otro';
+
+/** Función de un cable: fases R, S, T, neutro o tierra (define el color). */
+export type BoardWireRole = 'L1' | 'L2' | 'L3' | 'N' | 'PE';
+
+/** Un aparato sobre el tablero. `x`, `y` es su esquina superior izquierda. */
+export interface BoardPart {
+  id: string;
+  kind: BoardPartKind;
+  x: number;
+  y: number;
+  /** Ancho en módulos DIN (17,5 mm). */
+  modules: number;
+  label: string;
+  /** Código del circuito («C-3»). */
+  code?: string;
+  amps?: number;
+  curve?: string;
+  sensitivityMa?: number;
+  poles?: string;
+  /** Fase a la que está conectado («L1», «L2», «L3», «L1-L2»…). */
+  phase?: string;
+  /** Foto propia de este aparato (ver `services/partImages`). */
+  imageId?: string;
+}
+
+/** Accesorios sueltos del armado: no van sobre el riel ni tienen bornes. */
+export type BoardAccessoryKind = 'prensacable' | 'canaleta' | 'peine';
+
+export interface BoardAccessory {
+  id: string;
+  kind: BoardAccessoryKind;
+  /** Esquina superior izquierda. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Color del peine (la fase o el neutro que reparte). */
+  role?: BoardWireRole;
+  /** Prensacable: `true` si la tuerca está arriba (el tubo sale hacia abajo). */
+  flip?: boolean;
+  /** Lo puso «cablear automáticamente»; se reemplaza al volver a cablear. */
+  auto?: boolean;
+}
+
+/** Riel DIN. `y` es la altura del borde superior de los aparatos que van en él. */
+export interface BoardRail {
+  id: string;
+  x: number;
+  y: number;
+  modules: number;
+}
+
+export interface BoardPoint {
+  x: number;
+  y: number;
+}
+
+/** Un borne de un aparato: el módulo `index` (de izquierda a derecha), arriba o abajo. */
+export interface BoardTerminalRef {
+  partId: string;
+  index: number;
+  side: 'top' | 'bottom';
+}
+
+/** Un cable: poligonal con ángulos rectos, que puede nacer y terminar en bornes. */
+export interface BoardWire {
+  id: string;
+  role: BoardWireRole;
+  points: BoardPoint[];
+  from?: BoardTerminalRef;
+  to?: BoardTerminalRef;
+  /** Sección del conductor en mm²: define el grosor del cable y el color de las punteras. */
+  section?: number;
+  /** Lo tendió «cablear automáticamente»; se reemplaza al volver a cablear. */
+  auto?: boolean;
+}
+
+/** Texto suelto sobre el tablero, con una flecha hacia lo que explica. */
+export interface BoardNote {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  /** Punta de la flecha. */
+  tx: number;
+  ty: number;
+}
+
+export interface BoardLayout {
+  rails: BoardRail[];
+  parts: BoardPart[];
+  wires: BoardWire[];
+  notes: BoardNote[];
+  /** Círculos numerados sobre los aparatos y la leyenda debajo. */
+  numbering: boolean;
+  accessories?: BoardAccessory[];
+  /** Punteras en los extremos de los cables que entran a un borne (por omisión, sí). */
+  ferrules?: boolean;
 }
 
 export type SupportedCurrency = 'USD' | 'ARS';
