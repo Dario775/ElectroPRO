@@ -260,7 +260,7 @@ const TerminalBlock: React.FC<{ modules: number; gradient: string; mark: string;
           </g>
         );
       })}
-      <FaceText x={width / 2} y={DEVICE_H - 30} size={9} fill="#ffffff">
+      <FaceText x={width / 2} y={54} size={7.5} fill="#ffffff">
         {mark}
       </FaceText>
     </g>

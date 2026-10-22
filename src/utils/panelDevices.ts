@@ -193,6 +193,8 @@ export interface FrontItem {
   poles?: string;
   /** Qué accesorio es, cuando `kind` es `accesorio`. */
   accessoryKind?: PanelAccessoryKind;
+  /** Fase a la que está conectado el circuito («L1», «L2-L3», «3F»…), según sus cargas. */
+  phase?: string;
 }
 
 /** Todos los aparatos del frente, en las filas en que se acomodarían solos (como en un tablero real). */
@@ -256,6 +258,7 @@ function autoRows(panel: ElectricalPanel, circuits: ElectricalCircuit[], loads: 
     amps: circuit.breakerAmps,
     curve: circuit.curve ?? 'C',
     poles: polesOf(circuit, loadsOf(circuit.id)),
+    phase: loadsOf(circuit.id)[0]?.assignedPhase,
   });
 
   const rows: FrontItem[][] = [top];

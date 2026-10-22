@@ -58,6 +58,7 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
   const [selected, setSelected] = useState<string>('');
   const [accessoryKind, setAccessoryKind] = useState<PanelAccessoryKind>('bornera_tierra');
   const [view, setView] = useState<'realista' | 'simple'>('realista');
+  const [showWires, setShowWires] = useState(true);
   const [exportError, setExportError] = useState('');
   const cabinetRef = useRef<HTMLDivElement>(null);
 
@@ -142,9 +143,20 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
             ]}
           />
           {view === 'realista' && (
-            <Button size="sm" variant="secondary" icon={<ImageDown className="h-4 w-4" />} onClick={exportPng}>
-              Imagen (PNG)
-            </Button>
+            <>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-muted">
+                <input
+                  type="checkbox"
+                  checked={showWires}
+                  onChange={(e) => setShowWires(e.target.checked)}
+                  className="h-4 w-4 accent-current text-accent-text"
+                />
+                Cables
+              </label>
+              <Button size="sm" variant="secondary" icon={<ImageDown className="h-4 w-4" />} onClick={exportPng}>
+                Imagen (PNG)
+              </Button>
+            </>
           )}
           <Button
             size="sm"
@@ -177,6 +189,7 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
             subtitle={subtitle}
             selectedKey={selected}
             onSelect={(key) => setSelected(key === selected ? '' : key)}
+            showWires={showWires}
           />
         </div>
       )}

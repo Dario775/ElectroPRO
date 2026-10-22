@@ -9,18 +9,19 @@ import React from 'react';
 import type { FrontItem } from '../../utils/panelDevices';
 import { DEVICE_H, DeviceArt, DeviceDefs, MODULE_W, type DeviceArtKind } from './deviceArt';
 import { DEVICE_IMAGES, DEVICE_IMAGE_TILING } from './deviceImages';
+import { WIRE_STYLES, rolesInUse, wireTerminals, type WireRole } from './wiring';
 
 /* Medidas del gabinete, en unidades del dibujo. */
 const SIDE = 54;
-const TITLE_H = 62;
+const TITLE_H = 82;
 const DUCT_H = 18;
 const LABEL_H = 66;
 /** Parte de la tira del rótulo que ocupa el nombre; abajo va el código del circuito. */
 const LABEL_TEXT_H = 52;
+/** Aire entre una canaleta y los aparatos de la fila de abajo. */
+const DUCT_GAP = 20;
 /** Alto de una fila: aparato, rótulo y la canaleta de abajo, que es también la de arriba de la fila siguiente. */
-const ROW_PITCH = DEVICE_H + 6 + LABEL_H + 8 + DUCT_H + 22;
-/** Aire entre la primera canaleta y los aparatos. */
-const DUCT_GAP = 10;
+const ROW_PITCH = DEVICE_H + 6 + LABEL_H + 8 + DUCT_H + DUCT_GAP;
 const FOOTER_H = 84;
 const SELECTION = '#2563eb';
 
@@ -34,6 +35,8 @@ export interface PanelCabinetProps {
   onSelect?: (key: string) => void;
   /** Imágenes reales por tipo de aparato; por omisión las de `deviceImages.ts`. */
   images?: Partial<Record<DeviceArtKind, string>>;
+  /** Tender los cables de colores entre los bornes y las canaletas. */
+  showWires?: boolean;
 }
 
 /** Qué se dibuja para cada aparato del frente. */
@@ -49,7 +52,7 @@ export function cabinetSize(rows: FrontItem[][], perRow: number): { width: numbe
   const widest = Math.max(perRow, ...rows.map((row) => row.reduce((sum, item) => sum + item.modules, 0)));
   return {
     width: widest * MODULE_W + SIDE * 2,
-    height: TITLE_H + DUCT_H + DUCT_GAP + Math.max(1, rows.length) * ROW_PITCH + FOOTER_H - 22,
+    height: TITLE_H + DUCT_H + DUCT_GAP + Math.max(1, rows.length) * ROW_PITCH + FOOTER_H - DUCT_GAP,
   };
 }
 
@@ -126,6 +129,81 @@ export function labelLayout(text: string, itemWidth: number): LabelLayout {
   return { vertical: true, fontSize: Math.max(5.5, Math.min(9, twoLineSize)), lines: twoLines };
 }
 
+/** Un aparato ya ubicado en el dibujo. */
+interface Placed {
+  item: FrontItem;
+  rowIndex: number;
+  x: number;
+  deviceY: number;
+  width: number;
+}
+
+const deviceYOf = (rowIndex: number): number => TITLE_H + DUCT_H + DUCT_GAP + rowIndex * ROW_PITCH;
+/** La canaleta de abajo de una fila es la de arriba de la siguiente. */
+const bottomDuctYOf = (rowIndex: number): number => deviceYOf(rowIndex) + DEVICE_H + 6 + LABEL_H + 8;
+
+function layoutRows(rows: FrontItem[][]): Placed[] {
+  return rows.flatMap((row, rowIndex) => {
+    let cursor = SIDE;
+    return row.map((item) => {
+      const placed = { item, rowIndex, x: cursor, deviceY: deviceYOf(rowIndex), width: item.modules * MODULE_W };
+      cursor += placed.width;
+      return placed;
+    });
+  });
+}
+
+/** Un cable de un borne hasta el centro de la canaleta, con una leve curva para que no quede de regla. */
+const Wire: React.FC<{ x: number; fromY: number; toY: number; role: WireRole; seed: number }> = ({ x, fromY, toY, role, seed }) => {
+  const style = WIRE_STYLES[role];
+  const drift = ((seed * 37) % 7) - 3;
+  const endX = x + drift * 1.6;
+  const middle = (fromY + toY) / 2;
+  const path = `M ${x} ${fromY} C ${x} ${middle}, ${endX} ${middle}, ${endX} ${toY}`;
+  return (
+    <g fill="none" strokeLinecap="round">
+      <path d={path} stroke="#00000040" strokeWidth={6} />
+      <path d={path} stroke={style.main} strokeWidth={4.2} />
+      {style.stripe && <path d={path} stroke={style.stripe} strokeWidth={4.2} strokeDasharray="6 6" />}
+      <path d={path} stroke="#ffffff" strokeOpacity={0.28} strokeWidth={1} transform="translate(-1 0)" />
+    </g>
+  );
+};
+
+/** Acometida: el cable negro que entra por el costado del gabinete hacia la primera canaleta. */
+const FeederCable: React.FC<{ y: number }> = ({ y }) => (
+  <g>
+    <rect x={4} y={y - 11} width={18} height={22} rx={3} fill="#2a2e34" stroke="#111418" strokeWidth={1} />
+    <rect x={20} y={y - 6} width={SIDE - 12} height={12} fill="#1b1d21" stroke="#0b0c0e" strokeWidth={1} />
+    <line x1={20} y1={y - 3} x2={SIDE - 4} y2={y - 3} stroke="#ffffff" strokeOpacity={0.22} strokeWidth={1.5} />
+  </g>
+);
+
+/** Referencia de colores de los cables que hay en el tablero. */
+const WireLegend: React.FC<{ roles: WireRole[]; y: number }> = ({ roles, y }) => {
+  let cursor = SIDE;
+  return (
+    <g fontFamily="Inter, 'Segoe UI', Arial, sans-serif" fontSize={10.5} fontWeight={600} fill="#4b5563">
+      {roles.map((role) => {
+        const style = WIRE_STYLES[role];
+        const x = cursor;
+        cursor += 30 + style.label.length * 5.6 + 14;
+        return (
+          <g key={role}>
+            <line x1={x} y1={y} x2={x + 22} y2={y} stroke={style.main} strokeWidth={4.4} strokeLinecap="round" />
+            {style.stripe && (
+              <line x1={x} y1={y} x2={x + 22} y2={y} stroke={style.stripe} strokeWidth={4.4} strokeDasharray="5 5" />
+            )}
+            <text x={x + 28} y={y + 3.6}>
+              {style.label}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+};
+
 export const PanelCabinet: React.FC<PanelCabinetProps> = ({
   rows,
   perRow,
@@ -134,9 +212,26 @@ export const PanelCabinet: React.FC<PanelCabinetProps> = ({
   selectedKey,
   onSelect,
   images = DEVICE_IMAGES,
+  showWires = true,
 }) => {
   const { width, height } = cabinetSize(rows, perRow);
   const railWidth = width - SIDE * 2;
+  const placed = layoutRows(rows);
+  const ductRect = (y: number): React.ReactNode => (
+    <rect
+      key={`duct-${y}`}
+      x={SIDE - 10}
+      y={y}
+      width={railWidth + 20}
+      height={DUCT_H}
+      rx={2}
+      fill="url(#pf-duct)"
+      stroke="#9aa1ac"
+      strokeWidth={1}
+    />
+  );
+  const topDuctY = deviceYOf(0) - DUCT_GAP - DUCT_H;
+  const select = (key: string): void => onSelect?.(key);
 
   return (
     <svg
@@ -163,21 +258,14 @@ export const PanelCabinet: React.FC<PanelCabinetProps> = ({
       <FrameScrew x={32} y={height - 32} />
       <FrameScrew x={width - 32} y={height - 32} />
 
-      {/* Título */}
-      <text
-        x={SIDE}
-        y={44}
-        fontSize={20}
-        fontWeight={800}
-        fill="#23272d"
-        fontFamily="Inter, 'Segoe UI', Arial, sans-serif"
-      >
+      {/* Título y referencia de colores */}
+      <text x={SIDE} y={42} fontSize={20} fontWeight={800} fill="#23272d" fontFamily="Inter, 'Segoe UI', Arial, sans-serif">
         {title}
       </text>
       {subtitle && (
         <text
           x={width - SIDE}
-          y={44}
+          y={42}
           fontSize={13}
           fontWeight={600}
           fill="#5d646e"
@@ -187,129 +275,152 @@ export const PanelCabinet: React.FC<PanelCabinetProps> = ({
           {subtitle}
         </text>
       )}
+      {showWires && <WireLegend roles={rolesInUse(rows.flat())} y={64} />}
 
-      {rows.map((row, rowIndex) => {
-        const deviceY = TITLE_H + DUCT_H + DUCT_GAP + rowIndex * ROW_PITCH;
-        const railY = deviceY + 40;
-        const ductBottomY = deviceY + DEVICE_H + 6 + LABEL_H + 8;
-        let cursor = SIDE;
-
+      {/* 1. Riel DIN de cada fila */}
+      {rows.map((_, rowIndex) => {
+        const railY = deviceYOf(rowIndex) + 40;
         return (
-          <g key={rowIndex}>
-            {/* Canaletas: la de arriba solo en la primera fila */}
-            {rowIndex === 0 && (
-              <rect x={SIDE - 10} y={deviceY - DUCT_GAP - DUCT_H} width={railWidth + 20} height={DUCT_H} rx={2} fill="url(#pf-duct)" stroke="#9aa1ac" strokeWidth={1} />
-            )}
-            <rect x={SIDE - 10} y={ductBottomY} width={railWidth + 20} height={DUCT_H} rx={2} fill="url(#pf-duct)" stroke="#9aa1ac" strokeWidth={1} />
-
-            {/* Riel DIN con sus agujeros */}
+          <g key={`riel-${rowIndex}`}>
             <rect x={SIDE - 10} y={railY} width={railWidth + 20} height={36} fill="url(#pf-rail)" stroke="#7d848e" strokeWidth={1} />
             {Array.from({ length: Math.floor((railWidth + 20) / 26) }, (_, index) => (
               <rect key={index} x={SIDE - 4 + index * 26} y={railY + 15} width={14} height={6} rx={3} fill="#6c737d" />
             ))}
+          </g>
+        );
+      })}
 
-            {row.map((item) => {
-              const x = cursor;
-              const itemWidth = item.modules * MODULE_W;
-              cursor += itemWidth;
-              const kind = artKindOf(item);
-              const selected = item.key === selectedKey;
-              const rotulo = item.label.toUpperCase();
-              const clipId = `pf-clip-${rowIndex}-${x}`;
-              const { vertical, fontSize, lines } = labelLayout(rotulo, itemWidth);
+      {/* 2. Cables: salen de cada borne y se pierden en la canaleta */}
+      {showWires && (
+        <g>
+          <FeederCable y={topDuctY + DUCT_H / 2} />
+          {placed.map(({ item, rowIndex, x, deviceY }) =>
+            wireTerminals(item).flatMap((terminal, index) =>
+              terminal.sides.map((side) => {
+                const isBlock = item.kind === 'accesorio' && item.accessoryKind !== 'dps';
+                const fromY = side === 'top' ? deviceY + 9.5 : deviceY + (isBlock ? 75 : DEVICE_H - 9.5);
+                const toY = side === 'top' ? deviceYOf(rowIndex) - DUCT_GAP - DUCT_H / 2 : bottomDuctYOf(rowIndex) + DUCT_H / 2;
+                return (
+                  <Wire
+                    key={`${item.key}-${index}-${side}`}
+                    x={x + terminal.x}
+                    fromY={fromY}
+                    toY={toY}
+                    role={terminal.role}
+                    seed={rowIndex * 31 + index * 7 + Math.round(x)}
+                  />
+                );
+              })
+            )
+          )}
+        </g>
+      )}
 
-              return (
-                <g
-                  key={item.key}
-                  transform={`translate(${x} ${deviceY})`}
-                  onClick={() => onSelect?.(item.key)}
-                  style={{ cursor: onSelect ? 'pointer' : 'default' }}
-                  role={onSelect ? 'button' : undefined}
-                  aria-label={`${item.label}, ${item.detail}`}
+      {/* 3. Aparatos */}
+      {placed.map(({ item, x, deviceY, width: itemWidth }) => {
+        const kind = artKindOf(item);
+        return (
+          <g
+            key={item.key}
+            transform={`translate(${x} ${deviceY})`}
+            onClick={() => select(item.key)}
+            style={{ cursor: onSelect ? 'pointer' : 'default' }}
+            role={onSelect ? 'button' : undefined}
+            aria-label={`${item.label}, ${item.detail}`}
+          >
+            <title>{`${item.label} · ${item.detail}`}</title>
+            <DeviceArt
+              kind={kind}
+              modules={item.modules}
+              amps={item.amps}
+              curve={item.curve}
+              sensitivityMa={item.sensitivityMa}
+              imageHref={images[kind]}
+              imageTiling={DEVICE_IMAGE_TILING[kind]}
+            />
+            <rect x={0} y={0} width={itemWidth} height={DEVICE_H} fill="transparent" data-export="hide" />
+          </g>
+        );
+      })}
+
+      {/* 4. Canaletas, por encima de los cables */}
+      {ductRect(topDuctY)}
+      {rows.map((_, rowIndex) => ductRect(bottomDuctYOf(rowIndex)))}
+
+      {/* 5. Rótulos y selección */}
+      {placed.map(({ item, rowIndex, x, deviceY, width: itemWidth }) => {
+        const rotulo = item.label.toUpperCase();
+        const clipId = `pf-clip-${rowIndex}-${x}`;
+        const { vertical, fontSize, lines } = labelLayout(rotulo, itemWidth);
+        const selected = item.key === selectedKey;
+
+        return (
+          <g
+            key={`rotulo-${item.key}`}
+            transform={`translate(${x} ${deviceY})`}
+            onClick={() => select(item.key)}
+            style={{ cursor: onSelect ? 'pointer' : 'default' }}
+          >
+            <clipPath id={clipId}>
+              <rect x={3} y={DEVICE_H + 6} width={itemWidth - 6} height={LABEL_H} />
+            </clipPath>
+            <rect x={3} y={DEVICE_H + 6} width={itemWidth - 6} height={LABEL_H} rx={2.5} fill="#ffffff" stroke="#b8bec6" strokeWidth={1} />
+            <g clipPath={`url(#${clipId})`}>
+              {lines.map((line, lineIndex) => {
+                // Los renglones quedan centrados en la tira, uno junto al otro.
+                const offset = (lineIndex - (lines.length - 1) / 2) * fontSize * 1.15;
+                const centerX = itemWidth / 2;
+                const centerY = DEVICE_H + 6 + LABEL_TEXT_H / 2;
+                return (
+                  <text
+                    key={lineIndex}
+                    x={0}
+                    y={0}
+                    transform={
+                      vertical
+                        ? `translate(${centerX + offset + fontSize * 0.34} ${centerY}) rotate(-90)`
+                        : `translate(${centerX} ${centerY + fontSize * 0.34})`
+                    }
+                    fontSize={fontSize}
+                    fontWeight={800}
+                    fill="#23272d"
+                    textAnchor="middle"
+                    fontFamily="Inter, 'Segoe UI', Arial, sans-serif"
+                  >
+                    {line}
+                  </text>
+                );
+              })}
+              {item.code && (
+                <text
+                  x={itemWidth / 2}
+                  y={DEVICE_H + 6 + LABEL_H - 6}
+                  fontSize={7.5}
+                  fontWeight={600}
+                  fill="#6b7280"
+                  textAnchor="middle"
+                  fontFamily="Inter, 'Segoe UI', Arial, sans-serif"
                 >
-                  <title>{`${item.label} · ${item.detail}`}</title>
-                  <DeviceArt
-                    kind={kind}
-                    modules={item.modules}
-                    amps={item.amps}
-                    curve={item.curve}
-                    sensitivityMa={item.sensitivityMa}
-                    imageHref={images[kind]}
-                    imageTiling={DEVICE_IMAGE_TILING[kind]}
-                  />
-                  {/* Rótulo pegado debajo del aparato */}
-                  <clipPath id={clipId}>
-                    <rect x={3} y={DEVICE_H + 6} width={itemWidth - 6} height={LABEL_H} />
-                  </clipPath>
-                  <rect
-                    x={3}
-                    y={DEVICE_H + 6}
-                    width={itemWidth - 6}
-                    height={LABEL_H}
-                    rx={2.5}
-                    fill="#ffffff"
-                    stroke="#b8bec6"
-                    strokeWidth={1}
-                  />
-                  <g clipPath={`url(#${clipId})`}>
-                    {lines.map((line, lineIndex) => {
-                      // Los renglones quedan centrados en la tira, uno junto al otro.
-                      const offset = (lineIndex - (lines.length - 1) / 2) * fontSize * 1.15;
-                      const centerX = itemWidth / 2;
-                      const centerY = DEVICE_H + 6 + LABEL_TEXT_H / 2;
-                      return (
-                        <text
-                          key={lineIndex}
-                          x={0}
-                          y={0}
-                          transform={
-                            vertical
-                              ? `translate(${centerX + offset + fontSize * 0.34} ${centerY}) rotate(-90)`
-                              : `translate(${centerX} ${centerY + fontSize * 0.34})`
-                          }
-                          fontSize={fontSize}
-                          fontWeight={800}
-                          fill="#23272d"
-                          textAnchor="middle"
-                          fontFamily="Inter, 'Segoe UI', Arial, sans-serif"
-                        >
-                          {line}
-                        </text>
-                      );
-                    })}
-                    {item.code && (
-                      <text
-                        x={itemWidth / 2}
-                        y={DEVICE_H + 6 + LABEL_H - 6}
-                        fontSize={7.5}
-                        fontWeight={600}
-                        fill="#6b7280"
-                        textAnchor="middle"
-                        fontFamily="Inter, 'Segoe UI', Arial, sans-serif"
-                      >
-                        {item.code}
-                      </text>
-                    )}
-                  </g>
-                  {selected && (
-                    <rect
-                      x={-1}
-                      y={-3}
-                      width={itemWidth + 2}
-                      height={DEVICE_H + LABEL_H + 12}
-                      rx={4}
-                      fill={SELECTION}
-                      fillOpacity={0.1}
-                      stroke={SELECTION}
-                      strokeWidth={2.5}
-                      strokeDasharray="7 4"
-                      data-export="hide"
-                      pointerEvents="none"
-                    />
-                  )}
-                </g>
-              );
-            })}
+                  {item.code}
+                </text>
+              )}
+            </g>
+            {selected && (
+              <rect
+                x={-1}
+                y={-3}
+                width={itemWidth + 2}
+                height={DEVICE_H + LABEL_H + 12}
+                rx={4}
+                fill={SELECTION}
+                fillOpacity={0.1}
+                stroke={SELECTION}
+                strokeWidth={2.5}
+                strokeDasharray="7 4"
+                data-export="hide"
+                pointerEvents="none"
+              />
+            )}
           </g>
         );
       })}
