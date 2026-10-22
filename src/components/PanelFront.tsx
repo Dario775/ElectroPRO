@@ -4,8 +4,8 @@
  * tablero real (entrada arriba, una fila por diferencial con sus circuitos) y se puede
  * acomodar igual a como quedó: mover aparatos, renombrar rótulos y agregar borneras.
  */
-import React, { useMemo, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, FileDown, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, FileDown, ImageDown, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import type { ClientRecord, ElectricalPanel, PanelAccessoryKind } from '../types/electrical';
 import {
   ACCESSORY_LABEL,
@@ -19,9 +19,12 @@ import {
   type FrontMove,
 } from '../utils/panelDevices';
 import { generatePanelLabelsPdf } from '../services/panelLabelsPdf';
+import { downloadBlob, svgToPngBlob } from '../services/svgExport';
+import { PanelCabinet } from './panel/PanelCabinet';
 import { cx } from '../utils/cx';
 import { Badge } from './ui/Card';
 import { Button, IconButton } from './ui/Button';
+import { SegmentedControl } from './ui/Form';
 
 interface PanelFrontProps {
   /** Cliente con circuitos y diferenciales ya normalizados. */
@@ -54,6 +57,9 @@ const ADDABLE: PanelAccessoryKind[] = ['bornera_tierra', 'bornera_neutro', 'repa
 export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateClient }) => {
   const [selected, setSelected] = useState<string>('');
   const [accessoryKind, setAccessoryKind] = useState<PanelAccessoryKind>('bornera_tierra');
+  const [view, setView] = useState<'realista' | 'simple'>('realista');
+  const [exportError, setExportError] = useState('');
+  const cabinetRef = useRef<HTMLDivElement>(null);
 
   const circuits = useMemo(() => (client.circuits ?? []).filter((c) => c.panelId === panel.id), [client, panel.id]);
   const rows = useMemo(() => frontRows(panel, circuits, client.loads), [panel, circuits, client.loads]);
@@ -67,6 +73,24 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
     updatePanel({ frontRows: moveFrontItem(rows.map((row) => row.map((item) => item.key)), key, direction) });
 
   const rename = (key: string, label: string) => onUpdateClient(renameFrontItem(client, panel.id, key, label));
+
+  const exportPng = async (): Promise<void> => {
+    const svg = cabinetRef.current?.querySelector('svg');
+    if (!svg) return;
+    try {
+      setExportError('');
+      const blob = await svgToPngBlob(svg, 2);
+      downloadBlob(blob, `${panel.name.replace(/[^\w\-]+/g, '_') || 'tablero'}.png`);
+    } catch (error: unknown) {
+      setExportError(error instanceof Error ? error.message : 'No se pudo exportar la imagen.');
+    }
+  };
+
+  const subtitle = [
+    panel.mainBreakerPoles,
+    `${panel.mainBreakerAmps} A`,
+    `${usedModules(rows)} módulos`,
+  ].join(' · ');
 
   const accessoryOf = (key: string) => (panel.accessories ?? []).find((a) => `acc:${a.id}` === key);
 
@@ -106,7 +130,22 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
         >
           Agregar al tablero
         </Button>
-        <div className="ml-auto flex flex-wrap gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <SegmentedControl<'realista' | 'simple'>
+            size="sm"
+            ariaLabel="Aspecto del frente"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'realista', label: 'Realista' },
+              { value: 'simple', label: 'Simple' },
+            ]}
+          />
+          {view === 'realista' && (
+            <Button size="sm" variant="secondary" icon={<ImageDown className="h-4 w-4" />} onClick={exportPng}>
+              Imagen (PNG)
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -122,11 +161,28 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
         </div>
       </div>
 
+      {exportError && <p className="text-xs font-semibold text-danger-text">{exportError}</p>}
+
       <p className="text-xs text-muted">
         Tocá un aparato para moverlo o cambiarle el rótulo. El ancho de cada uno es el de sus módulos DIN, como en el riel.
       </p>
 
+      {/* Frente realista */}
+      {view === 'realista' && (
+        <div ref={cabinetRef} className="overflow-x-auto rounded-xl border border-hairline bg-sunken p-3">
+          <PanelCabinet
+            rows={rows}
+            perRow={perRow}
+            title={panel.name}
+            subtitle={subtitle}
+            selectedKey={selected}
+            onSelect={(key) => setSelected(key === selected ? '' : key)}
+          />
+        </div>
+      )}
+
       {/* Filas de riel */}
+      {view === 'simple' && (
       <div className="space-y-3 overflow-x-auto rounded-xl border border-hairline bg-sunken p-3">
         {rows.map((row, r) => {
           const used = usedModules([row]);
@@ -172,6 +228,7 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
           );
         })}
       </div>
+      )}
 
       {/* Aparato elegido */}
       {selectedItem && (

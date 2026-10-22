@@ -185,6 +185,14 @@ export interface FrontItem {
   modules: number;
   /** «C16 · 2,5 mm²», «40 A · 30 mA»… */
   detail: string;
+  /* Datos para dibujar el aparato (ver `components/panel/deviceArt`). */
+  amps?: number;
+  curve?: string;
+  /** Sensibilidad del diferencial, en mA. */
+  sensitivityMa?: number;
+  poles?: string;
+  /** Qué accesorio es, cuando `kind` es `accesorio`. */
+  accessoryKind?: PanelAccessoryKind;
 }
 
 /** Todos los aparatos del frente, en las filas en que se acomodarían solos (como en un tablero real). */
@@ -199,6 +207,8 @@ function autoRows(panel: ElectricalPanel, circuits: ElectricalCircuit[], loads: 
       label: panel.entryLabel?.trim() || 'CORTE GRAL',
       modules: entryModules,
       detail: `Corte ${panel.switchAmps ?? panel.mainBreakerAmps} A`,
+      amps: panel.switchAmps ?? panel.mainBreakerAmps,
+      poles: panel.mainBreakerPoles,
     });
   }
   if (entryKind !== 'corte') {
@@ -208,14 +218,31 @@ function autoRows(panel: ElectricalPanel, circuits: ElectricalCircuit[], loads: 
       label: panel.mainBreakerLabel?.trim() || 'GENERAL',
       modules: entryModules,
       detail: `${panel.mainBreakerCurve ?? 'C'}${panel.mainBreakerAmps} · ${panel.mainBreakerPoles}`,
+      amps: panel.mainBreakerAmps,
+      curve: panel.mainBreakerCurve ?? 'C',
+      poles: panel.mainBreakerPoles,
     });
   }
   const accessories = panel.accessories ?? [];
   if (panel.hasSurgeProtector && !accessories.some((a) => a.kind === 'dps')) {
-    top.push({ key: 'dps', kind: 'accesorio', label: 'DPS', modules: 2, detail: panel.surgeProtectorType ?? 'Descargador' });
+    top.push({
+      key: 'dps',
+      kind: 'accesorio',
+      label: 'DPS',
+      modules: 2,
+      detail: panel.surgeProtectorType ?? 'Descargador',
+      accessoryKind: 'dps',
+    });
   }
   for (const accessory of accessories) {
-    top.push({ key: `acc:${accessory.id}`, kind: 'accesorio', label: accessory.label, modules: accessory.modules, detail: ACCESSORY_LABEL[accessory.kind] });
+    top.push({
+      key: `acc:${accessory.id}`,
+      kind: 'accesorio',
+      label: accessory.label,
+      modules: accessory.modules,
+      detail: ACCESSORY_LABEL[accessory.kind],
+      accessoryKind: accessory.kind,
+    });
   }
 
   const loadsOf = (circuitId: string) => loads.filter((l) => l.circuitId === circuitId);
@@ -226,6 +253,9 @@ function autoRows(panel: ElectricalPanel, circuits: ElectricalCircuit[], loads: 
     code: circuit.code,
     modules: MODULES_BY_POLES[polesOf(circuit, loadsOf(circuit.id))],
     detail: `${circuit.curve ?? 'C'}${circuit.breakerAmps}${circuit.cableSection ? ` · ${circuit.cableSection}` : ''}`,
+    amps: circuit.breakerAmps,
+    curve: circuit.curve ?? 'C',
+    poles: polesOf(circuit, loadsOf(circuit.id)),
   });
 
   const rows: FrontItem[][] = [top];
@@ -238,6 +268,9 @@ function autoRows(panel: ElectricalPanel, circuits: ElectricalCircuit[], loads: 
         label: group.differential.label,
         modules: group.differential.poles === '4P' ? 4 : 2,
         detail: `${group.differential.amps} A · ${group.differential.sensitivityMa} mA`,
+        amps: group.differential.amps,
+        sensitivityMa: group.differential.sensitivityMa,
+        poles: group.differential.poles,
       });
     }
     row.push(...group.circuits.map(circuitItem));
