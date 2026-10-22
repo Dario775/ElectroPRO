@@ -24,7 +24,7 @@ import { ClientRecord, ElectricalPanel, ApplianceLoad, PanelMeasurements, PanelT
 import { describeSupply, getSupplies, supplyOfPanel } from '../utils/supplies';
 import { cableOptions } from '../utils/aea';
 import { calculateDemand, calculatePhaseBalance } from '../utils/electricalMath';
-import { buildPanelTree } from '../utils/panelTree';
+import { buildPanelTree, feedOptions, newPanelFrom, removePanel } from '../utils/panelTree';
 import { assignLoadToCircuit, dinModulesOf, syncCircuits } from '../utils/circuits';
 import { PanelTree, type PanelTreeGroup, type PanelTreeStats } from './PanelTree';
 import { CircuitsSection } from './CircuitsSection';
@@ -281,40 +281,37 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
   }, [panelAnalytics, activePanel]);
 
   // Handle Open Create / Edit Modal
+  /**
+   * Tablero nuevo que sale de `parent` (o del medidor si es `null`), en su acometida.
+   * Sale con la térmica un escalón por debajo y el alimentador de la AEA.
+   */
+  const handleAddPanel = (parent: ElectricalPanel | null, supply: ServiceSupply) => {
+    setEditingPanel(newPanelFrom(parent, panels, supply));
+    setIsPanelModalOpen(true);
+  };
+
+  /** Cambia de qué tablero se alimenta uno (y lo pasa a la acometida de ese tablero). */
+  const handleChangeParent = (panel: ElectricalPanel, parentId: string) => {
+    const parent = panels.find((p) => p.id === parentId);
+    if (!parent) return;
+    onUpdateClient({
+      ...client,
+      panels: panels.map((p) => (p.id === panel.id ? { ...p, parentPanelId: parentId, supplyId: supplyOf(parent).id } : p)),
+    });
+  };
+
   const handleOpenPanelModal = (panelToEdit?: ElectricalPanel) => {
     if (panelToEdit) {
       setEditingPanel(JSON.parse(JSON.stringify(panelToEdit)));
-    } else {
-      const nextNum = panels.length + 1;
-      const newPanel: ElectricalPanel = {
-        id: `panel_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-        name: `Tablero Seccional 0${nextNum} (TS-0${nextNum})`,
-        type: 'seccional',
-        location: 'Interior Inmueble',
-        parentPanelId: panels[0]?.id || '',
-        mainBreakerAmps: 25,
-        mainBreakerPoles: '2P',
-        mainBreakerCurve: 'C',
-        mainBreakerKACapacity: 4.5,
-        hasDifferential: true,
-        differentialAmps: 25,
-        differentialSensitivityMa: 30,
-        differentialPoles: '2P',
-        hasSurgeProtector: false,
-        hasGroundBar: true,
-        hasIsolatedNeutralBar: true,
-        totalDinModules: 12,
-        usedDinModules: 6,
-        feederGauge: '6 mm²',
-        feederMaterial: 'copper',
-        feederLengthMeters: 12,
-        physicalCondition: 'bueno',
-        hasHotSpots: false,
-        isLabeled: true,
-      };
-      setEditingPanel(newPanel);
+      setIsPanelModalOpen(true);
+      return;
     }
-    setIsPanelModalOpen(true);
+    // Sin tablero elegido: sale del que se está mirando, en la acometida que se está viendo
+    const supply =
+      supplyFilter === 'all' ? supplyOf(activePanel) : supplies.find((s) => s.id === supplyFilter) ?? primarySupply;
+    const sameSupply = panels.filter((p) => supplyOf(p).id === supply.id);
+    const parent = sameSupply.find((p) => p.id === activePanel.id) ?? sameSupply.find((p) => p.type === 'principal') ?? null;
+    handleAddPanel(parent, supply);
   };
 
   // Save Panel
@@ -365,7 +362,8 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
       l.panelId === panelIdToDelete ? { ...l, panelId: fallbackPanelId } : l
     );
 
-    const updatedPanels = panels.filter((p) => p.id !== panelIdToDelete);
+    // Los tableros que colgaban del borrado pasan a alimentarse del de arriba, para no quedar sin origen.
+    const updatedPanels = removePanel(panels, panelIdToDelete);
 
     onUpdateClient({
       ...client,
@@ -457,6 +455,9 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
           selectedId={activePanel.id}
           onSelect={setSelectedPanelId}
           onFixLink={handleOpenPanelModal}
+          onAddPanel={handleAddPanel}
+          feedOptionsFor={(panel) => feedOptions(panel, panels, supplyOf(panel).id)}
+          onChangeParent={handleChangeParent}
         />
       </Collapsible>
 
@@ -1021,9 +1022,10 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
                     onChange={(value) => updatePanelField({ parentPanelId: value })}
                     options={[
                       { value: '', label: 'Sin definir' },
-                      ...panels
-                        .filter((panel) => panel.id !== editingPanel.id)
-                        .map((panel) => ({ value: panel.id, label: `${panel.name} — ${panel.location}` })),
+                      ...feedOptions(editingPanel, panels, editingPanel.supplyId || primarySupply.id).map((panel) => ({
+                        value: panel.id,
+                        label: panel.location ? `${panel.name} — ${panel.location}` : panel.name,
+                      })),
                     ]}
                     help="Indica de qué tablero le llega la alimentación: así se arma el esquema jerárquico."
                   />

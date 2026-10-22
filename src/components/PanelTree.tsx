@@ -6,7 +6,7 @@
  * colgado del medidor con línea punteada y un botón para corregirlo.
  */
 import React from 'react';
-import { AlertTriangle, MapPin } from 'lucide-react';
+import { AlertTriangle, MapPin, Plus } from 'lucide-react';
 import type { ElectricalPanel, ServiceSupply } from '../types/electrical';
 import { PANEL_LINK_ISSUE_TEXT, type PanelTreeNode } from '../utils/panelTree';
 import { cx } from '../utils/cx';
@@ -30,6 +30,11 @@ interface PanelTreeProps {
   onSelect: (panelId: string) => void;
   /** Abre la edición del tablero para corregir de dónde se alimenta. */
   onFixLink: (panel: ElectricalPanel) => void;
+  /** Agrega un tablero que sale de `parent` (o del medidor, si es `null`). */
+  onAddPanel: (parent: ElectricalPanel | null, supply: ServiceSupply) => void;
+  /** Tableros de los que puede alimentarse uno (sin círculos ni otra acometida). */
+  feedOptionsFor: (panel: ElectricalPanel) => ElectricalPanel[];
+  onChangeParent: (panel: ElectricalPanel, parentId: string) => void;
 }
 
 const PANEL_TYPE_LABEL: Record<ElectricalPanel['type'], string> = {
@@ -58,9 +63,12 @@ interface NodeProps extends Omit<PanelTreeProps, 'groups'> {
   node: PanelTreeNode;
   isLast: boolean;
   parentName?: string;
+  supply: ServiceSupply;
 }
 
-const PanelTreeItem: React.FC<NodeProps> = ({ node, isLast, parentName, stats, selectedId, onSelect, onFixLink }) => {
+const PanelTreeItem: React.FC<NodeProps> = (props) => {
+  const { node, isLast, parentName, stats, selectedId, onSelect, onFixLink, onAddPanel, feedOptionsFor, onChangeParent, supply } =
+    props;
   const { panel, issue } = node;
   const info = stats.get(panel.id) ?? { capacityUtilization: 0, circuits: 0, totalWatts: 0 };
   const isSelected = panel.id === selectedId;
@@ -137,6 +145,36 @@ const PanelTreeItem: React.FC<NodeProps> = ({ node, isLast, parentName, stats, s
           )}
         </button>
 
+        {/* Conexión del tablero, sin abrir el formulario */}
+        <div className="mt-1.5 flex max-w-xl flex-wrap items-center gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => onAddPanel(panel, supply)}
+            className="inline-flex items-center gap-1 rounded-lg border border-edge bg-surface px-2 py-1 font-semibold text-accent-text hover:border-accent-line"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Tablero que sale de acá
+          </button>
+          {panel.type !== 'principal' && (
+            <label className="flex items-center gap-1.5 text-muted">
+              Se alimenta de
+              <select
+                aria-label={`De qué tablero se alimenta ${panel.name}`}
+                value={issue ? '' : panel.parentPanelId ?? ''}
+                onChange={(event) => onChangeParent(panel, event.target.value)}
+                className="max-w-[200px] rounded-lg border border-field-line bg-sunken px-1.5 py-1 font-semibold text-strong"
+              >
+                {issue && <option value="">— elegir —</option>}
+                {feedOptionsFor(panel).map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+
         {issue && (
           <div className="mt-1.5 flex max-w-xl flex-wrap items-center gap-2 rounded-lg border border-warning-line bg-warning-soft px-2.5 py-1.5 text-xs text-warning-text">
             <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
@@ -157,13 +195,10 @@ const PanelTreeItem: React.FC<NodeProps> = ({ node, isLast, parentName, stats, s
           {node.children.map((child, index) => (
             <PanelTreeItem
               key={child.panel.id}
+              {...props}
               node={child}
               isLast={index === node.children.length - 1}
               parentName={panel.name}
-              stats={stats}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              onFixLink={onFixLink}
             />
           ))}
         </ul>
@@ -190,14 +225,25 @@ export const PanelTree: React.FC<PanelTreeProps> = ({ groups, ...rest }) => (
           </div>
         </div>
 
-        {nodes.length === 0 ? (
-          <p className="mt-3 text-xs text-muted">Esta acometida todavía no tiene tableros.</p>
-        ) : (
+        {nodes.length > 0 && (
           <ul className="ml-5 mt-1 pt-2">
             {nodes.map((node, index) => (
-              <PanelTreeItem key={node.panel.id} node={node} isLast={index === nodes.length - 1} {...rest} />
+              <PanelTreeItem key={node.panel.id} node={node} isLast={index === nodes.length - 1} supply={supply} {...rest} />
             ))}
           </ul>
+        )}
+        {!nodes.some((node) => node.panel.type === 'principal') && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
+            {nodes.length === 0 && 'Esta acometida todavía no tiene tableros.'}
+            <button
+              type="button"
+              onClick={() => rest.onAddPanel(null, supply)}
+              className="inline-flex items-center gap-1 rounded-lg border border-edge bg-surface px-2 py-1 font-semibold text-accent-text hover:border-accent-line"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Tablero principal
+            </button>
+          </div>
         )}
       </div>
     ))}

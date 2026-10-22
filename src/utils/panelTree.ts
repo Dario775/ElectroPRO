@@ -1,4 +1,6 @@
-import type { ElectricalPanel } from '../types/electrical';
+import type { ElectricalPanel, ServiceSupply } from '../types/electrical';
+import { IEC_BREAKERS, MIN_SECTION_MM2 } from './aea';
+import { sizeBreakerAndCable } from './electricalMath';
 
 /**
  * Árbol de tableros de una acometida: de quién se alimenta cada uno.
@@ -90,4 +92,108 @@ export function buildPanelTree(panels: ElectricalPanel[]): PanelTreeNode[] {
 /** Todos los nodos del árbol en el orden en que se dibujan. */
 export function flattenPanelTree(nodes: PanelTreeNode[]): PanelTreeNode[] {
   return nodes.flatMap((node) => [node, ...flattenPanelTree(node.children)]);
+}
+
+/* ------------------------------------------------------------------ */
+/* Agregar tableros y cambiar sus conexiones                           */
+/* ------------------------------------------------------------------ */
+
+type SupplyData = Pick<ServiceSupply, 'id' | 'serviceType' | 'mainBreakerAmps'>;
+
+/** Tableros que cuelgan (directa o indirectamente) de uno. */
+function descendantsOf(panelId: string, panels: ElectricalPanel[]): Set<string> {
+  const found = new Set<string>();
+  const pending = [panelId];
+  while (pending.length > 0) {
+    const current = pending.pop() as string;
+    for (const child of panels) {
+      if (child.parentPanelId === current && !found.has(child.id) && child.id !== panelId) {
+        found.add(child.id);
+        pending.push(child.id);
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * Tableros de los que se puede alimentar uno: de su misma acometida, y nunca él
+ * mismo ni uno que cuelga de él (sería un círculo). El principal sale del medidor.
+ */
+export function feedOptions(panel: ElectricalPanel, panels: ElectricalPanel[], supplyId: string): ElectricalPanel[] {
+  if (panel.type === 'principal') return [];
+  const below = descendantsOf(panel.id, panels);
+  return panels.filter(
+    (candidate) => candidate.id !== panel.id && !below.has(candidate.id) && (candidate.supplyId ?? supplyId) === supplyId
+  );
+}
+
+/** Térmica un escalón por debajo de la del tablero de origen, para que haya selectividad. */
+function breakerBelow(parentAmps: number): number {
+  const lower = IEC_BREAKERS.filter((amps) => amps < parentAmps);
+  return lower.length > 0 ? lower[lower.length - 1] : IEC_BREAKERS[0];
+}
+
+function nextPanelNumber(panels: ElectricalPanel[]): number {
+  const numbers = panels.map((p) => Number(p.name.match(/T[SP]-?0*(\d+)/i)?.[1] ?? 0));
+  return Math.max(panels.length, ...numbers) + 1;
+}
+
+/**
+ * Tablero nuevo, listo para editar: conectado al que lo alimenta (o al medidor si
+ * es el primero de la acometida), con térmica y alimentador según la AEA.
+ */
+export function newPanelFrom(parent: ElectricalPanel | null, panels: ElectricalPanel[], supply: SupplyData): ElectricalPanel {
+  const threePhase = supply.serviceType === 'Trifásico (3F+N)';
+  const twoPhase = supply.serviceType === 'Bifásico (2F+N)';
+  const isPrincipal = parent === null;
+  const breaker = isPrincipal
+    ? IEC_BREAKERS.find((amps) => amps >= (supply.mainBreakerAmps || 40)) ?? 40
+    : breakerBelow(parent.mainBreakerAmps || 40);
+  const feeder = sizeBreakerAndCable({
+    nominalAmps: breaker,
+    isContinuousLoad: false,
+    ambientTempC: 40,
+    circuitsInRaceway: 1,
+    loadedConductors: threePhase ? 3 : 2,
+    material: 'copper',
+    minSectionMm2: MIN_SECTION_MM2.LINEA_PRINCIPAL,
+  });
+  const number = String(nextPanelNumber(panels)).padStart(2, '0');
+
+  return {
+    id: `panel_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    name: isPrincipal ? `Tablero Principal (TP-${number})` : `Tablero Seccional ${number} (TS-${number})`,
+    type: isPrincipal ? 'principal' : 'seccional',
+    location: '',
+    supplyId: supply.id,
+    parentPanelId: parent?.id,
+    mainBreakerAmps: breaker,
+    mainBreakerPoles: threePhase ? '3P+N' : twoPhase ? '2P' : '1P+N',
+    mainBreakerCurve: 'C',
+    mainBreakerKACapacity: isPrincipal ? 6 : 4.5,
+    hasDifferential: true,
+    differentialAmps: breaker,
+    differentialSensitivityMa: 30,
+    differentialPoles: threePhase ? '4P' : '2P',
+    hasSurgeProtector: false,
+    hasGroundBar: true,
+    hasIsolatedNeutralBar: true,
+    totalDinModules: 12,
+    usedDinModules: 0,
+    feederGauge: feeder.conductor.label,
+    feederMaterial: 'copper',
+    feederLengthMeters: 10,
+    physicalCondition: 'bueno',
+    hasHotSpots: false,
+    isLabeled: false,
+  };
+}
+
+/** Quita un tablero: los que colgaban de él pasan a alimentarse del de arriba. */
+export function removePanel(panels: ElectricalPanel[], panelId: string): ElectricalPanel[] {
+  const removed = panels.find((p) => p.id === panelId);
+  return panels
+    .filter((p) => p.id !== panelId)
+    .map((p) => (p.parentPanelId === panelId ? { ...p, parentPanelId: removed?.parentPanelId } : p));
 }
