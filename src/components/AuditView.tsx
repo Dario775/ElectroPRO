@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Zap,
   Plus,
@@ -36,7 +36,18 @@ import { cx } from '../utils/cx';
 import { Button } from './ui/Button';
 import { Badge, Callout, EmptyState, SectionHeader, Stat } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
-import { getSupplies, loadsOfSupply, supplyOfLoad } from '../utils/supplies';
+import { getSupplies, loadsOfSupply, supplyOfLoad, supplyOfPanel } from '../utils/supplies';
+import { predictAssignment } from '../utils/loadAssignment';
+import { IEC_BREAKERS } from '../utils/aea';
+import {
+  addLoadToCircuit,
+  assignLoadToCircuit,
+  circuitLabel,
+  previewCircuitPlacement,
+  syncCircuits,
+  upsertCircuit,
+  type CircuitTarget,
+} from '../utils/circuits';
 import { Field, NumberField, SegmentedControl, SelectField, TextField } from './ui/Form';
 import { Modal } from './ui/Modal';
 
@@ -80,56 +91,6 @@ function phaseOptions(serviceType: ClientRecord['serviceType']): Array<{ value: 
     { value: 'L3-L1', label: 'L3-L1 (entre fases)' },
     { value: '3F', label: 'Trifásico (las tres fases)' },
   ];
-}
-
-interface Assignment {
-  assignedPhase: PhaseAssignment;
-  systemPhase: '1F' | '2F' | '3F';
-  voltage: number;
-}
-
-/**
- * Calcula a qué fase y con qué tensión se conecta un equipo del catálogo.
- * Reparte siempre hacia la fase menos cargada, que es lo que mantiene el sistema
- * balanceado. Se usa para agregar la carga y también para previsualizarlo en la
- * tarjeta, así el usuario ve qué va a pasar antes de tocar el botón.
- */
-function predictAssignment(client: ClientRecord, item: CatalogItem): Assignment {
-  const countByPhase = (phase: PhaseAssignment): number =>
-    client.loads.filter((load) => load.assignedPhase === phase).length;
-
-  if (client.serviceType === 'Monofásico (1F+N)') {
-    return { assignedPhase: 'L1', systemPhase: '1F', voltage: client.nominalVoltage };
-  }
-
-  if (client.serviceType === 'Bifásico (2F+N)') {
-    if (item.defaultSystemPhase === '2F' || item.defaultVoltage >= 208) {
-      return { assignedPhase: 'L1-L2', systemPhase: '2F', voltage: client.lineVoltage || 240 };
-    }
-    return {
-      assignedPhase: countByPhase('L1') <= countByPhase('L2') ? 'L1' : 'L2',
-      systemPhase: '1F',
-      voltage: client.nominalVoltage || 120,
-    };
-  }
-
-  // Trifásico
-  if (item.defaultSystemPhase === '3F') {
-    return { assignedPhase: '3F', systemPhase: '3F', voltage: client.lineVoltage || 220 };
-  }
-
-  const l1 = countByPhase('L1');
-  const l2 = countByPhase('L2');
-  const l3 = countByPhase('L3');
-  const assignedPhase: PhaseAssignment = l1 <= l2 && l1 <= l3 ? 'L1' : l2 <= l1 && l2 <= l3 ? 'L2' : 'L3';
-  return { assignedPhase, systemPhase: '1F', voltage: client.nominalVoltage || 120 };
-}
-
-/** Térmica sugerida para una potencia dada. */
-function suggestBreaker(powerWatts: number): number {
-  if (powerWatts > 2500) return 30;
-  if (powerWatts > 1500) return 20;
-  return 15;
 }
 
 interface LoadPreviewProps {
@@ -222,13 +183,31 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
   const [customDays, setCustomDays] = useState<number>(30);
   const [customVoltage, setCustomVoltage] = useState<number>(client.nominalVoltage || 120);
   const [customPhase, setCustomPhase] = useState<PhaseAssignment>('L1');
-  const [customBreaker, setCustomBreaker] = useState<number>(15);
-  const [customCircuit, setCustomCircuit] = useState('');
+  const [customCircuit, setCustomCircuit] = useState<CircuitTarget>('auto');
   const [customPanelId, setCustomPanelId] = useState<string>(client.panels?.[0]?.id || 'panel_main');
+  /** Dónde se agregan los equipos del catálogo: tablero y circuito (o automático). */
+  const [catalogPanelId, setCatalogPanelId] = useState<string>(client.panels?.[0]?.id || 'panel_main');
+  const [catalogCircuit, setCatalogCircuit] = useState<CircuitTarget>('auto');
   const [selectedPanelFilter, setSelectedPanelFilter] = useState<string>('all');
   const [selectedSupplyFilter, setSelectedSupplyFilter] = useState<string>('all');
 
   const supplies = getSupplies(client);
+  // Circuitos de cada tablero (los clientes viejos los arman con el circuito de cada carga)
+  const synced = useMemo(() => syncCircuits(client), [client]);
+  const circuitOfLoad = useMemo(() => new Map(synced.loads.map((l) => [l.id, l.circuitId ?? ''])), [synced]);
+  const panelIds = (client.panels ?? []).map((p) => p.id);
+  const panelOrFirst = (panelId: string) => (panelIds.includes(panelId) ? panelId : panelIds[0] ?? 'panel_main');
+  const circuitsOfPanel = (panelId: string) => (synced.circuits ?? []).filter((c) => c.panelId === panelOrFirst(panelId));
+  const placementFor = (panelId: string, target: CircuitTarget) => {
+    const panel = (client.panels ?? []).find((p) => p.id === panelOrFirst(panelId));
+    return { panelId: panelOrFirst(panelId), target, supply: supplyOfPanel(client, panel) };
+  };
+  /** Opciones del selector de circuito para un tablero. */
+  const circuitOptions = (panelId: string) => [
+    { value: 'auto', label: 'Automático (recomendado)' },
+    { value: 'new', label: 'Un circuito nuevo' },
+    ...circuitsOfPanel(panelId).map((c) => ({ value: c.id, label: `${circuitLabel(c)} · ${c.kind} · ${c.breakerAmps} A` })),
+  ];
 
   const summary = calculatePhaseBalance(
     client.loads,
@@ -272,12 +251,11 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
   });
 
   // Agregar una carga desde el catálogo
-  const handleAddFromCatalog = (item: CatalogItem) => {
+  /** La carga que se agregaría desde el catálogo (sin circuito todavía). */
+  const loadFromCatalog = (item: CatalogItem): ApplianceLoad => {
     const { assignedPhase, systemPhase, voltage } = predictAssignment(client, item);
     const powerWatts = unitToWatts(item.defaultWatts, item.defaultUnit, item.defaultPF);
-    const newCircuitIndex = client.loads.length + 1;
-
-    const newLoad: ApplianceLoad = {
+    return {
       id: `load_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       name: item.name,
       category: item.category,
@@ -289,14 +267,16 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
       voltage,
       systemPhase,
       assignedPhase,
-      circuitName: `C-${newCircuitIndex} ${item.name.slice(0, 14)}`,
-      panelId: selectedPanelFilter !== 'all' ? selectedPanelFilter : client.panels?.[0]?.id || 'panel_main',
-      breakerRatingAmps: suggestBreaker(powerWatts),
+      circuitName: '',
+      breakerRatingAmps: 0,
       hoursPerDay: item.defaultHours,
       daysPerMonth: 30,
     };
+  };
 
-    onUpdateClient({ ...client, loads: [...client.loads, newLoad] });
+  // Agregar una carga desde el catálogo, en el circuito elegido (o el que decide el programa)
+  const handleAddFromCatalog = (item: CatalogItem) => {
+    onUpdateClient(addLoadToCircuit(synced, loadFromCatalog(item), placementFor(catalogPanelId, catalogCircuit)));
   };
 
   // Add custom load
@@ -307,7 +287,6 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
     const powerWatts = unitToWatts(customPower, customUnit, customPF);
     const sysPhase = phaseToSystem(customPhase);
 
-    const newCircuitIndex = client.loads.length + 1;
     const newLoad: ApplianceLoad = {
       id: `load_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       name: customName.trim(),
@@ -320,16 +299,45 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
       voltage: customVoltage,
       systemPhase: sysPhase,
       assignedPhase: customPhase,
-      circuitName: customCircuit.trim() || `C-${newCircuitIndex} ${customName.slice(0, 14)}`,
-      panelId: customPanelId || client.panels?.[0]?.id || 'panel_main',
-      breakerRatingAmps: customBreaker,
+      circuitName: '',
+      breakerRatingAmps: 0,
       hoursPerDay: customHours,
       daysPerMonth: customDays,
     };
 
-    onUpdateClient({ ...client, loads: [...client.loads, newLoad] });
+    onUpdateClient(addLoadToCircuit(synced, newLoad, placementFor(customPanelId, customCircuit)));
     setShowCustomModal(false);
     setCustomName('');
+    setCustomCircuit('auto');
+  };
+
+  /** Dónde va a quedar la carga manual, para mostrarlo antes de agregarla. */
+  const customPreview = previewCircuitPlacement(
+    synced,
+    {
+      id: 'vista_previa',
+      name: customName.trim() || 'Equipo',
+      category: customCategory,
+      quantity: 1,
+      nominalPower: customPower,
+      powerUnit: customUnit,
+      powerWatts: unitToWatts(customPower, customUnit, customPF),
+      powerFactor: customPF,
+      voltage: customVoltage,
+      systemPhase: phaseToSystem(customPhase),
+      assignedPhase: customPhase,
+      circuitName: '',
+      breakerRatingAmps: 0,
+      hoursPerDay: customHours,
+      daysPerMonth: customDays,
+    },
+    placementFor(customPanelId, customCircuit)
+  );
+
+  /** Cambia la térmica del circuito de una carga (la térmica es del circuito, no de cada equipo). */
+  const handleCircuitBreaker = (circuitId: string, breakerAmps: number) => {
+    const circuit = (synced.circuits ?? []).find((c) => c.id === circuitId);
+    if (circuit) onUpdateClient(upsertCircuit(synced, { ...circuit, breakerAmps }));
   };
 
   // Update specific load field
@@ -362,7 +370,6 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
     const duplicated: ApplianceLoad = {
       ...load,
       id: `load_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      circuitName: `${load.circuitName} (Copia)`,
     };
     onUpdateClient({ ...client, loads: [...client.loads, duplicated] });
   };
@@ -562,6 +569,51 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
             </div>
           </div>
 
+          {/* Dónde se agregan: tablero y circuito */}
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-hairline bg-surface px-3 py-2.5 text-xs">
+            <span className="font-bold text-soft">Agregar en</span>
+            {(client.panels ?? []).length > 1 && (
+              <label className="flex items-center gap-2 font-semibold text-muted">
+                Tablero
+                <select
+                  value={panelOrFirst(catalogPanelId)}
+                  onChange={(e) => {
+                    setCatalogPanelId(e.target.value);
+                    setCatalogCircuit('auto');
+                  }}
+                  className="h-9 rounded-xl border border-field-line bg-sunken px-2.5 text-xs font-bold text-strong focus:border-accent focus:outline-none"
+                >
+                  {(client.panels ?? []).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="flex items-center gap-2 font-semibold text-muted">
+              Circuito
+              <select
+                value={catalogCircuit}
+                onChange={(e) => setCatalogCircuit(e.target.value)}
+                className="h-9 max-w-[260px] rounded-xl border border-field-line bg-sunken px-2.5 text-xs font-bold text-strong focus:border-accent focus:outline-none"
+              >
+                {circuitOptions(catalogPanelId).map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-muted">
+              {catalogCircuit === 'auto'
+                ? 'Las luces y las tomas se suman a un circuito de su tipo que tenga lugar; aires, hornos y motores van en uno propio.'
+                : catalogCircuit === 'new'
+                  ? 'Cada equipo que agregues abre su propio circuito, con la térmica y el cable de la AEA.'
+                  : 'Todos los equipos que agregues van a este circuito.'}
+            </span>
+          </div>
+
           {/* Catalog grid */}
           <div className="grid max-h-96 grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
             {filteredCatalog.map((item) => {
@@ -569,6 +621,7 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
               const watts = unitToWatts(item.defaultWatts, item.defaultUnit, item.defaultPF);
               const amps = calculateCurrent(watts, assignment.voltage, item.defaultPF, assignment.systemPhase);
               const monthlyKwh = calculateMonthlyKwh(watts, item.defaultHours, 30);
+              const placement = previewCircuitPlacement(synced, loadFromCatalog(item), placementFor(catalogPanelId, catalogCircuit));
 
               return (
                 <div
@@ -603,7 +656,9 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
                     <p className="rounded-lg border border-hairline bg-surface px-2 py-1.5 text-xs leading-snug text-muted">
                       Se agrega a <strong className="text-strong">{assignment.assignedPhase}</strong> a{' '}
                       <strong className="text-strong">{assignment.voltage} V</strong> · demanda{' '}
-                      <strong className="text-accent-text">{amps.toFixed(1)} A</strong>
+                      <strong className="text-accent-text">{amps.toFixed(1)} A</strong> ·{' '}
+                      {placement.isNew ? 'circuito nuevo ' : 'en '}
+                      <strong className="text-strong">{placement.label}</strong> ({placement.breakerAmps} A)
                     </p>
                   </div>
 
@@ -743,9 +798,19 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
                 {/* Row Header */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-2.5 border-b border-hairline/60">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2 py-0.5 rounded bg-raised text-soft text-xs font-mono font-bold">
-                      C-{index + 1}
-                    </span>
+                    <select
+                      aria-label={`Circuito de ${load.name}`}
+                      value={circuitOfLoad.get(load.id) ?? ''}
+                      onChange={(e) => onUpdateClient(assignLoadToCircuit(synced, load.id, e.target.value))}
+                      className="max-w-[170px] rounded bg-raised px-1.5 py-0.5 text-xs font-mono font-bold text-soft border border-edge/80 focus:border-accent focus:outline-none"
+                      title="Circuito al que está conectado"
+                    >
+                      {circuitsOfPanel(load.panelId || '').map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {circuitLabel(c)}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       type="text"
                       value={load.name}
@@ -932,18 +997,26 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
 
                   {/* Breaker sugerido */}
                   <div>
-                    <label className="text-xs uppercase font-bold text-muted block mb-1">Disyuntor (A)</label>
-                    <input
-                      type="number"
-                      min={5}
-                      max={200}
-                      step={5}
+                    <label
+                      className="text-xs uppercase font-bold text-muted block mb-1"
+                      title="La térmica es del circuito: cambiarla acá la cambia para todos sus equipos"
+                    >
+                      Térmica circ.
+                    </label>
+                    <select
                       value={load.breakerRatingAmps}
-                      onChange={(e) =>
-                        handleUpdateLoad(load.id, { breakerRatingAmps: parseInt(e.target.value) || 15 })
-                      }
+                      onChange={(e) => handleCircuitBreaker(circuitOfLoad.get(load.id) ?? '', Number(e.target.value))}
                       className="w-full px-2 py-1 rounded bg-sunken border border-edge font-mono text-center font-bold text-strong focus:border-accent focus:outline-none"
-                    />
+                    >
+                      {[...new Set([...IEC_BREAKERS, load.breakerRatingAmps])]
+                        .filter((amps) => amps > 0)
+                        .sort((a, b) => a - b)
+                        .map((amps) => (
+                          <option key={amps} value={amps}>
+                            {amps} A
+                          </option>
+                        ))}
+                    </select>
                   </div>
                 </div>
 
@@ -1130,37 +1203,32 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <NumberField
-                label="Disyuntor (térmica)"
-                value={customBreaker}
-                onChange={(value) => setCustomBreaker(value === '' ? 15 : value)}
-                unit="A"
-                min={6}
-                max={250}
-                step={5}
-                presets={[10, 16, 20, 25, 32, 40, 63]}
-                presetsLabel="Comerciales:"
-                help="Es la protección del circuito. Debe quedar por encima de la corriente de trabajo y por debajo de lo que aguanta el cable."
-                hint="Mirá el resultado de abajo: el programa avisa si queda chica."
-              />
               <SelectField
                 label="Tablero de conexión"
                 value={customPanelId}
-                onChange={setCustomPanelId}
+                onChange={(value) => {
+                  setCustomPanelId(value);
+                  setCustomCircuit('auto');
+                }}
                 options={(client.panels || [{ id: 'panel_main', name: 'Tablero Principal (TP-01)', location: 'Entrada' }]).map(
                   (panel) => ({ value: panel.id, label: `${panel.name} — ${panel.location}` })
                 )}
                 hint="Sirve para saber a qué tablero hay que ir."
               />
-            </div>
 
-            <TextField
-              label="Nombre del circuito (opcional)"
-              value={customCircuit}
-              onChange={setCustomCircuit}
-              placeholder="C-12 Taller"
-              hint="Si lo dejás vacío se numera solo con el nombre del equipo."
-            />
+              <SelectField
+                label="Circuito"
+                value={customCircuit}
+                onChange={setCustomCircuit}
+                options={circuitOptions(customPanelId)}
+                help="Automático: luces y tomas se suman a un circuito de su tipo que tenga lugar; aires, hornos y motores van en uno propio. La térmica es del circuito."
+                hint={
+                  customPreview.isNew
+                    ? `Se crea ${customPreview.label} con térmica de ${customPreview.breakerAmps} A y cable de ${customPreview.circuit.cableSection ?? '—'} (AEA).`
+                    : `Va a ${customPreview.label}, con térmica de ${customPreview.breakerAmps} A.`
+                }
+              />
+            </div>
           </section>
 
           {/* 4. Resultado en vivo */}
@@ -1174,7 +1242,7 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
               daysPerMonth={customDays}
               voltage={customVoltage}
               systemPhase={phaseToSystem(customPhase)}
-              breakerAmps={customBreaker}
+              breakerAmps={customPreview.breakerAmps}
               kwhCost={client.kwhCost}
               formatMoney={(amount) => format(amount, client.currency)}
             />

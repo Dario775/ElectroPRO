@@ -97,6 +97,7 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
 │   ├── circuits.test.mjs          Circuitos: armado desde las cargas, edición y revisión AEA
 │   ├── persistence.test.mjs       Guardado: clientes dañados, varias pestañas e importación
 │   ├── projectFile.test.mjs       Archivo .electropro: formato, abrir, reemplazar, copia e indicador
+│   ├── loadPlacement.test.mjs     En qué circuito va cada equipo nuevo y en qué fase y tensión
 │   └── storage.test.mjs           Persistencia: fallos de escritura, reintentos y borrados
 └── src/
     ├── main.tsx                   Punto de entrada: carga los datos, monta React y registra la PWA
@@ -112,7 +113,8 @@ El SDK `@google/genai` se conserva instalado como base para futuras funciones de
     │   ├── diagnosticEngine.ts    Evaluación de seguridad y plan de acción
     │   ├── supplies.ts            Acometidas múltiples: normalización y consultas por suministro
     │   ├── panelTree.ts           Árbol de tableros de cada acometida (de quién se alimenta cada uno)
-    │   ├── circuits.ts            Circuitos: armado desde las cargas, edición y revisión AEA de cada uno
+    │   ├── circuits.ts            Circuitos: armado desde las cargas, edición, revisión AEA y dónde va cada equipo nuevo
+    │   ├── loadAssignment.ts      Fase y tensión de un equipo del catálogo según el suministro
     │   ├── workflow.ts            Etapas, pasos, módulos y progreso del recorrido
     │   ├── plan.ts                Geometría del plano: hojas, rejilla y vínculo con el relevamiento
     │   ├── history.ts             Deshacer y rehacer: pasos, agrupado y tope (puro y sin React)
@@ -201,7 +203,7 @@ cuando hacen falta y no cuentan para el progreso (ver *Módulos* más abajo).
 
 | Pantalla | Qué resuelve |
 |---|---|
-| **Auditoría de Cargas** | Alta de artefactos desde catálogo o manual, normalización a vatios, corriente y consumo mensual, costo proyectado y verificación contra el breaker principal |
+| **Auditoría de Cargas** | Alta de artefactos desde catálogo o manual, normalización a vatios, corriente y consumo mensual, costo proyectado y verificación contra el breaker principal. Cada equipo se agrega **en un circuito**: elegido a mano, uno nuevo o **automático** (luces y tomas se suman a un circuito de su tipo que tenga lugar; aires, hornos y motores van en uno propio con térmica y cable de la AEA). La térmica se edita por circuito |
 | **Balance de Fases** | Reparto de cargas por fase, desbalance NEMA, corriente de neutro y **auto-balanceo** automático de cargas entre L1/L2/L3 |
 | **Tableros & Esquema** | Inventario de tableros con protecciones y mediciones; árbol real de tableros (medidor → principal → seccionales); **circuitos** de cada tablero revisados con la AEA (térmica, cable, sección mínima y caída de tensión) y **esquema unifilar** que se arma solo y se descarga en SVG |
 | **Diagnóstico & Plan** | Mediciones in situ → índice de seguridad, nivel de riesgo y plan de acción priorizado (crítica/alta/media/preventiva) con materiales y horas estimadas |

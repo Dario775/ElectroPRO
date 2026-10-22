@@ -40,9 +40,14 @@ export const CIRCUIT_TYPE_LABEL: Record<CircuitType, string> = {
 };
 
 const SPECIAL_CATEGORIES = new Set(['Motores y Bombas', 'Taller e Industria']);
-/** Aires, hornos y calefactores: desde esta potencia van en un circuito propio. */
-const HEAVY_CATEGORIES = new Set(['Climatización', 'Cocina y Calentamiento']);
-const HEAVY_LOAD_WATTS = 1200;
+/**
+ * Desde esta potencia van en un circuito propio: los aires (un split chico ya pasa
+ * los 800 W; los ventiladores no) y los hornos, pavas y calefactores.
+ */
+const HEAVY_LOAD_WATTS: Partial<Record<string, number>> = {
+  Climatización: 800,
+  'Cocina y Calentamiento': 1200,
+};
 /** Desde esta potencia cualquier equipo pide un circuito propio. */
 const SPECIAL_LOAD_WATTS = 2000;
 const DEFAULT_BREAKER_AMPS = 16;
@@ -72,7 +77,7 @@ function inferKind(loads: ApplianceLoad[]): CircuitType {
       l.systemPhase !== '1F' ||
       l.powerWatts * l.quantity >= SPECIAL_LOAD_WATTS ||
       SPECIAL_CATEGORIES.has(l.category) ||
-      (HEAVY_CATEGORIES.has(l.category) && l.powerWatts * l.quantity >= HEAVY_LOAD_WATTS)
+      l.powerWatts * l.quantity >= (HEAVY_LOAD_WATTS[l.category] ?? Infinity)
   );
   if (special) return 'ESPECIAL';
   if (loads.length > 0 && loads.every((l) => l.category === 'Iluminación')) return 'IUG';
@@ -327,6 +332,98 @@ export function analyzeCircuit(
     issues,
     suggestion: suggestCircuit(circuit, demandAmps, loaded),
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Dónde va una carga nueva                                            */
+/* ------------------------------------------------------------------ */
+
+/** `auto`: lo decide el programa; `new`: un circuito propio; o el id de un circuito. */
+export type CircuitTarget = 'auto' | 'new' | string;
+
+export interface PlacementOptions {
+  /** Tablero donde se agrega (si se elige un circuito, manda el tablero de ese circuito). */
+  panelId: string;
+  target: CircuitTarget;
+  /** Acometida del tablero, para las tensiones. */
+  supply: SupplyVoltages;
+}
+
+export interface PlacementPreview {
+  isNew: boolean;
+  circuit: ElectricalCircuit;
+  /** "C-3 Tomas de cocina" */
+  label: string;
+  breakerAmps: number;
+}
+
+/** Circuito nuevo para una carga, ya con la térmica y el cable que pide la AEA. */
+function circuitForLoad(client: ClientRecord, load: ApplianceLoad, panelId: string, supply: SupplyVoltages): ElectricalCircuit {
+  const kind = inferKind([load]);
+  // Sin térmica de partida: así la propuesta no "conserva" una que no se eligió.
+  const draft: ElectricalCircuit = {
+    ...newCircuit(panelId, client.circuits ?? []),
+    description: load.name,
+    kind,
+    breakerAmps: 0,
+  };
+  const { suggestion } = analyzeCircuit(draft, [load], supply, 1);
+  return { ...draft, ...suggestion };
+}
+
+/**
+ * Circuito existente que puede recibir la carga en automático: del mismo tablero y del
+ * mismo tipo, y que con la carga sumada (todo encendido) no supere su térmica. Entre los
+ * que entran, el menos cargado. Los equipos de uso especial siempre van a uno propio.
+ */
+function autoCircuit(client: ClientRecord, load: ApplianceLoad, panelId: string, supply: SupplyVoltages): ElectricalCircuit | undefined {
+  const kind = inferKind([load]);
+  if (kind === 'ESPECIAL') return undefined;
+  const loadsOf = (circuitId: string) => client.loads.filter((l) => l.circuitId === circuitId);
+  return (client.circuits ?? [])
+    .filter((circuit) => circuit.panelId === panelId && circuit.kind === kind)
+    .map((circuit) => ({
+      circuit,
+      watts: loadsOf(circuit.id).reduce((acc, l) => acc + l.powerWatts * l.quantity, 0),
+      fits: analyzeCircuit(circuit, [...loadsOf(circuit.id), load], supply, 1).demandAmps <= circuit.breakerAmps,
+    }))
+    .filter((option) => option.fits)
+    .sort((a, b) => a.watts - b.watts)[0]?.circuit;
+}
+
+/** Dónde va a quedar una carga, sin agregarla: es lo que se muestra antes de tocar «Agregar». */
+export function previewCircuitPlacement(
+  client: ClientRecord,
+  load: ApplianceLoad,
+  options: PlacementOptions
+): PlacementPreview {
+  const synced = syncCircuits(client);
+  const chosen =
+    options.target !== 'auto' && options.target !== 'new'
+      ? (synced.circuits ?? []).find((circuit) => circuit.id === options.target)
+      : options.target === 'auto'
+        ? autoCircuit(synced, load, options.panelId, options.supply)
+        : undefined;
+  const circuit = chosen ?? circuitForLoad(synced, load, options.panelId, options.supply);
+  return { isNew: !chosen, circuit, label: circuitLabel(circuit), breakerAmps: circuit.breakerAmps };
+}
+
+/** Agrega una carga a su circuito (existente o uno nuevo). No modifica el cliente que recibe. */
+export function addLoadToCircuit(client: ClientRecord, load: ApplianceLoad, options: PlacementOptions): ClientRecord {
+  const synced = syncCircuits(client);
+  const { circuit, isNew } = previewCircuitPlacement(synced, load, options);
+  const placed: ApplianceLoad = {
+    ...load,
+    panelId: circuit.panelId,
+    circuitId: circuit.id,
+    circuitName: circuitLabel(circuit),
+    breakerRatingAmps: circuit.breakerAmps,
+  };
+  return syncCircuits({
+    ...synced,
+    circuits: isNew ? [...(synced.circuits ?? []), circuit] : synced.circuits,
+    loads: [...synced.loads, placed],
+  });
 }
 
 /** Secciones disponibles para elegir el cable de un circuito. */
