@@ -288,6 +288,8 @@ export interface BoardPart {
   phase?: string;
   /** Foto propia de este aparato (ver `services/partImages`). */
   imageId?: string;
+  /** El neutro va en el módulo de la izquierda (como en los 4P de Schneider) y no en el de la derecha. */
+  neutralLeft?: boolean;
 }
 
 /** Accesorios sueltos del armado: no van sobre el riel ni tienen bornes. */
@@ -301,8 +303,13 @@ export interface BoardAccessory {
   y: number;
   w: number;
   h: number;
-  /** Color del peine (la fase o el neutro que reparte). */
+  /** Color del peine (la fase o el neutro que reparte) cuando tiene un solo pin repetido. */
   role?: BoardWireRole;
+  /**
+   * Peine: función de cada pin, que se repite a lo largo del peine (por ejemplo N, L1, L2, L3). Cada pin
+   * se conecta con el borne de arriba del aparato que tiene debajo.
+   */
+  pattern?: BoardWireRole[];
   /** Prensacable: `true` si la tuerca está arriba (el tubo sale hacia abajo). */
   flip?: boolean;
   /** Lo puso «cablear automáticamente»; se reemplaza al volver a cablear. */
@@ -363,6 +370,10 @@ export interface BoardLayout {
   accessories?: BoardAccessory[];
   /** Punteras en los extremos de los cables que entran a un borne (por omisión, sí). */
   ferrules?: boolean;
+  /** Etiquetas con el nombre debajo de cada aparato (por omisión, sí). */
+  labels?: boolean;
+  /** Separar en paralelo los cables que corren juntos, para que se vean todos (por omisión, sí). */
+  separate?: boolean;
 }
 
 export type SupportedCurrency = 'USD' | 'ARS';

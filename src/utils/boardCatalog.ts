@@ -17,6 +17,39 @@ export interface CatalogEntry {
   accessory?: AccessorySpec;
 }
 
+/**
+ * Patrones de pines de un peine: la función de cada pin, que se repite a lo largo del peine. Tienen que
+ * coincidir con el orden de los bornes de los aparatos que va a alimentar.
+ */
+export interface CombPattern {
+  id: string;
+  label: string;
+  roles: BoardWireRole[];
+}
+
+export const COMB_PATTERNS: CombPattern[] = [
+  { id: '4p-n-izq', label: '4P · N, L1, L2, L3 (como el Schneider A9XPH)', roles: ['N', 'L1', 'L2', 'L3'] },
+  { id: '4p-n-der', label: '4P · L1, L2, L3, N', roles: ['L1', 'L2', 'L3', 'N'] },
+  { id: '3p', label: '3P · L1, L2, L3', roles: ['L1', 'L2', 'L3'] },
+  { id: '2p-fase-n', label: '1P+N · L1, N', roles: ['L1', 'N'] },
+  { id: '2p-n-fase', label: '1P+N · N, L1', roles: ['N', 'L1'] },
+  { id: '1p-r', label: 'Monofásico · fase R', roles: ['L1'] },
+  { id: '1p-s', label: 'Monofásico · fase S', roles: ['L2'] },
+  { id: '1p-t', label: 'Monofásico · fase T', roles: ['L3'] },
+  { id: '1p-n', label: 'Solo neutro', roles: ['N'] },
+];
+
+/** La función de cada pin de un peine, que se repite: el patrón, o el color solo si es un peine de un solo color. */
+export function combRoles(item: Pick<BoardAccessory, 'pattern' | 'role'>): BoardWireRole[] {
+  return item.pattern && item.pattern.length > 0 ? item.pattern : [item.role ?? 'L1'];
+}
+
+/** El patrón predefinido que coincide con el de un peine, si hay uno. */
+export function combPatternOf(item: Pick<BoardAccessory, 'pattern' | 'role'>): CombPattern | undefined {
+  const roles = combRoles(item);
+  return COMB_PATTERNS.find((candidate) => candidate.roles.length === roles.length && candidate.roles.every((role, index) => role === roles[index]));
+}
+
 /** Secciones de cable que se ofrecen, en mm². */
 export const SECTION_OPTIONS = [1, 1.5, 2.5, 4, 6, 10, 16, 25];
 
@@ -104,7 +137,8 @@ export const CATALOG: CatalogEntry[] = [
   { id: 'dif-4p', label: 'Diferencial 4P', group: 'Protecciones', spec: { kind: 'diferencial', modules: 4, label: 'DIFERENCIAL', amps: 40, sensitivityMa: 30, poles: '4P' } },
   { id: 'corte-2p', label: 'Corte 2P', group: 'Protecciones', spec: { kind: 'corte', modules: 2, label: 'CORTE GRAL', amps: 40, poles: '2P', phase: 'L1' } },
   { id: 'corte-4p', label: 'Corte 4P', group: 'Protecciones', spec: { kind: 'corte', modules: 4, label: 'CORTE GRAL', amps: 63, poles: '4P' } },
-  { id: 'dps', label: 'Descargador (DPS)', group: 'Protecciones', spec: { kind: 'dps', modules: 2, label: 'DPS' } },
+  { id: 'dps', label: 'Descargador 1P+N', group: 'Protecciones', spec: { kind: 'dps', modules: 2, label: 'DPS' } },
+  { id: 'dps-4', label: 'Descargador 3P+N', group: 'Protecciones', spec: { kind: 'dps', modules: 4, label: 'DPS' } },
   { id: 'bornera-tierra', label: 'Bornera de tierra', group: 'Borneras y otros', spec: { kind: 'bornera_tierra', modules: 4, label: 'TIERRA' } },
   { id: 'bornera-neutro', label: 'Bornera de neutro', group: 'Borneras y otros', spec: { kind: 'bornera_neutro', modules: 4, label: 'NEUTRO' } },
   { id: 'repartidor', label: 'Repartidor', group: 'Borneras y otros', spec: { kind: 'repartidor', modules: 6, label: 'REPARTIDOR' } },
@@ -116,10 +150,11 @@ export const CATALOG: CatalogEntry[] = [
   { id: 'tubo-arriba', label: 'Prensacable con tubo (hacia arriba)', group: 'Accesorios de armado', accessory: { kind: 'prensacable', w: 60, h: 62, flip: false } },
   { id: 'tubo-abajo', label: 'Prensacable con tubo (hacia abajo)', group: 'Accesorios de armado', accessory: { kind: 'prensacable', w: 60, h: 62, flip: true } },
   { id: 'canaleta', label: 'Canaleta ranurada', group: 'Accesorios de armado', accessory: { kind: 'canaleta', w: 240, h: 22 } },
-  { id: 'peine-r', label: 'Peine de fase R', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 180, h: 14, role: 'L1' } },
-  { id: 'peine-s', label: 'Peine de fase S', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 180, h: 14, role: 'L2' } },
-  { id: 'peine-t', label: 'Peine de fase T', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 180, h: 14, role: 'L3' } },
-  { id: 'peine-n', label: 'Peine de neutro', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 180, h: 14, role: 'N' } },
+  { id: 'peine-4p', label: 'Peine 4P (N, L1, L2, L3)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 360, h: 46, pattern: ['N', 'L1', 'L2', 'L3'] } },
+  { id: 'peine-4p-der', label: 'Peine 4P (L1, L2, L3, N)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 360, h: 46, pattern: ['L1', 'L2', 'L3', 'N'] } },
+  { id: 'peine-3p', label: 'Peine 3P (L1, L2, L3)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 360, h: 46, pattern: ['L1', 'L2', 'L3'] } },
+  { id: 'peine-2p', label: 'Peine 1P+N (L1, N)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 360, h: 46, pattern: ['L1', 'N'] } },
+  { id: 'peine-r', label: 'Peine monofásico (fase R)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 180, h: 46, pattern: ['L1'] } },
 ];
 
 /** «C20 · 2P», «40 A · 30 mA», «Corte 63 A»…: lo que va en la leyenda junto al nombre. */

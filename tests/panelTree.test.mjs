@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import './helpers/resolve-ts.mjs';
 
-const { buildPanelTree, flattenPanelTree } = await import('../src/utils/panelTree.ts');
+const { buildPanelTree, flattenPanelTree, panelOutline } = await import('../src/utils/panelTree.ts');
 
 const panel = (id, extra = {}) => ({ id, name: id, type: 'seccional', mainBreakerAmps: 32, ...extra });
 const ids = (nodes) => nodes.map((n) => n.panel.id);
@@ -126,4 +126,34 @@ test('al quitar un tablero, los que colgaban de él pasan a alimentarse del de a
   assert.deepEqual(after.map((p) => p.id), ['tp', 'sub']);
   assert.equal(after[1].parentPanelId, 'tp');
   assert.equal(panels[2].parentPanelId, 'ts', 'no modifica la lista original');
+});
+
+test('panelOutline ordena los tableros como el esquema: el principal primero y debajo los que cuelgan de él', () => {
+  const outline = panelOutline([
+    panel('c', { name: 'C', parentPanelId: 'b' }),
+    panel('b', { name: 'B', parentPanelId: 'tp' }),
+    panel('tp', { name: 'Principal', type: 'principal' }),
+    panel('a', { name: 'A', parentPanelId: 'tp' }),
+  ]);
+  assert.deepEqual(outline.map((entry) => `${entry.depth}:${entry.panel.id}`), ['0:tp', '1:a', '1:b', '2:c']);
+});
+
+test('panelOutline no mezcla las acometidas y conserva todos los tableros', () => {
+  const outline = panelOutline([
+    panel('tp1', { type: 'principal', supplyId: 's1' }),
+    panel('tp2', { type: 'principal', supplyId: 's2' }),
+    panel('ts1', { supplyId: 's1', parentPanelId: 'tp1' }),
+    panel('ts2', { supplyId: 's2', parentPanelId: 'tp2' }),
+  ]);
+  assert.deepEqual(outline.map((entry) => entry.panel.id), ['tp1', 'ts1', 'tp2', 'ts2']);
+});
+
+test('panelOutline incluye los tableros sin origen válido, para poder elegirlos', () => {
+  const outline = panelOutline([panel('tp', { type: 'principal' }), panel('huerfano', { parentPanelId: 'borrado' })]);
+  assert.equal(outline.length, 2);
+  assert.ok(outline.some((entry) => entry.panel.id === 'huerfano'));
+});
+
+test('panelOutline de una lista vacía es vacía', () => {
+  assert.deepEqual(panelOutline([]), []);
 });

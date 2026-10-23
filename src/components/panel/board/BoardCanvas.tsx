@@ -11,39 +11,40 @@ import {
   BOARD_LEFT,
   LEGEND_LINE_H,
   RAIL_OVERHANG,
+  accessoryEntry,
+  allTerminals,
   boardBounds,
-  constrainOrthogonal,
-  movePart,
-  movePoint,
+  endNear,
+  freeWire,
+  guideWire,
   moveAccessory,
+  movePart,
   moveRail,
   moveSegment,
-  newBoardId,
+  nearestSegment,
   numberedParts,
-  partTerminals,
   partWidth,
-  refOf,
+  pathToPoint,
+  plugWire,
   roundedPath,
   routeWire,
-  simplifyPath,
+  spreadWires,
   terminalAt,
-  terminalOf,
   updateNote,
-  allTerminals,
+  wiresAtTerminal,
   type BoardTerminalPoint,
+  type Leg,
 } from '../../../utils/boardLayout';
 import { partDetail, wireWidth } from '../../../utils/boardCatalog';
 import { AccessoryShape, Ferrule } from './accessoryArt';
 import type { PartImageStore } from '../../../services/partImages';
 import { partPhoto } from '../../../services/partImages';
 import { DEVICE_H, DeviceArt, DeviceDefs, MODULE_W } from '../deviceArt';
+import { EDITOR_LABEL_GAP } from '../deviceMetrics';
 import { PartLabel, LABEL_H } from '../partLabel';
-
-/** Separación entre el aparato y su rótulo en el editor: deja ver la puntera que entra al borne de abajo. */
-const EDITOR_LABEL_GAP = 20;
 import { WIRE_STYLES } from '../wiring';
 
-export type BoardMode = 'select' | 'wire' | 'note';
+export type BoardMode = 'select' | 'note';
 export type BoardSelection = { kind: 'part' | 'wire' | 'note' | 'rail' | 'accessory'; id: string } | null;
 
 export interface BoardCanvasProps {
@@ -51,9 +52,9 @@ export interface BoardCanvasProps {
   title: string;
   subtitle?: string;
   mode: BoardMode;
-  /** Color de un cable que no nace en un borne. */
-  wireRole: BoardWireRole;
   selection: BoardSelection;
+  /** Píxeles de pantalla por unidad del dibujo; sin valor, el tablero se ajusta al ancho. */
+  zoom?: number;
   photos: PartImageStore;
   svgRef: React.RefObject<SVGSVGElement | null>;
   onSelect: (selection: BoardSelection) => void;
@@ -72,16 +73,13 @@ type Drag =
   | { type: 'part'; id: string; dx: number; dy: number; base: BoardLayout }
   | { type: 'rail'; id: string; dx: number; dy: number; base: BoardLayout }
   | { type: 'accessory'; id: string; dx: number; dy: number; base: BoardLayout }
-  | { type: 'point'; wireId: string; index: number; base: BoardLayout }
+  /** Un cable nuevo que sale de un borne. */
+  | { type: 'newWire'; from: BoardTerminalPoint; base: BoardLayout }
+  /** Una punta de un cable que se agarró para guiarla o enchufarla en otro borne. */
+  | { type: 'wireEnd'; wireId: string; end: 'start' | 'end'; base: BoardLayout }
   | { type: 'segment'; wireId: string; segment: number; vertical: boolean; base: BoardLayout }
   | { type: 'note'; id: string; dx: number; dy: number; base: BoardLayout }
   | { type: 'noteTarget'; id: string; base: BoardLayout };
-
-interface Drawing {
-  role: BoardWireRole;
-  points: BoardPoint[];
-  from?: ReturnType<typeof refOf>;
-}
 
 /** Un cable dibujado: sombra, color y, si es de tierra, la franja amarilla. */
 const WireStroke: React.FC<{ points: BoardPoint[]; role: BoardWireRole; glow?: boolean; section?: number }> = ({ points, role, glow, section }) => {
@@ -123,8 +121,8 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   title,
   subtitle,
   mode,
-  wireRole,
   selection,
+  zoom,
   photos,
   svgRef,
   onSelect,
@@ -135,6 +133,11 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   const bounds = useMemo(() => boardBounds(board), [board]);
   const numbered = useMemo(() => (board.numbering ? numberedParts(board) : []), [board]);
   const terminals = useMemo(() => allTerminals(board), [board]);
+  // Los cables que corren juntos se dibujan en paralelo, uno al lado del otro, para que se vean todos.
+  const shown = useMemo(() => (board.separate === false ? new Map<string, BoardPoint[]>() : spreadWires(board.wires)), [board.wires, board.separate]);
+  const pointsOf = (wire: BoardWire): BoardPoint[] => shown.get(wire.id) ?? wire.points;
+  /** El cable sobre el que está el puntero: los demás se atenúan para seguirlo con la vista. */
+  const [hoverWire, setHoverWire] = useState<string | null>(null);
 
   const dragRef = useRef<Drag | null>(null);
   const latest = useRef(board);
@@ -142,8 +145,17 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   const [dragging, setDragging] = useState(false);
   latest.current = board;
 
-  const [drawing, setDrawing] = useState<Drawing | null>(null);
-  const [cursor, setCursor] = useState<BoardPoint | null>(null);
+  /** El cable que se está tendiendo desde un borne (todavía no está en el tablero). */
+  const [ghost, setGhost] = useState<BoardWire | null>(null);
+  /** El borne sobre el que está el puntero, mientras se tiende o se guía un cable. */
+  const [target, setTarget] = useState<BoardTerminalPoint | undefined>();
+  const targetRef = useRef<BoardTerminalPoint | undefined>(undefined);
+  const ghostRef = useRef<BoardWire | null>(null);
+  /** La boca de un prensacable sobre la que está el puntero: el cable entra por ahí al tubo. */
+  const [connector, setConnector] = useState<BoardPoint | undefined>();
+  /** Hacia dónde se viene moviendo el puntero: define con qué orientación llega el cable a su punta. */
+  const motion = useRef({ h: 0, v: 0, x: 0, y: 0 });
+  /** El borne bajo el puntero cuando no se arrastra nada: se resalta para invitar a tender un cable. */
   const [hover, setHover] = useState<BoardTerminalPoint | undefined>();
 
   /** Del mouse a las unidades del tablero. */
@@ -163,8 +175,9 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
   /* Arrastres ------------------------------------------------------- */
 
-  const startDrag = (drag: Drag): void => {
+  const startDrag = (drag: Drag, at?: BoardPoint): void => {
     dragRef.current = drag;
+    if (at) motion.current = { h: 0, v: 0, x: at.x, y: at.y };
     moved.current = false;
     setDragging(true);
   };
@@ -172,46 +185,128 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   useEffect(() => {
     if (!dragging) return;
 
-    const apply = (drag: Drag, point: BoardPoint): BoardLayout => {
-      switch (drag.type) {
-        case 'part':
-          return movePart(drag.base, drag.id, point.x - drag.dx, point.y - drag.dy);
-        case 'rail':
-          return moveRail(drag.base, drag.id, point.x - drag.dx, point.y - drag.dy);
-        case 'accessory':
-          return moveAccessory(drag.base, drag.id, point.x - drag.dx, point.y - drag.dy);
-        case 'point': {
-          const wire = drag.base.wires.find((candidate) => candidate.id === drag.wireId);
-          if (!wire) return drag.base;
-          const next = movePoint(wire, drag.index, { x: snap(point.x), y: snap(point.y) });
-          return { ...drag.base, wires: drag.base.wires.map((candidate) => (candidate.id === wire.id ? next : candidate)) };
-        }
-        case 'segment': {
-          const wire = drag.base.wires.find((candidate) => candidate.id === drag.wireId);
-          if (!wire) return drag.base;
-          const next = moveSegment(wire, drag.segment, snap(drag.vertical ? point.x : point.y));
-          return { ...drag.base, wires: drag.base.wires.map((candidate) => (candidate.id === wire.id ? next : candidate)) };
-        }
-        case 'note':
-          return updateNote(drag.base, drag.id, { x: Math.round(point.x - drag.dx), y: Math.round(point.y - drag.dy) });
-        case 'noteTarget':
-          return updateNote(drag.base, drag.id, { tx: Math.round(point.x), ty: Math.round(point.y) });
-      }
+    const replaceWire = (base: BoardLayout, wire: BoardWire): BoardLayout => ({
+      ...base,
+      wires: base.wires.map((candidate) => (candidate.id === wire.id ? wire : candidate)),
+    });
+
+    /** El borne al que se enchufaría lo que se suelta en `point`, sin contar el borne del que sale. */
+    const targetFor = (point: BoardPoint, except?: BoardTerminalPoint): BoardTerminalPoint | undefined => {
+      const found = terminalAt(latest.current, point.x, point.y, 14);
+      return found && except && found.partId === except.partId && found.index === except.index && found.side === except.side ? undefined : found;
+    };
+
+    /**
+     * Con qué orientación llega el cable al puntero: la del movimiento reciente (si se viene
+     * moviendo hacia arriba o abajo, llega en vertical; si va de costado, en horizontal).
+     */
+    const legFor = (point: BoardPoint): Leg => {
+      const m = motion.current;
+      m.h = m.h * 0.6 + Math.abs(point.x - m.x);
+      m.v = m.v * 0.6 + Math.abs(point.y - m.y);
+      m.x = point.x;
+      m.y = point.y;
+      return m.v > m.h ? 'v' : 'h';
     };
 
     const onMove = (event: PointerEvent): void => {
       const drag = dragRef.current;
       if (!drag) return;
-      const next = apply(drag, toBoard(event.clientX, event.clientY));
+      const point = toBoard(event.clientX, event.clientY);
       moved.current = true;
+
+      if (drag.type === 'newWire' || drag.type === 'wireEnd') {
+        const leg = legFor(point);
+        const hit = targetFor(point, drag.type === 'newWire' ? drag.from : undefined);
+        // Sin borne a la vista, un prensacable cercano ofrece su boca: el cable entra al tubo en vertical.
+        const entry = hit ? undefined : accessoryEntry(latest.current, point);
+        targetRef.current = hit;
+        setTarget(hit);
+        setConnector(entry?.point);
+        const free = entry ? entry.point : { x: snap(point.x), y: snap(point.y) };
+        const lastLeg: Leg = entry ? 'v' : leg;
+
+        if (drag.type === 'newWire') {
+          const base = freeWire(drag.base, drag.from, free);
+          const wire = hit ? { ...base, points: routeWire(drag.from, hit) } : { ...base, points: pathToPoint(drag.from, free, lastLeg) };
+          ghostRef.current = wire;
+          setGhost(wire);
+          return;
+        }
+
+        const wire = drag.base.wires.find((candidate) => candidate.id === drag.wireId);
+        if (!wire) return;
+        const guided = guideWire(drag.base, wire, drag.end, hit ? { x: hit.x, y: hit.y } : free, hit ? undefined : lastLeg);
+        const next = replaceWire(drag.base, guided);
+        latest.current = next;
+        onChange(next, false);
+        return;
+      }
+
+      let next: BoardLayout;
+      switch (drag.type) {
+        case 'part':
+          next = movePart(drag.base, drag.id, point.x - drag.dx, point.y - drag.dy);
+          break;
+        case 'rail':
+          next = moveRail(drag.base, drag.id, point.x - drag.dx, point.y - drag.dy);
+          break;
+        case 'accessory':
+          next = moveAccessory(drag.base, drag.id, point.x - drag.dx, point.y - drag.dy);
+          break;
+        case 'segment': {
+          const wire = drag.base.wires.find((candidate) => candidate.id === drag.wireId);
+          if (!wire) return;
+          next = replaceWire(drag.base, moveSegment(wire, drag.segment, snap(drag.vertical ? point.x : point.y)));
+          break;
+        }
+        case 'note':
+          next = updateNote(drag.base, drag.id, { x: Math.round(point.x - drag.dx), y: Math.round(point.y - drag.dy) });
+          break;
+        case 'noteTarget':
+          next = updateNote(drag.base, drag.id, { tx: Math.round(point.x), ty: Math.round(point.y) });
+          break;
+      }
       latest.current = next;
       onChange(next, false);
     };
+
     const onUp = (): void => {
+      const drag = dragRef.current;
+      const hit = targetRef.current;
+      const dangling = ghostRef.current;
       dragRef.current = null;
+      targetRef.current = undefined;
+      ghostRef.current = null;
       setDragging(false);
-      if (moved.current) onChange(latest.current, true);
+      setGhost(null);
+      setTarget(undefined);
+      setConnector(undefined);
+      const didMove = moved.current;
       moved.current = false;
+      if (!drag || !didMove) return;
+
+      if (drag.type === 'newWire') {
+        if (hit) {
+          const wire = freeWire(drag.base, drag.from, { x: hit.x, y: hit.y });
+          onChange(plugWire({ ...drag.base, wires: [...drag.base.wires, wire] }, wire.id, 'end', hit), true);
+          onSelect({ kind: 'wire', id: wire.id });
+          return;
+        }
+        // Soltado en el vacío o en la boca de un prensacable: el cable queda con la punta libre, y se
+        // lo puede seguir guiando. Un tirón muy corto no deja nada.
+        const length = dangling ? Math.hypot(dangling.points[dangling.points.length - 1].x - drag.from.x, dangling.points[dangling.points.length - 1].y - drag.from.y) : 0;
+        if (dangling && length >= 24) {
+          onChange({ ...drag.base, wires: [...drag.base.wires, dangling] }, true);
+          onSelect({ kind: 'wire', id: dangling.id });
+        }
+        return;
+      }
+      if (drag.type === 'wireEnd' && hit) {
+        onChange(plugWire(latest.current, drag.wireId, drag.end, hit), true);
+        return;
+      }
+      onChange(latest.current, true);
     };
 
     window.addEventListener('pointermove', onMove);
@@ -220,96 +315,50 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [dragging, onChange, toBoard]);
-
-  /* Cables ----------------------------------------------------------- */
-
-  useEffect(() => {
-    if (mode !== 'wire') {
-      setDrawing(null);
-      setHover(undefined);
-      setCursor(null);
-    }
-  }, [mode]);
-
-  const finishWire = useCallback(
-    (wire: BoardWire): void => {
-      onChange({ ...latest.current, wires: [...latest.current.wires, wire] }, true);
-      onSelect({ kind: 'wire', id: wire.id });
-      setDrawing(null);
-    },
-    [onChange, onSelect]
-  );
-
-  useEffect(() => {
-    if (mode !== 'wire') return;
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setDrawing(null);
-      if (event.key === 'Enter' && drawing && cursor) {
-        const points = simplifyPath([...drawing.points, constrainOrthogonal(drawing.points[drawing.points.length - 1], cursor)]);
-        if (points.length >= 2) finishWire({ id: newBoardId('wire'), role: drawing.role, points, from: drawing.from });
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [mode, drawing, cursor, finishWire]);
-
-  const handleWireClick = (point: BoardPoint): void => {
-    const terminal = terminalAt(board, point.x, point.y, 12);
-
-    if (!drawing) {
-      if (terminal) setDrawing({ role: terminal.role, points: [{ x: terminal.x, y: terminal.y }], from: refOf(terminal) });
-      else setDrawing({ role: wireRole, points: [{ x: snap(point.x), y: snap(point.y) }] });
-      return;
-    }
-
-    const last = drawing.points[drawing.points.length - 1];
-    const sameAsStart =
-      terminal &&
-      drawing.from &&
-      terminal.partId === drawing.from.partId &&
-      terminal.index === drawing.from.index &&
-      terminal.side === drawing.from.side;
-
-    if (terminal && !sameAsStart) {
-      let points: BoardPoint[];
-      const start = drawing.from ? terminalOf(board, drawing.from) : undefined;
-      if (drawing.points.length === 1 && start) {
-        points = routeWire(start, terminal);
-      } else {
-        points = [...drawing.points];
-        if (last.x !== terminal.x && last.y !== terminal.y) points.push({ x: terminal.x, y: last.y });
-        points.push({ x: terminal.x, y: terminal.y });
-        points = simplifyPath(points);
-      }
-      finishWire({ id: newBoardId('wire'), role: drawing.role, points, from: drawing.from, to: refOf(terminal) });
-      return;
-    }
-
-    const next = constrainOrthogonal(last, point);
-    const snapped = { x: snap(next.x), y: snap(next.y) };
-    if (snapped.x !== last.x || snapped.y !== last.y) setDrawing({ ...drawing, points: [...drawing.points, snapped] });
-  };
+  }, [dragging, onChange, onSelect, toBoard]);
 
   /* Entradas del mouse ------------------------------------------------ */
 
   const onSvgPointerDown = (event: React.PointerEvent<SVGSVGElement>): void => {
     const point = toBoard(event.clientX, event.clientY);
-    if (mode === 'wire') {
-      event.preventDefault();
-      handleWireClick(point);
-    } else if (mode === 'note') {
-      onAddNote(point);
-    } else {
-      onSelect(null);
-    }
+    if (mode === 'note') onAddNote(point);
+    else onSelect(null);
   };
 
   const onSvgPointerMove = (event: React.PointerEvent<SVGSVGElement>): void => {
-    if (mode !== 'wire') return;
+    if (dragRef.current || mode !== 'select') return;
     const point = toBoard(event.clientX, event.clientY);
-    setCursor(point);
     setHover(terminalAt(board, point.x, point.y, 12));
+  };
+
+  /** Un borne: si ya tiene un cable, se lo agarra por esa punta; si está libre, sale un cable nuevo. */
+  const terminalDown = (event: React.PointerEvent, terminal: BoardTerminalPoint): void => {
+    if (mode !== 'select') return;
+    event.stopPropagation();
+    const plugged = wiresAtTerminal(board, terminal)[0];
+    if (plugged && !event.shiftKey) {
+      onSelect({ kind: 'wire', id: plugged.wire.id });
+      startDrag({ type: 'wireEnd', wireId: plugged.wire.id, end: plugged.end, base: board }, terminal);
+      return;
+    }
+    startDrag({ type: 'newWire', from: terminal, base: board }, terminal);
+  };
+
+  /** Un cable: por la punta se desenchufa y se guía; por el medio se corre el tramo que se agarró. */
+  const wireDown = (event: React.PointerEvent, wire: BoardWire): void => {
+    if (mode !== 'select') return;
+    event.stopPropagation();
+    onSelect({ kind: 'wire', id: wire.id });
+    const point = toBoard(event.clientX, event.clientY);
+    // Se agarra lo que se ve: con los cables en paralelo, el dibujo está corrido respecto de lo guardado.
+    const drawn = { ...wire, points: pointsOf(wire) };
+    const end = endNear(drawn, point, 14);
+    if (end) {
+      startDrag({ type: 'wireEnd', wireId: wire.id, end, base: board }, point);
+      return;
+    }
+    const segment = nearestSegment(drawn, point);
+    if (segment) startDrag({ type: 'segment', wireId: wire.id, segment: segment.index, vertical: segment.vertical, base: board });
   };
 
   const partDown = (event: React.PointerEvent, part: BoardPart): void => {
@@ -336,12 +385,6 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
     startDrag({ type: 'accessory', id, dx: point.x - x, dy: point.y - y, base: board });
   };
 
-  const selectOnly = (event: React.PointerEvent, kind: 'wire' | 'note', id: string): void => {
-    if (mode !== 'select') return;
-    event.stopPropagation();
-    onSelect({ kind, id });
-  };
-
   const onDragOver = (event: React.DragEvent): void => {
     if (event.dataTransfer.types.includes('application/x-board-part')) event.preventDefault();
   };
@@ -356,9 +399,8 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
   const interactive = mode === 'select';
   const eventsStyle: React.CSSProperties = { pointerEvents: interactive ? 'auto' : 'none' };
-  const selectedWire = selection?.kind === 'wire' ? board.wires.find((wire) => wire.id === selection.id) : undefined;
   const frameBottom = bounds.legendTop;
-  const preview = drawing && cursor ? [...drawing.points, constrainOrthogonal(drawing.points[drawing.points.length - 1], cursor)] : drawing?.points;
+  const draggingWire = ghost !== null || (dragging && dragRef.current?.type === 'wireEnd');
 
   return (
     <svg
@@ -368,7 +410,14 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
       height={bounds.height}
       role="img"
       aria-label={`Editor del tablero ${title}`}
-      style={{ display: 'block', maxWidth: '100%', height: 'auto', touchAction: 'none', cursor: mode === 'select' ? 'default' : 'crosshair' }}
+      style={{
+        display: 'block',
+        width: zoom !== undefined ? bounds.width * zoom : '100%',
+        maxWidth: zoom !== undefined ? 'none' : '100%',
+        height: 'auto',
+        touchAction: 'none',
+        cursor: mode === 'note' ? 'crosshair' : 'default',
+      }}
       onPointerDown={onSvgPointerDown}
       onPointerMove={onSvgPointerMove}
       onDragOver={onDragOver}
@@ -383,11 +432,11 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
       </defs>
 
       {/* Fondo blanco, para que el PNG no salga transparente */}
-      <rect width={bounds.width} height={bounds.height} fill="#ffffff" />
+      <rect width={bounds.width} height={bounds.height} fill="#ffffff" data-board-bg="true" />
 
       {/* Gabinete y chapa de montaje */}
-      <rect x={2} y={2} width={bounds.width - 4} height={frameBottom - 4} rx={14} fill="url(#pf-door)" stroke="#8a919b" strokeWidth={4} />
-      <rect x={16} y={16} width={bounds.width - 32} height={frameBottom - 32} rx={8} fill="#fafbfc" stroke="#c3c8ce" strokeWidth={2} />
+      <rect x={2} y={2} width={bounds.width - 4} height={frameBottom - 4} rx={14} fill="url(#pf-door)" stroke="#8a919b" strokeWidth={4} data-board-bg="true" />
+      <rect x={16} y={16} width={bounds.width - 32} height={frameBottom - 32} rx={8} fill="#fafbfc" stroke="#c3c8ce" strokeWidth={2} data-board-bg="true" />
       {[
         [32, 32],
         [bounds.width - 32, 32],
@@ -432,16 +481,25 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
       {/* 2. Cables y punteras, por debajo de los aparatos */}
       {board.wires.map((wire) => {
         const selected = selection?.kind === 'wire' && selection.id === wire.id;
+        const points = pointsOf(wire);
+        const dimmed = hoverWire !== null && hoverWire !== wire.id && !dragging;
         return (
-          <g key={wire.id} style={eventsStyle} onPointerDown={(event) => selectOnly(event, 'wire', wire.id)}>
-            <WireStroke points={wire.points} role={wire.role} glow={selected} section={wire.section} />
-            {board.ferrules !== false && wire.points.length >= 2 && (
+          <g
+            key={wire.id}
+            style={{ ...eventsStyle, opacity: dimmed ? 0.28 : 1, transition: 'opacity 120ms' }}
+            onPointerDown={(event) => wireDown(event, wire)}
+            onPointerEnter={() => setHoverWire(wire.id)}
+            onPointerLeave={() => setHoverWire((current) => (current === wire.id ? null : current))}
+          >
+            <title>{`${WIRE_STYLES[wire.role].label} · ${String(wire.section ?? 2.5).replace('.', ',')} mm²`}</title>
+            <WireStroke points={points} role={wire.role} glow={selected || hoverWire === wire.id} section={wire.section} />
+            {board.ferrules !== false && points.length >= 2 && (
               <g pointerEvents="none">
-                {wire.from && <Ferrule at={wire.points[0]} toward={wire.points[1]} section={wire.section} />}
-                {wire.to && <Ferrule at={wire.points[wire.points.length - 1]} toward={wire.points[wire.points.length - 2]} section={wire.section} />}
+                {wire.from && <Ferrule at={points[0]} toward={points[1]} section={wire.section} />}
+                {wire.to && <Ferrule at={points[points.length - 1]} toward={points[points.length - 2]} section={wire.section} />}
               </g>
             )}
-            <path d={roundedPath(wire.points)} fill="none" stroke="transparent" strokeWidth={14} strokeLinecap="round" data-export="hide" style={{ cursor: 'pointer' }} />
+            <path d={roundedPath(points)} fill="none" stroke="transparent" strokeWidth={14} strokeLinecap="round" data-export="hide" style={{ cursor: 'pointer' }} />
           </g>
         );
       })}
@@ -485,21 +543,22 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
         );
       })}
 
-      {/* 4. Rótulos */}
-      {board.parts.map((part) => (
+      {/* 4. Etiquetas con el nombre: se pueden ocultar para ver bien los cables */}
+      {board.labels !== false &&
+        board.parts.map((part) => (
         <g
           key={`rotulo-${part.id}`}
           transform={`translate(${part.x} ${part.y})`}
           style={{ ...eventsStyle, cursor: interactive ? 'grab' : 'inherit' }}
           onPointerDown={(event) => partDown(event, part)}
         >
-          <PartLabel uid={part.id} gap={EDITOR_LABEL_GAP} label={part.label} code={part.code} width={partWidth(part)} />
+          <PartLabel gap={EDITOR_LABEL_GAP} label={part.label} code={part.code} width={partWidth(part)} />
         </g>
       ))}
 
-      {/* 5. Números de las protecciones */}
+      {/* 5. Números de las protecciones, sobre la cara del aparato (no tapan los cables de abajo) */}
       {numbered.map(({ part, number }) => (
-        <g key={`n-${part.id}`} transform={`translate(${part.x + partWidth(part) / 2} ${part.y + DEVICE_H + EDITOR_LABEL_GAP + LABEL_H + 10})`} pointerEvents="none">
+        <g key={`n-${part.id}`} transform={`translate(${part.x + partWidth(part) / 2} ${part.y + DEVICE_H / 2 + 8})`} pointerEvents="none">
           <circle r={9.5} fill="#f5c400" stroke="#1d1d1d" strokeWidth={1.4} />
           <text y={3.8} textAnchor="middle" fontSize={11} fontWeight={800} fill="#1d1d1d" fontFamily={FONT}>
             {number}
@@ -578,8 +637,6 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
       {/* Herramientas: puntos de los cables seleccionados, bornes y cable en curso (no salen en la imagen) */}
       <g data-export="hide">
-        {selectedWire && interactive && <WireHandles wire={selectedWire} onPoint={(index) => startDrag({ type: 'point', wireId: selectedWire.id, index, base: board })} onSegment={(segment, vertical) => startDrag({ type: 'segment', wireId: selectedWire.id, segment, vertical, base: board })} />}
-
         {selection?.kind === 'part' &&
           (() => {
             const part = board.parts.find((candidate) => candidate.id === selection.id);
@@ -600,85 +657,55 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
             ) : null;
           })()}
 
-        {mode === 'wire' &&
-          terminals.map((terminal) => (
-            <circle
-              key={`${terminal.partId}-${terminal.index}-${terminal.side}`}
-              cx={terminal.x}
-              cy={terminal.y}
-              r={hover && hover.partId === terminal.partId && hover.index === terminal.index && hover.side === terminal.side ? 8 : 5}
-              fill={WIRE_STYLES[terminal.role].main}
-              fillOpacity={0.35}
-              stroke={SELECTION}
-              strokeWidth={1.8}
-              pointerEvents="none"
-            />
-          ))}
+        {/* Boca de un prensacable: el cable entra al tubo por acá */}
+        {connector && (
+          <circle cx={connector.x} cy={connector.y} r={9} fill={SELECTION} fillOpacity={0.3} stroke={SELECTION} strokeWidth={2.5} pointerEvents="none" />
+        )}
 
-        {mode === 'wire' && preview && preview.length >= 1 && drawing && (
-          <g pointerEvents="none" opacity={0.85}>
-            <WireStroke points={preview.length === 1 ? [preview[0], preview[0]] : preview} role={drawing.role} />
+        {/* Cable que se está tendiendo desde un borne */}
+        {ghost && (
+          <g pointerEvents="none" opacity={0.9}>
+            <WireStroke points={ghost.points.length >= 2 ? ghost.points : [ghost.points[0], ghost.points[0]]} role={ghost.role} section={ghost.section} />
           </g>
         )}
+
+        {/* Bornes: zonas para agarrarlos y, mientras se arrastra un cable, los destinos posibles */}
+        {interactive &&
+          terminals.map((terminal) => {
+            const same = (other?: BoardTerminalPoint): boolean =>
+              !!other && other.partId === terminal.partId && other.index === terminal.index && other.side === terminal.side;
+            const isTarget = same(target);
+            const isHover = same(hover) && !draggingWire;
+            return (
+              <g key={`${terminal.partId}-${terminal.index}-${terminal.side}`}>
+                {(draggingWire || isHover) && (
+                  <circle
+                    cx={terminal.x}
+                    cy={terminal.y}
+                    r={isTarget || isHover ? 9 : 5}
+                    fill={WIRE_STYLES[terminal.role].main}
+                    fillOpacity={isTarget || isHover ? 0.45 : 0.25}
+                    stroke={SELECTION}
+                    strokeWidth={isTarget ? 3 : 1.6}
+                    pointerEvents="none"
+                  />
+                )}
+                <circle
+                  cx={terminal.x}
+                  cy={terminal.y}
+                  r={9}
+                  fill="transparent"
+                  style={{ cursor: 'crosshair' }}
+                  onPointerDown={(event) => terminalDown(event, terminal)}
+                  onPointerEnter={() => setHover(terminal)}
+                  onPointerLeave={() => setHover(undefined)}
+                >
+                  <title>{`${WIRE_STYLES[terminal.role].label}: arrastrá para tender un cable`}</title>
+                </circle>
+              </g>
+            );
+          })}
       </g>
     </svg>
-  );
-};
-
-/** Puntos intermedios (para mover una esquina) y centros de tramo (para correr el tramo). */
-const WireHandles: React.FC<{
-  wire: BoardWire;
-  onPoint: (index: number) => void;
-  onSegment: (segment: number, vertical: boolean) => void;
-}> = ({ wire, onPoint, onSegment }) => {
-  const last = wire.points.length - 1;
-  return (
-    <g>
-      {wire.points.map((point, index) => {
-        const pinned = (index === 0 && wire.from) || (index === last && wire.to);
-        if (pinned) return null;
-        return (
-          <circle
-            key={`p-${index}`}
-            cx={point.x}
-            cy={point.y}
-            r={6}
-            fill="#ffffff"
-            stroke={SELECTION}
-            strokeWidth={2.4}
-            style={{ cursor: 'move' }}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              onPoint(index);
-            }}
-          />
-        );
-      })}
-      {wire.points.slice(0, -1).map((point, index) => {
-        const next = wire.points[index + 1];
-        const length = Math.hypot(next.x - point.x, next.y - point.y);
-        if (length < 28) return null;
-        const vertical = Math.abs(point.x - next.x) < 0.5;
-        return (
-          <rect
-            key={`s-${index}`}
-            x={(point.x + next.x) / 2 - 6}
-            y={(point.y + next.y) / 2 - 6}
-            width={12}
-            height={12}
-            rx={3}
-            fill={SELECTION}
-            fillOpacity={0.85}
-            stroke="#ffffff"
-            strokeWidth={1.5}
-            style={{ cursor: vertical ? 'ew-resize' : 'ns-resize' }}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              onSegment(index, vertical);
-            }}
-          />
-        );
-      })}
-    </g>
   );
 };

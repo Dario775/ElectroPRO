@@ -4,7 +4,8 @@
  */
 import React from 'react';
 import type { BoardAccessory, BoardPoint } from '../../../types/electrical';
-import { ferruleColor, wireWidth } from '../../../utils/boardCatalog';
+import { combRoles, ferruleColor, wireWidth } from '../../../utils/boardCatalog';
+import { combPins } from '../../../utils/boardLayout';
 import { WIRE_STYLES } from '../wiring';
 
 const GLAND_H = 14;
@@ -34,31 +35,42 @@ const Duct: React.FC<{ w: number; h: number }> = ({ w, h }) => (
   <rect x={0} y={0} width={w} height={h} rx={2} fill="url(#pf-duct)" stroke="#8d949e" strokeWidth={1.2} />
 );
 
-/** Peine: barra con dientes que baja a los bornes de arriba de cada aparato. */
-const Comb: React.FC<{ w: number; h: number; role: NonNullable<BoardAccessory['role']> }> = ({ w, h, role }) => {
-  const color = WIRE_STYLES[role].main;
-  const bar = h * 0.5;
-  const teeth = Math.floor(w / 30);
+/**
+ * Peine: barra aislante con un pin por módulo, cada uno del color de la función que reparte (N, L1, L2…).
+ * Los pines bajan a los bornes de arriba de la fila de aparatos que tiene debajo.
+ */
+const Comb: React.FC<Pick<BoardAccessory, 'w' | 'h' | 'role' | 'pattern'>> = ({ w, h, role, pattern }) => {
+  const pins = combPins({ x: 0, y: 0, w, h, role, pattern });
+  const bar = Math.max(8, h - 16);
+  const capped = combRoles({ role, pattern }).length > 1;
   return (
     <g>
-      <rect x={0} y={0} width={w} height={bar} rx={2} fill={color} stroke="#00000066" strokeWidth={1} />
-      <rect x={0} y={0} width={w} height={bar / 2} fill="#ffffff" opacity={0.18} />
-      {Array.from({ length: teeth }, (_, index) => (
-        <rect key={index} x={index * 30 + 8} y={bar} width={14} height={h - bar} rx={1.5} fill={color} stroke="#00000066" strokeWidth={0.8} />
+      {pins.map((pin) => (
+        <rect key={pin.index} x={pin.x - 5} y={bar - 2} width={10} height={h - bar + 2} rx={1.5} fill={WIRE_STYLES[pin.role].main} stroke="#00000088" strokeWidth={0.8} />
       ))}
-      <rect x={w - 8} y={0} width={8} height={bar} rx={2} fill="#2a2e34" />
+      <rect x={0} y={0} width={w} height={bar} rx={3} fill="#e6e8eb" stroke="#7b828c" strokeWidth={1} />
+      <rect x={0} y={0} width={w} height={bar / 2} fill="#ffffff" opacity={0.55} />
+      {pins.map((pin) => (
+        <g key={`m-${pin.index}`}>
+          <rect x={pin.x - 5} y={bar / 2 - 5} width={10} height={10} rx={2} fill={WIRE_STYLES[pin.role].main} stroke="#00000066" strokeWidth={0.7} />
+          <text x={pin.x} y={bar / 2 + 3} textAnchor="middle" fontSize={7} fontWeight={700} fill="#ffffff" stroke="#00000055" strokeWidth={0.3} style={{ pointerEvents: 'none' }}>
+            {pin.role === 'N' ? 'N' : pin.role.replace('L', '')}
+          </text>
+        </g>
+      ))}
+      {capped && <rect x={w - 5} y={1} width={4} height={bar - 2} rx={1.5} fill="#3a3f46" />}
     </g>
   );
 };
 
-export const AccessoryShape: React.FC<{ item: Pick<BoardAccessory, 'kind' | 'w' | 'h' | 'role' | 'flip'> }> = ({ item }) => {
+export const AccessoryShape: React.FC<{ item: Pick<BoardAccessory, 'kind' | 'w' | 'h' | 'role' | 'flip' | 'pattern'> }> = ({ item }) => {
   switch (item.kind) {
     case 'prensacable':
       return <GlandTube w={item.w} h={item.h} flip={item.flip ?? false} />;
     case 'canaleta':
       return <Duct w={item.w} h={item.h} />;
     case 'peine':
-      return <Comb w={item.w} h={item.h} role={item.role ?? 'L1'} />;
+      return <Comb w={item.w} h={item.h} role={item.role} pattern={item.pattern} />;
   }
 };
 

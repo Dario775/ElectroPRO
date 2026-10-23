@@ -37,6 +37,8 @@ export interface PanelCabinetProps {
   images?: Partial<Record<DeviceArtKind, string>>;
   /** Tender los cables de colores entre los bornes y las canaletas. */
   showWires?: boolean;
+  /** Etiquetas con el nombre debajo de cada aparato. */
+  showLabels?: boolean;
 }
 
 /** Medidas totales del dibujo para un conjunto de filas. */
@@ -157,6 +159,7 @@ export const PanelCabinet: React.FC<PanelCabinetProps> = ({
   onSelect,
   images = DEVICE_IMAGES,
   showWires = true,
+  showLabels = true,
 }) => {
   const { width, height } = cabinetSize(rows, perRow);
   const railWidth = width - SIDE * 2;
@@ -243,7 +246,7 @@ export const PanelCabinet: React.FC<PanelCabinetProps> = ({
             wireTerminals(item).flatMap((terminal, index) =>
               terminal.sides.map((side) => {
                 const isBlock = item.kind === 'accesorio' && item.accessoryKind !== 'dps';
-                const fromY = side === 'top' ? deviceY + 9.5 : deviceY + (isBlock ? 75 : DEVICE_H - 9.5);
+                const fromY = side === 'top' ? deviceY + (isBlock ? 34 : 9.5) : deviceY + (isBlock ? 75 : DEVICE_H - 9.5);
                 const toY = side === 'top' ? deviceYOf(rowIndex) - DUCT_GAP - DUCT_H / 2 : bottomDuctYOf(rowIndex) + DUCT_H / 2;
                 return (
                   <Wire
@@ -304,7 +307,7 @@ export const PanelCabinet: React.FC<PanelCabinetProps> = ({
             onClick={() => select(item.key)}
             style={{ cursor: onSelect ? 'pointer' : 'default' }}
           >
-            <PartLabel uid={`${rowIndex}-${x}`} label={item.label} code={item.code} width={itemWidth} />
+            {showLabels && <PartLabel label={item.label} code={item.code} width={itemWidth} />}
             {selected && (
               <rect
                 x={-1}

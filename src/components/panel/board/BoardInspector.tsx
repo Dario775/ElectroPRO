@@ -2,11 +2,12 @@
  * Panel de propiedades del editor: lo que se puede cambiar del aparato, riel, cable o nota
  * elegidos, incluida la foto del aparato.
  */
-import React, { useRef, useState } from 'react';
-import { Copy, ImagePlus, Trash2 } from 'lucide-react';
-import type { BoardLayout, BoardPart } from '../../../types/electrical';
+import React, { useMemo, useRef, useState } from 'react';
+import { CheckCircle2, Copy, ImagePlus, Trash2 } from 'lucide-react';
+import type { BoardAccessory, BoardLayout, BoardPart } from '../../../types/electrical';
 import {
   AMP_OPTIONS,
+  COMB_PATTERNS,
   CURVE_OPTIONS,
   KIND_LABEL,
   PHASE_OPTIONS,
@@ -14,9 +15,10 @@ import {
   SECTION_OPTIONS,
   SENSITIVITY_OPTIONS,
   TERMINAL_BLOCK_ROLES,
+  combPatternOf,
   modulesForPoles,
 } from '../../../utils/boardCatalog';
-import { setWireRole, setWireSection, updateAccessory, updateNote, updatePart } from '../../../utils/boardLayout';
+import { combLinks, combPins, partTerminals, setWireRole, setWireSection, updateAccessory, updateNote, updatePart } from '../../../utils/boardLayout';
 import {
   addImage,
   assignSlot,
@@ -25,6 +27,7 @@ import {
   writeImageStore,
   type PartImageStore,
 } from '../../../services/partImages';
+import { reviewBoard, type BoardIssue } from '../../../utils/boardReview';
 import { Button } from '../../ui/Button';
 import { PhotoFitDialog } from '../PhotoFitDialog';
 import { WIRE_ROLES, WIRE_STYLES } from '../wiring';
@@ -38,6 +41,8 @@ interface BoardInspectorProps {
   onPhotosChange: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  /** Para llevar la selección al aparato o al cable de un aviso de la revisión. */
+  onSelect?: (selection: BoardSelection) => void;
 }
 
 const FIELD = 'h-9 w-full rounded-lg border border-field-line bg-sunken px-2 text-sm text-strong';
@@ -52,6 +57,91 @@ const Labeled: React.FC<{ label: string; children: React.ReactNode }> = ({ label
 const withCurrent = (options: number[], current: number | undefined): number[] =>
   current !== undefined && !options.includes(current) ? [...options, current].sort((a, b) => a - b) : options;
 
+const ROLE_SHORT: Record<string, string> = { L1: 'R', L2: 'S', L3: 'T', N: 'N', PE: '⏚' };
+
+/** Datos de un peine: su patrón de pines y con qué bornes hace contacto. */
+const CombFields: React.FC<{ board: BoardLayout; item: BoardAccessory; onEdit: (patch: Partial<BoardAccessory>) => void }> = ({ board, item, onEdit }) => {
+  const pattern = combPatternOf(item);
+  const links = combLinks(board, item);
+  const pins = combPins(item).length;
+  const wrong = links.filter((link) => !link.match).length;
+  return (
+    <div className="space-y-2">
+      <Labeled label="Pines (en orden)">
+        <select
+          value={pattern?.id ?? ''}
+          onChange={(e) => {
+            const next = COMB_PATTERNS.find((candidate) => candidate.id === e.target.value);
+            if (next) onEdit({ pattern: next.roles, role: undefined });
+          }}
+          className={FIELD}
+        >
+          {!pattern && <option value="">Personalizado</option>}
+          {COMB_PATTERNS.map((candidate) => (
+            <option key={candidate.id} value={candidate.id}>
+              {candidate.label}
+            </option>
+          ))}
+        </select>
+      </Labeled>
+      <p className="text-xs leading-relaxed text-muted">
+        {pins} {pins === 1 ? 'pin' : 'pines'}: {combPins(item).map((pin) => ROLE_SHORT[pin.role]).join(' ')}. Se apoya sobre los bornes de arriba de la fila y cada
+        pin hace contacto con el borne que tiene debajo.
+      </p>
+      <p className={`text-xs font-semibold ${links.length === 0 || wrong > 0 ? 'text-danger-text' : 'text-success-text'}`}>
+        {links.length === 0
+          ? 'No toca ningún borne todavía.'
+          : wrong > 0
+            ? `${wrong} ${wrong === 1 ? 'pin cae' : 'pines caen'} en un borne de otra función: corré el peine un módulo.`
+            : `Cubre ${links.length} ${links.length === 1 ? 'borne' : 'bornes'}: alcanza con un cable por función para alimentarlos.`}
+      </p>
+    </div>
+  );
+};
+
+/** Lo que encontró la revisión: cada aviso lleva al aparato o al cable del que habla. */
+const ReviewCard: React.FC<{ issues: BoardIssue[]; onSelect?: (selection: BoardSelection) => void }> = ({ issues, onSelect }) => {
+  if (issues.length === 0) {
+    return (
+      <div className="flex items-start gap-2 rounded-xl border border-success-line bg-success-soft p-3 text-xs leading-relaxed text-success-text">
+        <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0" />
+        <p>
+          <strong>Revisión del tablero: todo en orden.</strong> Cada aparato tiene sus cables, con el color y la sección que corresponden.
+        </p>
+      </div>
+    );
+  }
+  const errors = issues.filter((issue) => issue.severity === 'error').length;
+  return (
+    <div className="space-y-2 rounded-xl border border-hairline bg-sunken p-3 text-xs">
+      <p className="font-bold text-soft">
+        Revisión del tablero: {issues.length} {issues.length === 1 ? 'aviso' : 'avisos'}
+        {errors > 0 && <span className="ml-1 text-danger-text">({errors} {errors === 1 ? 'error' : 'errores'})</span>}
+      </p>
+      <ul className="max-h-72 space-y-1 overflow-y-auto">
+        {issues.map((issue) => (
+          <li key={issue.id}>
+            <button
+              type="button"
+              onClick={() => {
+                if (issue.wireId) onSelect?.({ kind: 'wire', id: issue.wireId });
+                else if (issue.partId) onSelect?.({ kind: 'part', id: issue.partId });
+              }}
+              className="flex w-full items-start gap-2 rounded-lg px-1.5 py-1 text-left leading-snug text-muted hover:bg-raised"
+            >
+              <span
+                aria-hidden="true"
+                className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${issue.severity === 'error' ? 'bg-danger-solid' : 'bg-accent'}`}
+              />
+              <span>{issue.message}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
 export const BoardInspector: React.FC<BoardInspectorProps> = ({
   board,
   selection,
@@ -60,7 +150,9 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
   onPhotosChange,
   onDuplicate,
   onDelete,
+  onSelect,
 }) => {
+  const issues = useMemo(() => reviewBoard(board), [board]);
   const [photoError, setPhotoError] = useState('');
   const [fitting, setFitting] = useState<string | null>(null);
   const ownInput = useRef<HTMLInputElement>(null);
@@ -68,13 +160,16 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
 
   if (!selection) {
     return (
-      <div className="space-y-2 rounded-xl border border-hairline bg-sunken p-3 text-xs leading-relaxed text-muted">
-        <p className="font-bold text-soft">Nada elegido</p>
-        <p>Elegí un aparato, un cable, un riel o una nota para cambiar sus datos.</p>
-        <p>
-          Arrastrá aparatos desde el catálogo: se imantan al riel de a un módulo. Con la herramienta <strong>Cable</strong>, hacé
-          clic en un borne y después en otro.
-        </p>
+      <div className="space-y-3">
+        <ReviewCard issues={issues} onSelect={onSelect} />
+        <div className="space-y-2 rounded-xl border border-hairline bg-sunken p-3 text-xs leading-relaxed text-muted">
+          <p className="font-bold text-soft">Nada elegido</p>
+          <p>Elegí un aparato, un cable, un riel o una nota para cambiar sus datos.</p>
+          <p>
+            Arrastrá aparatos desde el catálogo: se imantan al riel de a un módulo. Para tender un cable, arrastrá desde un borne hasta
+            otro.
+          </p>
+        </div>
       </div>
     );
   }
@@ -121,7 +216,7 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
             ))}
           </select>
         </Labeled>
-        <p className="text-xs text-muted">Arrastrá los círculos para mover una esquina y los cuadrados para correr un tramo.</p>
+        <p className="text-xs text-muted">Agarralo por la punta para desenchufarlo y llevarlo a otro borne, o por el medio para correr ese tramo.</p>
         {deleteButton}
       </div>
     );
@@ -160,17 +255,7 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
             <input type="number" min={10} max={600} value={item.h} onChange={(e) => editItem({ h: Math.max(10, Number(e.target.value) || item.h) })} className={FIELD} />
           </Labeled>
         </div>
-        {item.kind === 'peine' && (
-          <Labeled label="Función">
-            <select value={item.role ?? 'L1'} onChange={(e) => editItem({ role: e.target.value as typeof item.role })} className={FIELD}>
-              {TERMINAL_BLOCK_ROLES.filter((role) => role !== 'PE').map((role) => (
-                <option key={role} value={role}>
-                  {WIRE_STYLES[role].label}
-                </option>
-              ))}
-            </select>
-          </Labeled>
-        )}
+        {item.kind === 'peine' && <CombFields board={board} item={item} onEdit={editItem} />}
         {item.kind === 'prensacable' && (
           <label className="flex items-center gap-2 text-xs font-semibold text-muted">
             <input type="checkbox" checked={item.flip ?? false} onChange={(e) => editItem({ flip: e.target.checked })} className="h-4 w-4 accent-current text-accent-text" />
@@ -272,6 +357,13 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
             ))}
           </select>
         </Labeled>
+      )}
+
+      {poleOptions && partTerminals(part).some((terminal) => terminal.role === 'N') && (
+        <label className="flex items-center gap-2 text-xs font-semibold text-muted">
+          <input type="checkbox" checked={part.neutralLeft ?? false} onChange={(e) => edit({ neutralLeft: e.target.checked || undefined })} className="h-4 w-4 accent-current text-accent-text" />
+          El neutro está a la izquierda (como en los 4P de Schneider)
+        </label>
       )}
 
       {hasAmps && (

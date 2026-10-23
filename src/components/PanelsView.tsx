@@ -972,7 +972,14 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
         description="Las filas de riel con cada aparato en su lugar y su ancho real, para reconocerlo al abrir la tapa. Se acomoda igual a como quedó y los rótulos salen en PDF a tamaño real."
         summary={`${frontRows(syncedPanelOf(activePanel), (synced.circuits ?? []).filter((c) => c.panelId === activePanel.id), synced.loads).length} filas`}
       >
-        <PanelFront client={synced} panel={syncedPanelOf(activePanel)} onUpdateClient={onUpdateClient} />
+        <PanelFront
+          client={synced}
+          panel={syncedPanelOf(activePanel)}
+          onUpdateClient={onUpdateClient}
+          onSelectPanel={setSelectedPanelId}
+          onAddPanel={() => handleOpenPanelModal()}
+          onEditPanel={() => handleOpenPanelModal(activePanel)}
+        />
       </Collapsible>
 
       {/* 4. MODAL: ALTA Y EDICIÓN DE TABLERO */}

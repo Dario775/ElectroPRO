@@ -17,14 +17,14 @@ import type {
   BoardWireRole,
 } from '../types/electrical';
 import { terminalSpecs } from '../components/panel/wiring';
-import { artKindOf, DEVICE_H, MODULE_W } from '../components/panel/deviceMetrics';
-import { sectionForAmps, type AccessorySpec } from './boardCatalog';
+import { artKindOf, DEVICE_H, EDITOR_LABEL_GAP, LABEL_TAG_H, MODULE_W } from '../components/panel/deviceMetrics';
+import { combRoles, sectionForAmps, type AccessorySpec } from './boardCatalog';
 import type { FrontItem } from './panelDevices';
 
-/** Alto de la tira del rótulo que va debajo de cada aparato. */
-export const LABEL_STRIP_H = 66;
+/** Lo que ocupan, debajo del aparato, la separación y la etiqueta con su nombre (en el editor). */
+export const LABEL_STRIP_H = EDITOR_LABEL_GAP + LABEL_TAG_H;
 /** Distancia vertical entre un riel y el siguiente. */
-export const ROW_STEP = 280;
+export const ROW_STEP = 320;
 /** Margen izquierdo del primer riel: ahí suben los cables del peine. */
 export const BOARD_LEFT = 90;
 /** Margen superior: ahí entra la acometida y corren los peines. */
@@ -33,6 +33,11 @@ export const BOARD_TOP = 190;
 export const RAIL_OVERHANG = 10;
 /** Largo de los cables de salida de cada térmica. */
 export const OUTPUT_STUB = 120;
+/** Los cables de un descargador son de 4 mm² como mínimo (se calculan como los de una protección de 25 A). */
+const SURGE_LEAD_AMPS = 25;
+
+/** Separación entre dos cables que corren juntos, de eje a eje. */
+export const WIRE_SPACING = 7.5;
 
 const SNAP_Y = 60;
 const STEP = 18;
@@ -352,6 +357,11 @@ export function routeWire(a: BoardTerminalPoint, b: BoardTerminalPoint, laneX?: 
   return routeWire(b, a, laneX).reverse();
 }
 
+/** Sección con que nace un cable que sale de un aparato: la que corresponde a su protección. */
+function defaultSection(board: BoardLayout, from: BoardTerminalRef): number {
+  return sectionForAmps(board.parts.find((part) => part.id === from.partId)?.amps);
+}
+
 export function createWire(board: BoardLayout, from: BoardTerminalPoint, to: BoardTerminalPoint, role?: BoardWireRole): BoardLayout {
   const wire: BoardWire = {
     id: newBoardId('wire'),
@@ -359,8 +369,154 @@ export function createWire(board: BoardLayout, from: BoardTerminalPoint, to: Boa
     points: routeWire(from, to),
     from: refOf(from),
     to: refOf(to),
+    section: defaultSection(board, from),
   };
   return { ...board, wires: [...board.wires, wire] };
+}
+
+/** Orientación de un tramo: horizontal o vertical. */
+export type Leg = 'h' | 'v';
+
+/**
+ * Camino de un borne hasta un punto cualquiera. Sale del borne hacia afuera; si el punto está
+ * «del otro lado» del aparato, rodea con un tramo corto en vez de atravesarlo. Con `lastLeg = 'v'`
+ * el cable llega al punto en vertical (útil para entrar a un conector por abajo o por arriba).
+ */
+export function pathToPoint(from: BoardTerminalPoint, to: BoardPoint, lastLeg?: Leg): BoardPoint[] {
+  const direction = from.side === 'top' ? -1 : 1;
+  const start = { x: from.x, y: from.y };
+  if (direction * (to.y - from.y) > 0) {
+    if (lastLeg === 'v') {
+      const middle = (from.y + to.y) / 2;
+      return simplifyPath([start, { x: from.x, y: middle }, { x: to.x, y: middle }, { x: to.x, y: to.y }]);
+    }
+    return simplifyPath([start, { x: from.x, y: to.y }, { x: to.x, y: to.y }]);
+  }
+  const lane = from.y + direction * STEP;
+  return simplifyPath([start, { x: from.x, y: lane }, { x: to.x, y: lane }, { x: to.x, y: to.y }]);
+}
+
+/**
+ * Prolonga un camino (que termina en `base[base.length - 1]`) hasta `to` con un solo codo: con
+ * `lastLeg = 'v'` el último tramo es vertical; si no, horizontal.
+ */
+export function elbowedEnd(base: BoardPoint[], to: BoardPoint, lastLeg?: Leg): BoardPoint[] {
+  const q = base[base.length - 1];
+  const elbow = lastLeg === 'v' ? { x: to.x, y: q.y } : { x: q.x, y: to.y };
+  return simplifyPath([...base, elbow, to].map(({ x, y }) => ({ x, y })));
+}
+
+/** ¿Llegar a `to` desde el último punto haría que el cable se doble sobre sí mismo? */
+function foldsBack(before: BoardPoint, last: BoardPoint, to: BoardPoint, lastLeg?: Leg): boolean {
+  const elbow = lastLeg === 'v' ? { x: to.x, y: last.y } : { x: last.x, y: to.y };
+  const arriving = { x: last.x - before.x, y: last.y - before.y };
+  const leaving = { x: elbow.x - last.x, y: elbow.y - last.y };
+  if (Math.hypot(leaving.x, leaving.y) < 0.5) return false;
+  const cross = arriving.x * leaving.y - arriving.y * leaving.x;
+  const dot = arriving.x * leaving.x + arriving.y * leaving.y;
+  return Math.abs(cross) < 1e-6 && dot < 0;
+}
+
+/** Cable que sale de un borne y termina suelto en `to`: es lo que se ve mientras se lo arrastra. */
+export function freeWire(board: BoardLayout, from: BoardTerminalPoint, to: BoardPoint): BoardWire {
+  return {
+    id: newBoardId('wire'),
+    role: from.role,
+    points: pathToPoint(from, to),
+    from: refOf(from),
+    section: defaultSection(board, from),
+  };
+}
+
+/**
+ * Guía una punta del cable hacia `point`, como una soga: la punta se desenchufa y el cable conserva
+ * sus curvas, agregando un codo hasta la punta nueva. Si se la lleva hacia atrás, el cable retrocede
+ * y deshace sus últimas curvas en vez de doblarse sobre sí mismo. `lastLeg` es la orientación con
+ * que el cable llega a la punta (sale de hacia dónde se mueve el puntero).
+ */
+export function guideWire(board: BoardLayout, wire: BoardWire, end: 'start' | 'end', point: BoardPoint, lastLeg?: Leg): BoardWire {
+  const oriented = end === 'end' ? wire.points : [...wire.points].reverse();
+  const fixedRef = end === 'start' ? wire.to : wire.from;
+  const fixed = fixedRef ? terminalOf(board, fixedRef) : undefined;
+
+  let base = oriented.slice(0, -1);
+  while (base.length >= 2 && foldsBack(base[base.length - 2], base[base.length - 1], point, lastLeg)) base = base.slice(0, -1);
+
+  let points = base.length <= 1 && fixed ? pathToPoint(fixed, point, lastLeg) : elbowedEnd(base.length > 0 ? base : [oriented[0]], point, lastLeg);
+  if (end === 'start') points = [...points].reverse();
+  return end === 'start' ? { ...wire, points, from: undefined } : { ...wire, points, to: undefined };
+}
+
+/** Enchufa una punta del cable en un borne y lo vuelve a tender entre las dos puntas. */
+export function plugWire(board: BoardLayout, wireId: string, end: 'start' | 'end', terminal: BoardTerminalPoint): BoardLayout {
+  return {
+    ...board,
+    wires: board.wires.map((wire) => {
+      if (wire.id !== wireId) return wire;
+      const fixedRef = end === 'start' ? wire.to : wire.from;
+      const fixedPoint = end === 'start' ? wire.points[wire.points.length - 1] : wire.points[0];
+      const fixed = fixedRef ? terminalOf(board, fixedRef) : undefined;
+      let points: BoardPoint[];
+      if (fixed) points = end === 'end' ? routeWire(fixed, terminal) : routeWire(terminal, fixed);
+      else {
+        const path = pathToPoint(terminal, fixedPoint);
+        points = end === 'end' ? [...path].reverse() : path;
+      }
+      return end === 'start' ? { ...wire, points, from: refOf(terminal) } : { ...wire, points, to: refOf(terminal) };
+    }),
+  };
+}
+
+/**
+ * Donde entra un cable a un prensacable: si el punto está sobre un prensacable (o a menos de `radius`),
+ * el punto de su boca, que es por donde el cable se mete en el tubo.
+ */
+export function accessoryEntry(board: BoardLayout, point: BoardPoint, radius = 14): { accessoryId: string; point: BoardPoint } | undefined {
+  for (const item of [...(board.accessories ?? [])].reverse()) {
+    if (item.kind !== 'prensacable') continue;
+    const inside = point.x >= item.x - radius && point.x <= item.x + item.w + radius && point.y >= item.y - radius && point.y <= item.y + item.h + radius;
+    if (!inside) continue;
+    const x = Math.round(Math.min(item.x + item.w - 6, Math.max(item.x + 6, point.x)));
+    // La boca (la tuerca) está del lado del gabinete: abajo si el tubo sale hacia arriba, arriba si sale hacia abajo.
+    const y = item.flip ? item.y + 2 : item.y + item.h - 2;
+    return { accessoryId: item.id, point: { x, y } };
+  }
+  return undefined;
+}
+
+/** La punta del cable que está a menos de `radius` de un punto, si hay una (la más cercana). */
+export function endNear(wire: BoardWire, point: BoardPoint, radius = 16): 'start' | 'end' | null {
+  const first = wire.points[0];
+  const last = wire.points[wire.points.length - 1];
+  const dStart = Math.hypot(first.x - point.x, first.y - point.y);
+  const dEnd = Math.hypot(last.x - point.x, last.y - point.y);
+  if (Math.min(dStart, dEnd) > radius) return null;
+  return dStart <= dEnd ? 'start' : 'end';
+}
+
+/** El tramo del cable más cercano a un punto. */
+export function nearestSegment(wire: BoardWire, point: BoardPoint): { index: number; distance: number; vertical: boolean } | null {
+  let best: { index: number; distance: number; vertical: boolean } | null = null;
+  for (let index = 0; index + 1 < wire.points.length; index++) {
+    const a = wire.points[index];
+    const b = wire.points[index + 1];
+    const length2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+    const t = length2 === 0 ? 0 : Math.max(0, Math.min(1, ((point.x - a.x) * (b.x - a.x) + (point.y - a.y) * (b.y - a.y)) / length2));
+    const distance = Math.hypot(a.x + t * (b.x - a.x) - point.x, a.y + t * (b.y - a.y) - point.y);
+    if (!best || distance < best.distance) best = { index, distance, vertical: Math.abs(a.x - b.x) < 0.5 };
+  }
+  return best;
+}
+
+/** Los cables enchufados a un borne, con la punta que lo toca; el último dibujado va primero. */
+export function wiresAtTerminal(board: BoardLayout, terminal: BoardTerminalRef): Array<{ wire: BoardWire; end: 'start' | 'end' }> {
+  const same = (ref?: BoardTerminalRef): boolean => !!ref && ref.partId === terminal.partId && ref.index === terminal.index && ref.side === terminal.side;
+  const found: Array<{ wire: BoardWire; end: 'start' | 'end' }> = [];
+  for (const wire of [...board.wires].reverse()) {
+    if (same(wire.from)) found.push({ wire, end: 'start' });
+    else if (same(wire.to)) found.push({ wire, end: 'end' });
+  }
+  return found;
 }
 
 /** Un punto movido para que el tramo desde `prev` sea horizontal o vertical. */
@@ -443,15 +599,86 @@ export function removeWire(board: BoardLayout, wireId: string): BoardLayout {
 
 const round5 = (value: number): number => Math.round(value / 5) * 5;
 
+/* ---- Peines: cada pin entra en el borne de arriba del aparato que tiene debajo ---- */
+
+/** Separación entre pines de un peine: un módulo DIN. */
+export const COMB_PITCH = MODULE_W;
+/** Hasta dónde se imanta un peine a los bornes de arriba de un riel. */
+const COMB_SNAP_Y = 50;
+
+export interface CombPin {
+  index: number;
+  role: BoardWireRole;
+  x: number;
+  y: number;
+}
+
+/** Los pines de un peine: uno por módulo, repitiendo su patrón (N, L1, L2, L3, N, L1…). */
+export function combPins(comb: Pick<BoardAccessory, 'x' | 'y' | 'w' | 'h' | 'role' | 'pattern'>): CombPin[] {
+  const roles = combRoles(comb);
+  const count = Math.max(1, Math.floor(comb.w / COMB_PITCH));
+  return Array.from({ length: count }, (_, index) => ({
+    index,
+    role: roles[index % roles.length],
+    x: comb.x + COMB_PITCH / 2 + index * COMB_PITCH,
+    y: comb.y + comb.h,
+  }));
+}
+
+export interface CombLink {
+  pin: CombPin;
+  terminal: BoardTerminalPoint;
+  /** El pin y el borne tienen la misma función. */
+  match: boolean;
+}
+
+/** Con qué borne de arriba de qué aparato hace contacto cada pin (los pines que no tocan nada no figuran). */
+export function combLinks(board: BoardLayout, comb: BoardAccessory): CombLink[] {
+  const tops = board.parts.flatMap((part) => partTerminals(part)).filter((terminal) => terminal.side === 'top');
+  const links: CombLink[] = [];
+  for (const pin of combPins(comb)) {
+    const terminal = tops
+      .filter((candidate) => Math.abs(candidate.x - pin.x) <= 8 && Math.abs(candidate.y - pin.y) <= 24)
+      .sort((a, b) => Math.abs(a.y - pin.y) - Math.abs(b.y - pin.y))[0];
+    if (terminal) links.push({ pin, terminal, match: terminal.role === pin.role });
+  }
+  return links;
+}
+
+export const terminalKey = (ref: BoardTerminalRef): string => `${ref.partId}:${ref.index}:${ref.side}`;
+
+/** Bornes que ya reciben su fase o su neutro a través de un peine bien puesto. */
+export function combCoveredKeys(board: BoardLayout): Set<string> {
+  const covered = new Set<string>();
+  for (const comb of board.accessories ?? []) {
+    if (comb.kind !== 'peine') continue;
+    for (const link of combLinks(board, comb)) if (link.match) covered.add(terminalKey(link.terminal));
+  }
+  return covered;
+}
+
+/** Imanta un peine a los bornes de arriba del riel más cercano, con sus pines sobre los módulos. */
+function snapComb(board: BoardLayout, comb: BoardAccessory): BoardAccessory {
+  const rail = board.rails
+    .filter((candidate) => comb.x + comb.w > candidate.x && comb.x < railEnd(candidate))
+    .map((candidate) => ({ candidate, dy: Math.abs(comb.y + comb.h - (candidate.y + 2)) }))
+    .filter((entry) => entry.dy <= COMB_SNAP_Y)
+    .sort((a, b) => a.dy - b.dy)[0]?.candidate;
+  if (!rail) return comb;
+  const slots = Math.round((comb.x - rail.x) / MODULE_W);
+  return { ...comb, x: rail.x + Math.max(0, slots) * MODULE_W, y: rail.y + 2 - comb.h };
+}
+
 /** Agrega un accesorio donde se soltó (centrado en el punto) o, sin punto, arriba del primer riel. */
 export function addAccessory(board: BoardLayout, spec: AccessorySpec, at?: BoardPoint): { board: BoardLayout; accessory: BoardAccessory } {
   const existing = board.accessories ?? [];
-  const accessory: BoardAccessory = {
+  const placed: BoardAccessory = {
     ...spec,
     id: newBoardId('acc'),
     x: at ? round5(at.x - spec.w / 2) : BOARD_LEFT + 20 + existing.length * 25,
     y: at ? round5(at.y - spec.h / 2) : BOARD_TOP - 100 + existing.length * 10,
   };
+  const accessory = placed.kind === 'peine' ? snapComb(board, placed) : placed;
   return { board: { ...board, accessories: [...existing, accessory] }, accessory };
 }
 
@@ -460,7 +687,11 @@ export function updateAccessory(board: BoardLayout, id: string, patch: Partial<O
 }
 
 export function moveAccessory(board: BoardLayout, id: string, x: number, y: number): BoardLayout {
-  return updateAccessory(board, id, { x: round5(x), y: round5(y) });
+  const item = (board.accessories ?? []).find((candidate) => candidate.id === id);
+  const target = { x: round5(x), y: round5(y) };
+  if (item?.kind !== 'peine') return updateAccessory(board, id, target);
+  const snapped = snapComb(board, { ...item, ...target });
+  return updateAccessory(board, id, { x: snapped.x, y: snapped.y });
 }
 
 export function removeAccessory(board: BoardLayout, id: string): BoardLayout {
@@ -551,6 +782,18 @@ export function autoWire(board: BoardLayout): BoardLayout {
   };
 
   const rows = rowsOf(board);
+  const covered = combCoveredKeys(board);
+  // Un borne por cada peine y cada función: por ahí entra la alimentación de todo el peine.
+  const combFeeds: BoardTerminalPoint[] = [];
+  for (const comb of board.accessories ?? []) {
+    if (comb.kind !== 'peine') continue;
+    const seen = new Set<BoardWireRole>();
+    for (const link of combLinks(board, comb)) {
+      if (!link.match || seen.has(link.pin.role)) continue;
+      seen.add(link.pin.role);
+      combFeeds.push(link.terminal);
+    }
+  }
   const withDiff = rows.filter((row) => row.parts.some((part) => part.kind === 'diferencial'));
   const entry = rows
     .filter((row) => !row.parts.some((part) => part.kind === 'diferencial'))
@@ -581,6 +824,27 @@ export function autoWire(board: BoardLayout): BoardLayout {
     }
   }
 
+  // Descargadores: van en derivación. Las fases salen de la línea (los bornes de arriba de la primera
+  // protección), la tierra va a la bornera de tierra y el neutro a la de neutro, si el tablero las tiene.
+  const nearestTo = (terminals: BoardTerminalPoint[], x: number): BoardTerminalPoint | undefined =>
+    [...terminals].sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0];
+  const earthBar = board.parts.find((part) => part.kind === 'bornera_tierra');
+  const neutralBar = board.parts.find((part) => part.kind === 'bornera_neutro');
+  for (const surge of board.parts.filter((part) => part.kind === 'dps')) {
+    for (const terminal of partTerminals(surge)) {
+      if (terminal.role === 'PE' && earthBar) {
+        const target = nearestTo(tops(earthBar), terminal.x);
+        if (target) add('PE', routeWire(terminal, target), refOf(terminal), refOf(target), SURGE_LEAD_AMPS);
+      } else if (terminal.role === 'N' && neutralBar) {
+        const target = nearestTo(bottoms(neutralBar), terminal.x);
+        if (target) add('N', routeWire(terminal, target), refOf(terminal), refOf(target), SURGE_LEAD_AMPS);
+      } else if (PHASE_ROLES.includes(terminal.role) && entry[0]) {
+        const source = tops(entry[0]).find((t) => t.role === terminal.role);
+        if (source) add(terminal.role, routeWire(source, terminal), refOf(source), refOf(terminal), SURGE_LEAD_AMPS);
+      }
+    }
+  }
+
   const last = entry[entry.length - 1];
   withDiff.forEach(({ rail, parts }) => {
     const diff = parts.find((part) => part.kind === 'diferencial');
@@ -589,41 +853,49 @@ export function autoWire(board: BoardLayout): BoardLayout {
     // De la general al diferencial, por debajo de los rótulos.
     if (last) {
       matchByRole(tops(diff), bottoms(last)).forEach(([source, target], k) => {
-        const y = source.y + DEVICE_H + LABEL_STRIP_H - 30 + 8 * k + 24;
+        // Un carril por color, entre la etiqueta de la general y la fila de abajo.
+        const y = source.y + LABEL_STRIP_H + 14 + 8 * k;
         add(source.role, [source, { x: source.x, y }, { x: target.x, y }, target], refOf(source), refOf(target), last.amps);
       });
     }
 
-    // Peine: del diferencial a las térmicas de su fila, por un carril a la izquierda del riel.
+    // Peine: del diferencial a las térmicas de su fila, por un carril a la izquierda del riel. Donde hay
+    // un peine puesto, un solo cable alimenta todos los bornes que cubre (el peine reparte).
     const circuits = parts.filter((part) => part.kind === 'termica' && part.x > diff.x);
     const diffOut = bottoms(diff);
-    const wantedRoles = (['N', ...PHASE_ROLES] as BoardWireRole[]).filter((role) =>
-      circuits.some((circuit) => tops(circuit).some((t) => t.role === role))
-    );
+    const circuitIds = new Set(circuits.map((circuit) => circuit.id));
+    const targetsOf = (role: BoardWireRole): BoardTerminalPoint[] => {
+      const direct = circuits.flatMap((circuit) => tops(circuit).filter((t) => t.role === role && !covered.has(terminalKey(t))));
+      const fed = combFeeds.filter((t) => t.role === role && circuitIds.has(t.partId));
+      return [...fed, ...direct];
+    };
+    const wantedRoles = (['N', ...PHASE_ROLES] as BoardWireRole[]).filter((role) => targetsOf(role).length > 0);
+    // Cada color lleva un cable por destino y los cables corren en paralelo (ver `spreadWires`): el
+    // carril de un color tiene que ser tan ancho como los cables que lleva.
+    const lanes = wantedRoles.map((role) => targetsOf(role).length * WIRE_SPACING + 8);
+    const laneCenter = (lane: number): number => lanes.slice(0, lane).reduce((sum, width) => sum + width, 0) + lanes[lane] / 2;
     wantedRoles.forEach((role, lane) => {
       const source =
         diffOut.find((t) => t.role === role) ?? (role !== 'N' ? diffOut.find((t) => PHASE_ROLES.includes(t.role)) : undefined);
       if (!source) return;
-      const dropY = source.y + 14 + 7 * lane;
-      const laneX = rail.x - 16 - 7 * lane;
-      const busY = rail.y - 14 - 7 * lane;
-      for (const circuit of circuits) {
-        for (const target of tops(circuit).filter((t) => t.role === role)) {
-          add(
-            role,
-            [source, { x: source.x, y: dropY }, { x: laneX, y: dropY }, { x: laneX, y: busY }, { x: target.x, y: busY }, target],
-            refOf(source),
-            refOf(target),
-            diff.amps
-          );
-        }
+      const dropY = source.y + 14 + laneCenter(lane);
+      const laneX = rail.x - 16 - laneCenter(lane);
+      const busY = rail.y - 14 - laneCenter(lane);
+      for (const target of targetsOf(role)) {
+        add(
+          role,
+          [source, { x: source.x, y: dropY }, { x: laneX, y: dropY }, { x: laneX, y: busY }, { x: target.x, y: busY }, target],
+          refOf(source),
+          refOf(target),
+          diff.amps
+        );
       }
     });
   });
 
   // Salidas: cada térmica y cada bornera sacan sus cables hacia abajo.
   for (const part of board.parts) {
-    if (part.kind === 'diferencial' || part.kind === 'otro') continue;
+    if (part.kind === 'diferencial' || part.kind === 'otro' || part.kind === 'dps' || part.kind === 'tope') continue;
     const isEntry = entry.some((candidate) => candidate.id === part.id);
     const next = isEntry && withDiff.length > 0;
     if (next) continue;
@@ -653,6 +925,140 @@ export function autoWire(board: BoardLayout): BoardLayout {
     wires: [...board.wires.filter((wire) => !wire.auto), ...wires],
     accessories: [...(board.accessories ?? []).filter((item) => !item.auto), ...accessories],
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Cables en paralelo                                                  */
+/* ------------------------------------------------------------------ */
+
+interface WireSegment {
+  wire: number;
+  index: number;
+  vertical: boolean;
+  /** Posición del tramo en el eje perpendicular (x si es vertical, y si es horizontal). */
+  coord: number;
+  lo: number;
+  hi: number;
+  /** Sentido en que lo recorre el cable: +1 o -1. */
+  direction: number;
+  /** Toca un borne: no se puede correr sin despegar el cable. */
+  pinned: boolean;
+}
+
+function wireSegments(wires: BoardWire[]): WireSegment[] {
+  const segments: WireSegment[] = [];
+  wires.forEach((wire, wireIndex) => {
+    const count = wire.points.length;
+    for (let index = 0; index + 1 < count; index++) {
+      const a = wire.points[index];
+      const b = wire.points[index + 1];
+      const vertical = Math.abs(a.x - b.x) < 0.5;
+      const horizontal = Math.abs(a.y - b.y) < 0.5;
+      if (vertical === horizontal) continue;
+      segments.push({
+        wire: wireIndex,
+        index,
+        vertical,
+        coord: vertical ? a.x : a.y,
+        lo: vertical ? Math.min(a.y, b.y) : Math.min(a.x, b.x),
+        hi: vertical ? Math.max(a.y, b.y) : Math.max(a.x, b.x),
+        direction: Math.sign(vertical ? b.y - a.y : b.x - a.x),
+        pinned: (index === 0 && !!wire.from) || (index + 1 === count - 1 && !!wire.to),
+      });
+    }
+  });
+  return segments;
+}
+
+/**
+ * Cómo se dibujan los cables para que se vean todos: los que corren juntos por el mismo camino se
+ * separan en paralelo, uno junto al otro, en vez de quedar uno encima del otro.
+ *
+ * Los cables que comparten tramos (en el mismo sentido) forman un haz. Dentro del haz, cada cable
+ * se corre una cantidad fija hacia un costado de su recorrido: así las curvas quedan concéntricas.
+ * El orden sale de hacia dónde se abre cada cable al dejar el tramo compartido, para que no se
+ * crucen. Solo se corren los tramos compartidos que no tocan
+ * un borne. Devuelve los puntos a dibujar de los cables que se movieron; los demás no figuran. No
+ * cambia los cables guardados.
+ */
+export function spreadWires(wires: BoardWire[], spacing = WIRE_SPACING): Map<string, BoardPoint[]> {
+  const segments = wireSegments(wires);
+  const shared = new Set<string>();
+  const parent = wires.map((_, index) => index);
+  const find = (index: number): number => (parent[index] === index ? index : (parent[index] = find(parent[index])));
+
+  for (let i = 0; i < segments.length; i++) {
+    for (let j = i + 1; j < segments.length; j++) {
+      const a = segments[i];
+      const b = segments[j];
+      if (a.wire === b.wire || a.vertical !== b.vertical || a.direction !== b.direction) continue;
+      if (Math.abs(a.coord - b.coord) >= 0.5) continue;
+      if (Math.min(a.hi, b.hi) - Math.max(a.lo, b.lo) <= 2) continue;
+      shared.add(`${a.wire}:${a.index}`);
+      shared.add(`${b.wire}:${b.index}`);
+      parent[find(a.wire)] = find(b.wire);
+    }
+  }
+
+  const bundles = new Map<number, number[]>();
+  wires.forEach((_, index) => {
+    if (![...shared].some((key) => key.startsWith(`${index}:`))) return;
+    const root = find(index);
+    bundles.set(root, [...(bundles.get(root) ?? []), index]);
+  });
+
+  /**
+   * Cómo sale un cable de su último tramo compartido: hacia qué lado dobla (+1 a la derecha del
+   * sentido de marcha, -1 a la izquierda, 0 si termina o sigue derecho) y cuánto recorrió hasta ahí.
+   */
+  const exitOf = (wireIndex: number): { turn: number; distance: number } => {
+    const points = wires[wireIndex].points;
+    let last = -1;
+    for (let i = 0; i + 1 < points.length; i++) if (shared.has(`${wireIndex}:${i}`)) last = i;
+    let distance = 0;
+    for (let i = 0; i <= last; i++) distance += Math.abs(points[i + 1].x - points[i].x) + Math.abs(points[i + 1].y - points[i].y);
+    if (last < 0 || last + 2 >= points.length) return { turn: 0, distance };
+    const [p0, p1, p2] = [points[last], points[last + 1], points[last + 2]];
+    const cross = (p1.x - p0.x) * (p2.y - p1.y) - (p1.y - p0.y) * (p2.x - p1.x);
+    return { turn: Math.abs(cross) < 1e-6 ? 0 : cross > 0 ? 1 : -1, distance };
+  };
+
+  // Para que los cables no se crucen al abrirse, el que dobla a la derecha va por la derecha del
+  // haz y el que dobla a la izquierda por la izquierda; entre los que doblan al mismo lado, el que
+  // se abre antes va por adentro.
+  const lateral = new Map<number, number>();
+  for (const members of bundles.values()) {
+    const exits = new Map(members.map((wireIndex) => [wireIndex, exitOf(wireIndex)]));
+    const ordered = [...members].sort((a, b) => {
+      const ea = exits.get(a)!;
+      const eb = exits.get(b)!;
+      if (ea.turn !== eb.turn) return ea.turn - eb.turn;
+      if (ea.distance !== eb.distance) return ea.turn > 0 ? eb.distance - ea.distance : ea.distance - eb.distance;
+      return a - b;
+    });
+    ordered.forEach((wireIndex, rank) => lateral.set(wireIndex, (rank - (ordered.length - 1) / 2) * spacing));
+  }
+
+  const offsets = new Map<string, BoardPoint>();
+  for (const segment of segments) {
+    const k = lateral.get(segment.wire);
+    if (k === undefined || segment.pinned || !shared.has(`${segment.wire}:${segment.index}`)) continue;
+    // Normal a la derecha del sentido de marcha: (-dy, dx).
+    offsets.set(`${segment.wire}:${segment.index}`, segment.vertical ? { x: -segment.direction * k, y: 0 } : { x: 0, y: segment.direction * k });
+  }
+  if (offsets.size === 0) return new Map();
+
+  const result = new Map<string, BoardPoint[]>();
+  wires.forEach((wire, wireIndex) => {
+    if (!lateral.has(wireIndex)) return;
+    const points = wire.points.map((point, j) => {
+      const before = offsets.get(`${wireIndex}:${j - 1}`);
+      const after = offsets.get(`${wireIndex}:${j}`);
+      return { x: point.x + (before?.x ?? 0) + (after?.x ?? 0), y: point.y + (before?.y ?? 0) + (after?.y ?? 0) };
+    });
+    if (points.some((point, j) => point.x !== wire.points[j].x || point.y !== wire.points[j].y)) result.set(wire.id, points);
+  });
+  return result;
 }
 
 /* ------------------------------------------------------------------ */

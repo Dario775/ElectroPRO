@@ -94,6 +94,21 @@ export function flattenPanelTree(nodes: PanelTreeNode[]): PanelTreeNode[] {
   return nodes.flatMap((node) => [node, ...flattenPanelTree(node.children)]);
 }
 
+/**
+ * Los tableros en el orden del esquema (el principal primero y, debajo, los que cuelgan de él), con
+ * la profundidad de cada uno. Cada acometida va por separado, en el orden en que aparece.
+ */
+export function panelOutline(panels: ElectricalPanel[]): Array<{ panel: ElectricalPanel; depth: number }> {
+  const supplies: string[] = [];
+  for (const panel of panels) {
+    const id = panel.supplyId ?? '';
+    if (!supplies.includes(id)) supplies.push(id);
+  }
+  return supplies.flatMap((id) =>
+    flattenPanelTree(buildPanelTree(panels.filter((panel) => (panel.supplyId ?? '') === id))).map((node) => ({ panel: node.panel, depth: node.depth }))
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Agregar tableros y cambiar sus conexiones                           */
 /* ------------------------------------------------------------------ */

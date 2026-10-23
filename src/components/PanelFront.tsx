@@ -33,6 +33,10 @@ interface PanelFrontProps {
   client: ClientRecord;
   panel: ElectricalPanel;
   onUpdateClient: (updated: ClientRecord) => void;
+  /** Para que el editor pueda cambiar de tablero, agregar uno y abrir sus datos. */
+  onSelectPanel?: (panelId: string) => void;
+  onAddPanel?: () => void;
+  onEditPanel?: () => void;
 }
 
 /** Píxeles por módulo DIN en pantalla. */
@@ -56,13 +60,16 @@ const KIND_TITLE: Record<FrontItem['kind'], string> = {
 
 const ADDABLE: PanelAccessoryKind[] = ['bornera_tierra', 'bornera_neutro', 'repartidor', 'dps', 'otro'];
 
-export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateClient }) => {
+export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateClient, onSelectPanel, onAddPanel, onEditPanel }) => {
   const [selected, setSelected] = useState<string>('');
   const [accessoryKind, setAccessoryKind] = useState<PanelAccessoryKind>('bornera_tierra');
   const [view, setView] = useState<'realista' | 'editor' | 'simple'>('realista');
   const [photosVersion, setPhotosVersion] = useState(0);
   const [showPhotos, setShowPhotos] = useState(false);
   const [showWires, setShowWires] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
+  // La pantalla completa del editor sigue igual al pasar de un tablero a otro.
+  const [editorMaximized, setEditorMaximized] = useState(false);
   const [exportError, setExportError] = useState('');
   const cabinetRef = useRef<HTMLDivElement>(null);
 
@@ -158,6 +165,15 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
                 />
                 Cables
               </label>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-muted">
+                <input
+                  type="checkbox"
+                  checked={showLabels}
+                  onChange={(e) => setShowLabels(e.target.checked)}
+                  className="h-4 w-4 accent-current text-accent-text"
+                />
+                Etiquetas
+              </label>
               <Button size="sm" variant="secondary" icon={<ImageDown className="h-4 w-4" />} onClick={exportPng}>
                 Imagen (PNG)
               </Button>
@@ -194,6 +210,12 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
           photosVersion={photosVersion}
           onPhotosChange={() => setPhotosVersion((n) => n + 1)}
           onUpdatePanel={(patch) => updatePanel(patch)}
+          panels={client.panels ?? []}
+          onSelectPanel={onSelectPanel}
+          onAddPanel={onAddPanel}
+          onEditPanel={onEditPanel}
+          maximized={editorMaximized}
+          onMaximizedChange={setEditorMaximized}
         />
       )}
 
@@ -231,6 +253,7 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
             selectedKey={selected}
             onSelect={(key) => setSelected(key === selected ? '' : key)}
             showWires={showWires}
+            showLabels={showLabels}
           />
         </div>
       )}

@@ -4,18 +4,23 @@
  * (`panel.board`) y lo exporta como imagen.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  Cable,
   ImageDown,
+  Maximize2,
+  Minimize2,
   MousePointer2,
   Redo2,
+  Scan,
+  ZoomIn,
+  ZoomOut,
   Trash2,
   Type,
   Undo2,
   Wand2,
   RotateCcw,
 } from 'lucide-react';
-import type { BoardLayout, BoardWireRole, ElectricalPanel } from '../../../types/electrical';
+import type { BoardLayout, ElectricalPanel } from '../../../types/electrical';
 import type { FrontItem } from '../../../utils/panelDevices';
 import type { AccessorySpec, CatalogEntry } from '../../../utils/boardCatalog';
 import {
@@ -24,6 +29,7 @@ import {
   addPart,
   addRail,
   autoWire,
+  boardBounds,
   boardFromFront,
   duplicateAccessory,
   duplicatePart,
@@ -39,10 +45,11 @@ import { readImageStore } from '../../../services/partImages';
 import { downloadBlob, svgToPngBlob } from '../../../services/svgExport';
 import { cx } from '../../../utils/cx';
 import { Button, IconButton } from '../../ui/Button';
-import { WIRE_ROLES, WIRE_STYLES } from '../wiring';
 import { BoardCanvas, type BoardMode, type BoardSelection } from './BoardCanvas';
 import { BoardCatalogPanel } from './BoardCatalogPanel';
 import { BoardInspector } from './BoardInspector';
+import { PanelSwitcher } from './PanelSwitcher';
+import { useBoardViewport } from './useBoardViewport';
 
 export interface BoardEditorProps {
   panel: ElectricalPanel;
@@ -53,24 +60,52 @@ export interface BoardEditorProps {
   photosVersion: number;
   onPhotosChange: () => void;
   onUpdatePanel: (patch: Partial<ElectricalPanel>) => void;
+  /** Todos los tableros del cliente: con ellos el editor puede cambiar de tablero y agregar uno. */
+  panels?: ElectricalPanel[];
+  onSelectPanel?: (panelId: string) => void;
+  onAddPanel?: () => void;
+  onEditPanel?: () => void;
+  /** Pantalla completa: se maneja desde afuera para que siga igual al cambiar de tablero. */
+  maximized?: boolean;
+  onMaximizedChange?: (maximized: boolean) => void;
 }
 
 const MODES: Array<{ mode: BoardMode; label: string; key: string; icon: React.ReactNode; hint: string }> = [
-  { mode: 'select', label: 'Seleccionar', key: 'V', icon: <MousePointer2 className="h-4 w-4" />, hint: 'Elegir y mover aparatos, rieles, cables y textos' },
-  { mode: 'wire', label: 'Cable', key: 'C', icon: <Cable className="h-4 w-4" />, hint: 'Clic en un borne y después en otro. Clic en un lugar libre para doblar; Enter termina; Esc cancela' },
+  {
+    mode: 'select',
+    label: 'Seleccionar',
+    key: 'V',
+    icon: <MousePointer2 className="h-4 w-4" />,
+    hint: 'Arrastrá desde un borne para tender un cable y soltalo sobre otro borne. Agarrá un cable por la punta para desenchufarlo y guiarlo, o por el medio para correrlo',
+  },
   { mode: 'note', label: 'Texto', key: 'T', icon: <Type className="h-4 w-4" />, hint: 'Clic en el tablero para poner un texto con flecha' },
 ];
 
 const isTypingTarget = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
 
-export const BoardEditor: React.FC<BoardEditorProps> = ({ panel, rows, perRow, photosVersion, onPhotosChange, onUpdatePanel }) => {
+export const BoardEditor: React.FC<BoardEditorProps> = ({
+  panel,
+  rows,
+  perRow,
+  photosVersion,
+  onPhotosChange,
+  onUpdatePanel,
+  panels,
+  onSelectPanel,
+  onAddPanel,
+  onEditPanel,
+  maximized: maximizedProp,
+  onMaximizedChange,
+}) => {
   const saved = panel.board;
   const [draft, setDraft] = useState<BoardLayout | null>(null);
   const [mode, setMode] = useState<BoardMode>('select');
-  const [wireRole, setWireRole] = useState<BoardWireRole>('L1');
   const [selection, setSelection] = useState<BoardSelection>(null);
   const [message, setMessage] = useState('');
+  const [innerMaximized, setInnerMaximized] = useState(false);
+  const maximized = maximizedProp ?? innerMaximized;
+  const setMaximized = onMaximizedChange ?? setInnerMaximized;
   // Cada elemento es el tablero guardado en ese momento; `undefined` es «todavía sin armar».
   const undoStack = useRef<Array<BoardLayout | undefined>>([]);
   const redoStack = useRef<Array<BoardLayout | undefined>>([]);
@@ -83,6 +118,8 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({ panel, rows, perRow, p
   const board = candidate && (candidate.rails.length > 0 || candidate.parts.length > 0) ? candidate : undefined;
   const photos = readImageStore();
   void photosVersion;
+  const bounds = board ? boardBounds(board) : { width: 800, height: 600 };
+  const viewport = useBoardViewport(bounds.width, bounds.height);
 
   const commit = useCallback(
     (next: BoardLayout | undefined): void => {
@@ -239,20 +276,47 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({ panel, rows, perRow, p
           deleteSelection();
         }
       } else if (!ctrl && key === 'escape') {
+        if (maximized && !selection && mode === 'select') setMaximized(false);
         setMode('select');
         setSelection(null);
-      } else if (!ctrl && key === 'v') setMode('select');
-      else if (!ctrl && key === 'c') setMode('wire');
+      } else if (!ctrl && (key === '+' || key === '=')) viewport.zoomIn();
+      else if (!ctrl && key === '-') viewport.zoomOut();
+      else if (!ctrl && key === '0') viewport.fit();
+      else if (!ctrl && key === 'v') setMode('select');
       else if (!ctrl && key === 't') setMode('note');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, duplicateSelection, deleteSelection, selection]);
+  }, [undo, redo, duplicateSelection, deleteSelection, selection, maximized, mode, viewport]);
+
+  // Maximizado, el editor ocupa toda la pantalla y la página de atrás no se desplaza.
+  useEffect(() => {
+    if (!maximized) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [maximized]);
 
   /* Sin tablero armado todavía ---------------------------------------- */
 
+  const switcher =
+    panels && panels.length > 0 && onSelectPanel ? (
+      <PanelSwitcher panels={panels} activeId={panel.id} onSelect={onSelectPanel} onAdd={onAddPanel} onEdit={onEditPanel} />
+    ) : null;
+
   if (!board) {
-    return (
+    const empty = (
+      <div className={cx('space-y-3', maximized && 'fixed inset-0 z-50 overflow-auto bg-surface p-3')}>
+        <div className="flex flex-wrap items-center gap-2">
+          {switcher}
+          {maximized && (
+            <IconButton label="Salir de pantalla completa (Esc)" size="sm" variant="secondary" onClick={() => setMaximized(false)}>
+              <Minimize2 className="h-4 w-4" />
+            </IconButton>
+          )}
+        </div>
       <div className="space-y-3 rounded-xl border border-dashed border-edge bg-sunken p-6 text-center">
         <p className="text-sm font-semibold text-strong">Armá el tablero como lo vas a construir</p>
         <p className="mx-auto max-w-xl text-xs text-muted">
@@ -266,15 +330,19 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({ panel, rows, perRow, p
           <Button onClick={() => commit(addRail(emptyBoard(), Math.max(12, perRow)))}>Empezar con un riel vacío</Button>
         </div>
       </div>
+      </div>
     );
+    return maximized ? createPortal(empty, document.body) : empty;
   }
 
   const subtitle = [panel.mainBreakerPoles, `${panel.mainBreakerAmps} A`].join(' · ');
   const canUndo = undoStack.current.length > 0;
   const canRedo = redoStack.current.length > 0;
 
-  return (
-    <div className="space-y-3">
+  const content = (
+    <div className={cx(maximized ? 'fixed inset-0 z-50 flex flex-col gap-3 overflow-hidden bg-surface p-3' : 'space-y-3')}>
+      {switcher}
+
       {/* Herramientas */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <div role="tablist" aria-label="Herramienta" className="inline-flex rounded-xl border border-hairline bg-sunken p-1">
@@ -297,28 +365,6 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({ panel, rows, perRow, p
           ))}
         </div>
 
-        <div className="flex items-center gap-1" role="group" aria-label="Color del cable nuevo">
-          {WIRE_ROLES.map((role) => (
-            <button
-              key={role}
-              type="button"
-              title={`${WIRE_STYLES[role].label}: color del cable que no sale de un borne`}
-              aria-label={WIRE_STYLES[role].label}
-              aria-pressed={wireRole === role}
-              onClick={() => {
-                setWireRole(role);
-                setMode('wire');
-              }}
-              className={cx('h-7 w-7 rounded-lg border-2', wireRole === role ? 'border-accent' : 'border-edge')}
-              style={{
-                background: WIRE_STYLES[role].stripe
-                  ? `repeating-linear-gradient(45deg, ${WIRE_STYLES[role].main} 0 5px, ${WIRE_STYLES[role].stripe} 5px 10px)`
-                  : WIRE_STYLES[role].main,
-              }}
-            />
-          ))}
-        </div>
-
         <div className="flex items-center gap-1">
           <IconButton label="Deshacer (Ctrl+Z)" size="sm" variant="secondary" disabled={!canUndo} onClick={undo}>
             <Undo2 className="h-4 w-4" />
@@ -337,6 +383,24 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({ panel, rows, perRow, p
           />
           Numerar
         </label>
+        <label className="flex items-center gap-1.5 font-semibold text-muted" title="Etiqueta con el nombre debajo de cada aparato: ocultala para ver mejor los cables">
+          <input
+            type="checkbox"
+            checked={board.labels !== false}
+            onChange={(e) => commit({ ...board, labels: e.target.checked })}
+            className="h-4 w-4 accent-current text-accent-text"
+          />
+          Etiquetas
+        </label>
+        <label className="flex items-center gap-1.5 font-semibold text-muted" title="Cuando varios cables van por el mismo camino, se dibujan uno al lado del otro para que se vean todos">
+          <input
+            type="checkbox"
+            checked={board.separate !== false}
+            onChange={(e) => commit({ ...board, separate: e.target.checked })}
+            className="h-4 w-4 accent-current text-accent-text"
+          />
+          Separar cables
+        </label>
         <label className="flex items-center gap-1.5 font-semibold text-muted" title="Puntera de color en los extremos de los cables que entran a un borne">
           <input
             type="checkbox"
@@ -346,6 +410,34 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({ panel, rows, perRow, p
           />
           Punteras
         </label>
+
+        <div className="flex items-center gap-1" role="group" aria-label="Zoom">
+          <IconButton label="Alejar (-)" size="sm" variant="secondary" onClick={viewport.zoomOut}>
+            <ZoomOut className="h-4 w-4" />
+          </IconButton>
+          <button
+            type="button"
+            onClick={viewport.actualSize}
+            title="Tamaño real (100%)"
+            className="h-8 min-w-[3.25rem] rounded-lg border border-edge bg-raised px-2 font-mono text-xs font-semibold text-strong hover:bg-raised-strong"
+          >
+            {Math.round(viewport.scale * 100)}%
+          </button>
+          <IconButton label="Acercar (+)" size="sm" variant="secondary" onClick={viewport.zoomIn}>
+            <ZoomIn className="h-4 w-4" />
+          </IconButton>
+          <IconButton label="Ajustar el tablero a la pantalla (0)" size="sm" variant="secondary" onClick={viewport.fit}>
+            <Scan className="h-4 w-4" />
+          </IconButton>
+          <IconButton
+            label={maximized ? 'Salir de pantalla completa (Esc)' : 'Maximizar el editor'}
+            size="sm"
+            variant="secondary"
+            onClick={() => setMaximized(!maximized)}
+          >
+            {maximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </IconButton>
+        </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button size="sm" variant="secondary" icon={<Wand2 className="h-4 w-4" />} onClick={wireAutomatically} title="Tiende los cables de acometida, general, diferencial y circuitos">
@@ -364,25 +456,46 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({ panel, rows, perRow, p
       </div>
 
       {message && <p className="text-xs font-semibold text-soft">{message}</p>}
-      <p className="text-xs text-muted">{MODES.find((item) => item.mode === mode)?.hint}.</p>
+      <p className="text-xs text-muted">
+        {MODES.find((item) => item.mode === mode)?.hint}. Para mover el tablero, arrastrá el fondo o usá la rueda; Ctrl + rueda hace zoom.
+      </p>
 
-      <div className="grid gap-3 lg:grid-cols-[200px_minmax(0,1fr)_260px]">
-        <BoardCatalogPanel
-          onAdd={(entry) => addFromEntry(entry)}
-          onAddRail={(modules) => {
-            commit(addRail(board, modules));
-            setMode('select');
-          }}
-        />
+      <div className={cx('grid gap-3 lg:grid-cols-[200px_minmax(0,1fr)_260px]', maximized && 'min-h-0 flex-1')}>
+        <div className={cx(maximized && 'min-h-0 overflow-y-auto')}>
+          <BoardCatalogPanel
+            onAdd={(entry) => addFromEntry(entry)}
+            onAddRail={(modules) => {
+              commit(addRail(board, modules));
+              setMode('select');
+            }}
+          />
+        </div>
 
-        <div className="min-w-0 overflow-auto rounded-xl border border-hairline bg-sunken p-3">
+        <div
+          ref={viewport.containerRef}
+          onPointerDown={(event) => viewport.onPanStart(event, mode === 'select')}
+          className={cx(
+            'relative min-w-0 overflow-hidden rounded-xl border border-hairline bg-sunken',
+            maximized ? 'h-full min-h-0' : 'h-[72vh] min-h-[420px]'
+          )}
+        >
+          {/* El tablero se mueve libremente dentro del marco: traslación y ancho los pone la vista. */}
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: bounds.width * viewport.scale,
+              transform: `translate(${viewport.pan.x}px, ${viewport.pan.y}px)`,
+            }}
+          >
           <BoardCanvas
             board={board}
             title={panel.name}
             subtitle={subtitle}
             mode={mode}
-            wireRole={wireRole}
             selection={selection}
+            zoom={viewport.scale}
             photos={photos}
             svgRef={svgRef}
             onSelect={setSelection}
@@ -395,18 +508,24 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({ panel, rows, perRow, p
               setMode('select');
             }}
           />
+          </div>
         </div>
 
-        <BoardInspector
-          board={board}
-          selection={selection}
-          photos={photos}
-          onChange={commit}
-          onPhotosChange={onPhotosChange}
-          onDuplicate={duplicateSelection}
-          onDelete={deleteSelection}
-        />
+        <div className={cx(maximized && 'min-h-0 overflow-y-auto')}>
+          <BoardInspector
+            board={board}
+            selection={selection}
+            photos={photos}
+            onChange={commit}
+            onPhotosChange={onPhotosChange}
+            onDuplicate={duplicateSelection}
+            onDelete={deleteSelection}
+            onSelect={setSelection}
+          />
+        </div>
       </div>
     </div>
   );
+
+  return maximized ? createPortal(content, document.body) : content;
 };

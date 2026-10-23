@@ -80,14 +80,32 @@ export interface TerminalSource {
   modules: number;
   poles?: string;
   phase?: string;
+  /** El neutro va en el primer módulo, a la izquierda. */
+  neutralLeft?: boolean;
+}
+
+/**
+ * Bornes de un descargador de sobretensiones. No va en serie con la línea: se conecta en derivación.
+ * Las fases entran por arriba (un borne por módulo), la tierra va al borne ⏚ y el neutro, a su borne
+ * de abajo, como en un descargador real (por ejemplo, el Easy9 de 3P+N: L, L, L, ⏚ arriba y N abajo).
+ */
+export function surgeTerminals(modules: number): WireTerminal[] {
+  const x = (index: number): number => MODULE_W * index + MODULE_W / 2;
+  const top = (index: number, role: WireRole): WireTerminal => ({ x: x(index), role, sides: ['top'] });
+  const bottom = (index: number, role: WireRole): WireTerminal => ({ x: x(index), role, sides: ['bottom'] });
+  if (modules <= 1) return [top(0, 'L1'), bottom(0, 'PE')];
+  if (modules === 2) return [top(0, 'L1'), top(1, 'PE'), bottom(0, 'N')];
+  if (modules === 3) return [top(0, 'L1'), top(1, 'L2'), top(2, 'L3'), bottom(1, 'PE')];
+  return [top(0, 'L1'), top(1, 'L2'), top(2, 'L3'), top(3, 'PE'), bottom(1, 'N')];
 }
 
 /** Los bornes con cable de un aparato, según su tipo, ancho, polos y fase. */
-export function terminalSpecs({ kind, modules, poles, phase }: TerminalSource): WireTerminal[] {
+export function terminalSpecs({ kind, modules, poles, phase, neutralLeft }: TerminalSource): WireTerminal[] {
   const holes = modules * 2;
   const holeX = (index: number): number => (MODULE_W / 2) * index + MODULE_W / 4;
+  // Una bornera de barra recibe cables por los dos lados: arriba (entran) y abajo (salen).
   const block = (role: WireRole): WireTerminal[] =>
-    Array.from({ length: holes }, (_, index) => ({ x: holeX(index), role, sides: ['bottom'] }));
+    Array.from({ length: holes }, (_, index) => ({ x: holeX(index), role, sides: ['top', 'bottom'] }));
 
   switch (kind) {
     case 'bornera_tierra':
@@ -95,23 +113,21 @@ export function terminalSpecs({ kind, modules, poles, phase }: TerminalSource): 
     case 'bornera_neutro':
       return block('N');
     case 'repartidor':
-      return block('L1');
+      // Un repartidor reparte una fase: la que se le elige (por omisión, la R).
+      return block(WIRE_ROLES.find((role) => role === phase && role !== 'N' && role !== 'PE') ?? 'L1');
     case 'dps':
-      return rolesOfPoles(undefined, modules).map((role, index) => ({
-        x: MODULE_W * index + MODULE_W / 2,
-        role,
-        sides: ['bottom'],
-      }));
-    case 'otro':
+      return surgeTerminals(modules);
     case 'tope':
       return [];
     case 'borne':
       // Borne de paso: una sola función, arriba y abajo. La elige el campo de fase.
       return [{ x: MODULE_W / 2, role: WIRE_ROLES.find((role) => role === phase) ?? 'L1', sides: ['top', 'bottom'] }];
-    default:
-      return rolesOfPoles(poles, modules, phase)
-        .slice(0, modules)
-        .map((role, index) => ({ x: MODULE_W * index + MODULE_W / 2, role, sides: ['top', 'bottom'] }));
+    default: {
+      const roles = rolesOfPoles(poles, modules, phase).slice(0, modules);
+      // Con el neutro a la izquierda, el neutro pasa al primer módulo y las fases se corren a la derecha.
+      const ordered = neutralLeft && roles.includes('N') ? ['N' as WireRole, ...roles.filter((role) => role !== 'N')] : roles;
+      return ordered.map((role, index) => ({ x: MODULE_W * index + MODULE_W / 2, role, sides: ['top', 'bottom'] }));
+    }
   }
 }
 

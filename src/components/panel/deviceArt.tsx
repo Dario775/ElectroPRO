@@ -11,6 +11,7 @@ import type { BoardPartKind } from '../../types/electrical';
 import type { PartPhoto } from '../../services/partImages';
 import { imageCrop } from '../../utils/imageFit';
 import { DEVICE_H, MODULE_W } from './deviceMetrics';
+import { surgeTerminals } from './wiring';
 
 export { DEVICE_H, MODULE_W };
 
@@ -218,25 +219,85 @@ const Differential: React.FC<DeviceArtProps> = ({ modules, amps, sensitivityMa }
   );
 };
 
-/** Descargador de sobretensiones: ventanita verde de estado. */
+/** Símbolo de tierra (⏚), dibujado: la letra no se ve igual en todos los equipos. */
+const EarthMark: React.FC<{ x: number; y: number }> = ({ x, y }) => (
+  <g stroke={INK} strokeWidth={1.1} strokeLinecap="round">
+    <line x1={x} y1={y - 4} x2={x} y2={y} />
+    <line x1={x - 4.5} y1={y} x2={x + 4.5} y2={y} />
+    <line x1={x - 3} y1={y + 2.2} x2={x + 3} y2={y + 2.2} />
+    <line x1={x - 1.4} y1={y + 4.4} x2={x + 1.4} y2={y + 4.4} />
+  </g>
+);
+
+/**
+ * Descargador de sobretensiones. Como el real (por ejemplo el Easy9 de 3P+N): un borne arriba por
+ * módulo con la fase (L) o la tierra (⏚), una ventanita verde de estado por cada fase y una blanca
+ * en el módulo de neutro-tierra, y el borne del neutro (N) abajo. Se conecta en derivación.
+ */
 const SurgeProtector: React.FC<DeviceArtProps> = ({ modules }) => {
   const width = modules * MODULE_W;
+  const terminals = surgeTerminals(modules);
+  const top = terminals.filter((terminal) => terminal.sides.includes('top'));
+  const bottom = terminals.filter((terminal) => terminal.sides.includes('bottom'));
   return (
     <g>
       <Body width={width} fill="#e8ebef" />
-      <Terminals width={width} y={2} />
-      <Terminals width={width} y={DEVICE_H - 17} />
-      <rect x={4} y={22} width={width - 8} height={DEVICE_H - 44} rx={2} fill="#f4f5f7" stroke={EDGE_SOFT} strokeWidth={0.8} />
-      <FaceText x={width / 2} y={38} size={11}>
+      {/* Separaciones entre módulos */}
+      {Array.from({ length: modules - 1 }, (_, index) => (
+        <line key={index} x1={(index + 1) * MODULE_W} y1={20} x2={(index + 1) * MODULE_W} y2={DEVICE_H - 4} stroke={EDGE_SOFT} strokeWidth={1} />
+      ))}
+      {/* Bornes de arriba: fases y tierra */}
+      {top.map((terminal) => (
+        <g key={`t-${terminal.x}`}>
+          <rect x={terminal.x - 12} y={2} width={24} height={15} rx={2} fill="url(#pf-terminal)" stroke={EDGE} strokeWidth={0.8} />
+          <Screw cx={terminal.x} cy={9.5} />
+          {terminal.role === 'PE' ? (
+            <EarthMark x={terminal.x} y={25} />
+          ) : (
+            <FaceText x={terminal.x} y={29} size={8}>
+              L
+            </FaceText>
+          )}
+        </g>
+      ))}
+      {/* Cara del aparato */}
+      <rect x={3} y={34} width={width - 6} height={DEVICE_H - 56} rx={2} fill="#f4f5f7" stroke={EDGE_SOFT} strokeWidth={0.8} />
+      {Array.from({ length: modules }, (_, index) => {
+        const protectsPhase = modules === 1 || index < modules - 1 || modules === 3;
+        return (
+          <rect
+            key={index}
+            x={index * MODULE_W + 7}
+            y={48}
+            width={MODULE_W - 14}
+            height={10}
+            rx={5}
+            fill={protectsPhase ? '#2fa84f' : '#ffffff'}
+            stroke={protectsPhase ? '#17692e' : EDGE}
+            strokeWidth={0.9}
+          />
+        );
+      })}
+      <FaceText x={width / 2} y={76} size={9}>
         DPS
       </FaceText>
-      <rect x={9} y={48} width={width - 18} height={24} rx={2} fill="#2fa84f" stroke="#17692e" strokeWidth={1} />
-      <FaceText x={width / 2} y={64} size={9} fill="#ffffff">
-        OK
-      </FaceText>
-      <FaceText x={width / 2} y={85} size={7} weight={500} fill="#5d646e">
+      <FaceText x={width / 2} y={87} size={6.5} weight={500} fill="#5d646e">
         Tipo 2
       </FaceText>
+      {/* Borne de abajo: el neutro (o la tierra, si no hay neutro) */}
+      {bottom.map((terminal) => (
+        <g key={`b-${terminal.x}`}>
+          <rect x={terminal.x - 12} y={DEVICE_H - 17} width={24} height={15} rx={2} fill="url(#pf-terminal)" stroke={EDGE} strokeWidth={0.8} />
+          <Screw cx={terminal.x} cy={DEVICE_H - 9.5} />
+          {terminal.role === 'PE' ? (
+            <EarthMark x={terminal.x} y={DEVICE_H - 28} />
+          ) : (
+            <FaceText x={terminal.x} y={DEVICE_H - 21} size={8}>
+              N
+            </FaceText>
+          )}
+        </g>
+      ))}
     </g>
   );
 };
