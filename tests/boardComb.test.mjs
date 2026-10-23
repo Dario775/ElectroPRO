@@ -87,3 +87,75 @@ test('neutralLeft pasa el neutro al primer módulo', () => {
 test('hay patrones predefinidos con el de Schneider', () => {
   assert.deepEqual(COMB_PATTERNS[0].roles, ['N', 'L1', 'L2', 'L3']);
 });
+
+test('resizeComb agranda y achica de a un pin sin pasar de uno', () => {
+  const board = b.autoWire(b.boardFromFront(row(), 12));
+  const { board: placed, accessory } = place(board, combSpec(['L1', 'N'], 4));
+  const right = b.resizeComb(placed, accessory.id, 'right', accessory.x + 7 * 30 + 4);
+  assert.equal(right.accessories.find((a) => a.id === accessory.id).w, 210);
+  const tiny = b.resizeComb(placed, accessory.id, 'right', accessory.x - 100);
+  assert.equal(tiny.accessories.find((a) => a.id === accessory.id).w, 30);
+});
+
+test('resizeComb desde la izquierda deja fija la punta derecha', () => {
+  const { board, accessory } = place(b.autoWire(b.boardFromFront(row(), 12)), combSpec(['L1', 'N'], 4));
+  const end = accessory.x + accessory.w;
+  const grown = b.resizeComb(board, accessory.id, 'left', accessory.x - 62);
+  const comb = grown.accessories.find((a) => a.id === accessory.id);
+  assert.equal(comb.x + comb.w, end);
+  assert.equal(comb.w, 180);
+});
+
+const connectorSpec = (role) => ({ kind: 'conector', w: 30, h: 44, role });
+const placeConnector = (board, role, slot) => {
+  const rail = board.rails[0];
+  return b.addAccessory(board, connectorSpec(role), { x: rail.x + 60 + slot * 30 + 15, y: rail.y - 20 });
+};
+
+test('un conector se imanta sobre un módulo y se enchufa en el borne de abajo', () => {
+  const base = b.autoWire(b.boardFromFront(row(), 12));
+  const { board, accessory } = placeConnector(base, 'L1', 0);
+  assert.equal(accessory.y, board.rails[0].y + 2 - accessory.h);
+  const link = b.connectorLink(board, accessory);
+  assert.ok(link);
+  assert.equal(link.match, true);
+  assert.equal(b.connectorTerminal(accessory).y, accessory.y + 13);
+});
+
+test('un conector en un borne de otra función se avisa como error', () => {
+  const { board } = placeConnector(b.autoWire(b.boardFromFront(row(), 12)), 'N', 0);
+  const issues = reviewBoard(board).filter((i) => i.id.startsWith('conector-rol'));
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].severity, 'error');
+});
+
+test('autoWire lleva el cable al tornillo del conector, y un peine con conector se alimenta por él', () => {
+  const base = b.autoWire(b.boardFromFront(row(), 12));
+  const withComb = place(base, combSpec(['L1', 'N'], 6)).board;
+  const { board, accessory } = placeConnector(withComb, 'L1', 0);
+  const wired = b.autoWire(board);
+  const screw = b.connectorTerminal(accessory);
+  const atScrew = wired.wires.filter((w) => w.to?.partId === accessory.id);
+  assert.equal(atScrew.length, 1);
+  assert.equal(atScrew[0].role, 'L1');
+  assert.equal(b.terminalOf(wired, atScrew[0].to).x, screw.x);
+  assert.equal(reviewBoard(wired).filter((i) => i.id.startsWith('peine-sin-alimentar') && i.id.endsWith('L1')).length, 0);
+});
+
+test('un conector sin cable avisa y mover el conector arrastra su cable', () => {
+  const base = b.autoWire(b.boardFromFront(row(), 12));
+  const { board, accessory } = placeConnector(base, 'L1', 0);
+  assert.equal(reviewBoard(board).filter((i) => i.id.startsWith('conector-sin-cable')).length, 1);
+  const wired = b.autoWire(board);
+  const moved = b.moveAccessory(wired, accessory.id, accessory.x + 30, accessory.y);
+  const wire = moved.wires.find((w) => w.to?.partId === accessory.id);
+  const end = wire.points[wire.points.length - 1];
+  assert.equal(end.x, b.connectorTerminal(moved.accessories.find((a) => a.id === accessory.id)).x);
+});
+
+test('borrar un conector borra su cable', () => {
+  const { board, accessory } = placeConnector(b.autoWire(b.boardFromFront(row(), 12)), 'L1', 0);
+  const wired = b.autoWire(board);
+  assert.ok(wired.wires.some((w) => w.to?.partId === accessory.id));
+  assert.ok(!b.removeAccessory(wired, accessory.id).wires.some((w) => w.to?.partId === accessory.id));
+});

@@ -18,7 +18,7 @@ import {
   combPatternOf,
   modulesForPoles,
 } from '../../../utils/boardCatalog';
-import { combLinks, combPins, partTerminals, setWireRole, setWireSection, updateAccessory, updateNote, updatePart } from '../../../utils/boardLayout';
+import { combLinks, combPinCount, connectorLink, combPins, partTerminals, setWireRole, setWireSection, updateAccessory, updateNote, updatePart } from '../../../utils/boardLayout';
 import {
   addImage,
   assignSlot,
@@ -67,6 +67,18 @@ const CombFields: React.FC<{ board: BoardLayout; item: BoardAccessory; onEdit: (
   const wrong = links.filter((link) => !link.match).length;
   return (
     <div className="space-y-2">
+      <Labeled label="Cantidad de pines">
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => onEdit({ w: Math.max(1, combPinCount(item) - 1) * 30 })} aria-label="Un pin menos">
+            −
+          </Button>
+          <span className="min-w-8 text-center text-sm font-bold text-strong">{combPinCount(item)}</span>
+          <Button size="sm" onClick={() => onEdit({ w: (combPinCount(item) + 1) * 30 })} aria-label="Un pin más">
+            +
+          </Button>
+          <span className="text-xs text-muted">o arrastrá las puntas del peine</span>
+        </div>
+      </Labeled>
       <Labeled label="Pines (en orden)">
         <select
           value={pattern?.id ?? ''}
@@ -94,6 +106,34 @@ const CombFields: React.FC<{ board: BoardLayout; item: BoardAccessory; onEdit: (
           : wrong > 0
             ? `${wrong} ${wrong === 1 ? 'pin cae' : 'pines caen'} en un borne de otra función: corré el peine un módulo.`
             : `Cubre ${links.length} ${links.length === 1 ? 'borne' : 'bornes'}: alcanza con un cable por función para alimentarlos.`}
+      </p>
+    </div>
+  );
+};
+
+/** Datos de un conector para peine: su función y en qué borne está enchufado. */
+const ConnectorFields: React.FC<{ board: BoardLayout; item: BoardAccessory; onEdit: (patch: Partial<BoardAccessory>) => void }> = ({ board, item, onEdit }) => {
+  const link = connectorLink(board, item);
+  return (
+    <div className="space-y-2">
+      <Labeled label="Función">
+        <select value={item.role ?? 'L1'} onChange={(e) => onEdit({ role: e.target.value as BoardAccessory['role'] })} className={FIELD}>
+          {(['L1', 'L2', 'L3', 'N'] as const).map((role) => (
+            <option key={role} value={role}>
+              {WIRE_STYLES[role].label}
+            </option>
+          ))}
+        </select>
+      </Labeled>
+      <p className="text-xs leading-relaxed text-muted">
+        El pin se enchufa en el borne de arriba del aparato que tiene debajo y el cable entra por el tornillo. Si el borne tiene un peine, alimenta todo el peine.
+      </p>
+      <p className={`text-xs font-semibold ${!link || !link.match ? 'text-danger-text' : 'text-success-text'}`}>
+        {!link
+          ? 'No está enchufado en ningún borne todavía.'
+          : link.match
+            ? 'Enchufado en un borne de su misma función.'
+            : 'Está en un borne de otra función: corrélo.'}
       </p>
     </div>
   );
@@ -243,11 +283,12 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
     const item = (board.accessories ?? []).find((candidate) => candidate.id === selection.id);
     if (!item) return null;
     const editItem = (patch: Partial<typeof item>): void => onChange(updateAccessory(board, item.id, patch));
-    const title = item.kind === 'prensacable' ? 'Prensacable con tubo' : item.kind === 'canaleta' ? 'Canaleta ranurada' : 'Peine';
+    const title = { prensacable: 'Prensacable con tubo', canaleta: 'Canaleta ranurada', peine: 'Peine', conector: 'Conector para peine' }[item.kind];
     return (
       <div className="space-y-3 rounded-xl border border-accent-line bg-accent-soft p-3 text-sm">
         <strong className="text-strong">{title}</strong>
-        <div className="grid grid-cols-2 gap-2">
+        {item.kind === 'conector' && <ConnectorFields board={board} item={item} onEdit={editItem} />}
+        <div className={item.kind === 'conector' ? 'hidden' : 'grid grid-cols-2 gap-2'}>
           <Labeled label="Ancho">
             <input type="number" min={12} max={900} value={item.w} onChange={(e) => editItem({ w: Math.max(12, Number(e.target.value) || item.w) })} className={FIELD} />
           </Labeled>
@@ -308,7 +349,7 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
   if (!part) return null;
   const edit = (patch: Partial<Omit<BoardPart, 'id'>>): void => onChange(updatePart(board, part.id, patch));
   const poleOptions = POLES_BY_KIND[part.kind];
-  const hasAmps = part.kind === 'termica' || part.kind === 'diferencial' || part.kind === 'corte';
+  const hasAmps = ['termica', 'diferencial', 'corte', 'protector_tension', 'contactor'].includes(part.kind);
   const hasPhase = hasAmps;
   const blockLike = !poleOptions;
   const photo = partPhoto(photos, part);

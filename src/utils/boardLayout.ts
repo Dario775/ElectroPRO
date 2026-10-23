@@ -42,7 +42,7 @@ export const WIRE_SPACING = 7.5;
 const SNAP_Y = 60;
 const STEP = 18;
 const BLOCK_KINDS = ['bornera_tierra', 'bornera_neutro', 'repartidor'];
-const NUMBERED_KINDS = ['termica', 'diferencial', 'corte', 'dps'];
+const NUMBERED_KINDS = ['termica', 'diferencial', 'corte', 'dps', 'protector_tension', 'contactor'];
 
 let idCounter = 0;
 export function newBoardId(prefix: string): string {
@@ -85,11 +85,15 @@ export function partTerminals(part: BoardPart): BoardTerminalPoint[] {
 
 export function terminalOf(board: BoardLayout, ref: BoardTerminalRef): BoardTerminalPoint | undefined {
   const part = board.parts.find((candidate) => candidate.id === ref.partId);
-  return part ? partTerminals(part).find((t) => t.index === ref.index && t.side === ref.side) : undefined;
+  if (part) return partTerminals(part).find((t) => t.index === ref.index && t.side === ref.side);
+  const connector = (board.accessories ?? []).find((item) => item.id === ref.partId && item.kind === 'conector');
+  return connector && ref.index === 0 && ref.side === 'top' ? connectorTerminal(connector) : undefined;
 }
 
+/** Los bornes de los aparatos y los tornillos de los conectores para peine. */
 export function allTerminals(board: BoardLayout): BoardTerminalPoint[] {
-  return board.parts.flatMap(partTerminals);
+  const connectors = (board.accessories ?? []).filter((item) => item.kind === 'conector').map(connectorTerminal);
+  return [...board.parts.flatMap(partTerminals), ...connectors];
 }
 
 /** El borne más cercano a un punto, si está dentro del radio. */
@@ -647,14 +651,63 @@ export function combLinks(board: BoardLayout, comb: BoardAccessory): CombLink[] 
 
 export const terminalKey = (ref: BoardTerminalRef): string => `${ref.partId}:${ref.index}:${ref.side}`;
 
-/** Bornes que ya reciben su fase o su neutro a través de un peine bien puesto. */
+/** El tornillo del conector para peine, donde entra el cable. */
+export function connectorTerminal(connector: BoardAccessory): BoardTerminalPoint {
+  return { partId: connector.id, index: 0, side: 'top', role: connector.role ?? 'L1', x: connector.x + connector.w / 2, y: connector.y + 13 };
+}
+
+/** Con qué borne de arriba hace contacto el pin de un conector (el que tiene justo debajo). */
+export function connectorLink(board: BoardLayout, connector: BoardAccessory): CombLink | undefined {
+  const pin: CombPin = { index: 0, role: connector.role ?? 'L1', x: connector.x + connector.w / 2, y: connector.y + connector.h };
+  const terminal = board.parts
+    .flatMap((part) => partTerminals(part))
+    .filter((candidate) => candidate.side === 'top' && Math.abs(candidate.x - pin.x) <= 8 && Math.abs(candidate.y - pin.y) <= 24)
+    .sort((a, b) => Math.abs(a.y - pin.y) - Math.abs(b.y - pin.y))[0];
+  return terminal ? { pin, terminal, match: terminal.role === pin.role } : undefined;
+}
+
+/** Bornes que ya reciben su fase o su neutro a través de un peine o de un conector bien puestos. */
 export function combCoveredKeys(board: BoardLayout): Set<string> {
   const covered = new Set<string>();
-  for (const comb of board.accessories ?? []) {
-    if (comb.kind !== 'peine') continue;
-    for (const link of combLinks(board, comb)) if (link.match) covered.add(terminalKey(link.terminal));
+  for (const item of board.accessories ?? []) {
+    if (item.kind === 'peine') {
+      for (const link of combLinks(board, item)) if (link.match) covered.add(terminalKey(link.terminal));
+    } else if (item.kind === 'conector') {
+      const link = connectorLink(board, item);
+      if (link?.match) covered.add(terminalKey(link.terminal));
+    }
   }
   return covered;
+}
+
+/** El borne recibe cable directo o por un conector enchufado en él que tiene su cable. */
+export function isFed(board: BoardLayout, terminal: BoardTerminalRef): boolean {
+  if (wiresAtTerminal(board, terminal).length > 0) return true;
+  return (board.accessories ?? []).some((item) => {
+    if (item.kind !== 'conector') return false;
+    const link = connectorLink(board, item);
+    return !!link && link.match && terminalKey(link.terminal) === terminalKey(terminal) && wiresAtTerminal(board, connectorTerminal(item)).length > 0;
+  });
+}
+
+/** Cantidad de pines que tiene un peine. */
+export const combPinCount = (comb: Pick<BoardAccessory, 'w'>): number => Math.max(1, Math.floor(comb.w / COMB_PITCH));
+
+/**
+ * Agranda o achica un peine de a un pin: se agarra una punta y se lleva hasta donde se necesita. El otro
+ * extremo no se mueve y los pines siguen cayendo sobre los módulos del riel.
+ */
+export function resizeComb(board: BoardLayout, id: string, side: 'left' | 'right', x: number, maxPins = 60): BoardLayout {
+  const comb = (board.accessories ?? []).find((item) => item.id === id);
+  if (!comb || comb.kind !== 'peine') return board;
+  const clamp = (pins: number): number => Math.min(maxPins, Math.max(1, pins));
+  if (side === 'right') {
+    const pins = clamp(Math.round((x - comb.x) / COMB_PITCH));
+    return updateAccessory(board, id, { w: pins * COMB_PITCH });
+  }
+  const right = comb.x + combPinCount(comb) * COMB_PITCH;
+  const pins = clamp(Math.round((right - x) / COMB_PITCH));
+  return updateAccessory(board, id, { x: right - pins * COMB_PITCH, w: pins * COMB_PITCH });
 }
 
 /** Imanta un peine a los bornes de arriba del riel más cercano, con sus pines sobre los módulos. */
@@ -678,24 +731,30 @@ export function addAccessory(board: BoardLayout, spec: AccessorySpec, at?: Board
     x: at ? round5(at.x - spec.w / 2) : BOARD_LEFT + 20 + existing.length * 25,
     y: at ? round5(at.y - spec.h / 2) : BOARD_TOP - 100 + existing.length * 10,
   };
-  const accessory = placed.kind === 'peine' ? snapComb(board, placed) : placed;
+  const accessory = placed.kind === 'peine' || placed.kind === 'conector' ? snapComb(board, placed) : placed;
   return { board: { ...board, accessories: [...existing, accessory] }, accessory };
 }
 
 export function updateAccessory(board: BoardLayout, id: string, patch: Partial<Omit<BoardAccessory, 'id'>>): BoardLayout {
-  return { ...board, accessories: (board.accessories ?? []).map((item) => (item.id === id ? { ...item, ...patch, auto: false } : item)) };
+  const next = { ...board, accessories: (board.accessories ?? []).map((item) => (item.id === id ? { ...item, ...patch, auto: false } : item)) };
+  // El cable de un conector lo sigue cuando se lo mueve.
+  return (board.accessories ?? []).some((item) => item.id === id && item.kind === 'conector') ? reconnectWires(next) : next;
 }
 
 export function moveAccessory(board: BoardLayout, id: string, x: number, y: number): BoardLayout {
   const item = (board.accessories ?? []).find((candidate) => candidate.id === id);
   const target = { x: round5(x), y: round5(y) };
-  if (item?.kind !== 'peine') return updateAccessory(board, id, target);
+  if (item?.kind !== 'peine' && item?.kind !== 'conector') return updateAccessory(board, id, target);
   const snapped = snapComb(board, { ...item, ...target });
   return updateAccessory(board, id, { x: snapped.x, y: snapped.y });
 }
 
 export function removeAccessory(board: BoardLayout, id: string): BoardLayout {
-  return { ...board, accessories: (board.accessories ?? []).filter((item) => item.id !== id) };
+  return {
+    ...board,
+    accessories: (board.accessories ?? []).filter((item) => item.id !== id),
+    wires: board.wires.filter((wire) => wire.from?.partId !== id && wire.to?.partId !== id),
+  };
 }
 
 export function duplicateAccessory(board: BoardLayout, id: string): { board: BoardLayout; accessory?: BoardAccessory } {
@@ -783,16 +842,35 @@ export function autoWire(board: BoardLayout): BoardLayout {
 
   const rows = rowsOf(board);
   const covered = combCoveredKeys(board);
-  // Un borne por cada peine y cada función: por ahí entra la alimentación de todo el peine.
+  // Un borne por cada peine y cada función: por ahí entra la alimentación de todo el peine. Si hay un
+  // conector enchufado en uno de los bornes, el cable va al tornillo del conector.
   const combFeeds: BoardTerminalPoint[] = [];
+  const feedOwner = new Map<string, string>();
+  const connectorAt = new Map<string, BoardTerminalPoint>();
+  const connectors = (board.accessories ?? []).filter((item) => item.kind === 'conector');
+  for (const connector of connectors) {
+    const link = connectorLink(board, connector);
+    if (link?.match) connectorAt.set(terminalKey(link.terminal), connectorTerminal(connector));
+  }
+  const addFeed = (deviceTerminal: BoardTerminalPoint): void => {
+    const via = connectorAt.get(terminalKey(deviceTerminal)) ?? deviceTerminal;
+    combFeeds.push(via);
+    feedOwner.set(terminalKey(via), deviceTerminal.partId);
+  };
+  const inComb = new Set<string>();
   for (const comb of board.accessories ?? []) {
     if (comb.kind !== 'peine') continue;
-    const seen = new Set<BoardWireRole>();
+    const byRole = new Map<BoardWireRole, BoardTerminalPoint[]>();
     for (const link of combLinks(board, comb)) {
-      if (!link.match || seen.has(link.pin.role)) continue;
-      seen.add(link.pin.role);
-      combFeeds.push(link.terminal);
+      if (!link.match) continue;
+      inComb.add(terminalKey(link.terminal));
+      byRole.set(link.pin.role, [...(byRole.get(link.pin.role) ?? []), link.terminal]);
     }
+    for (const terminals of byRole.values()) addFeed(terminals.find((t) => connectorAt.has(terminalKey(t))) ?? terminals[0]);
+  }
+  for (const connector of connectors) {
+    const link = connectorLink(board, connector);
+    if (link?.match && !inComb.has(terminalKey(link.terminal))) addFeed(link.terminal);
   }
   const withDiff = rows.filter((row) => row.parts.some((part) => part.kind === 'diferencial'));
   const entry = rows
@@ -866,7 +944,7 @@ export function autoWire(board: BoardLayout): BoardLayout {
     const circuitIds = new Set(circuits.map((circuit) => circuit.id));
     const targetsOf = (role: BoardWireRole): BoardTerminalPoint[] => {
       const direct = circuits.flatMap((circuit) => tops(circuit).filter((t) => t.role === role && !covered.has(terminalKey(t))));
-      const fed = combFeeds.filter((t) => t.role === role && circuitIds.has(t.partId));
+      const fed = combFeeds.filter((t) => t.role === role && circuitIds.has(feedOwner.get(terminalKey(t)) ?? t.partId));
       return [...fed, ...direct];
     };
     const wantedRoles = (['N', ...PHASE_ROLES] as BoardWireRole[]).filter((role) => targetsOf(role).length > 0);

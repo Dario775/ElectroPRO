@@ -18,6 +18,7 @@ import {
   freeWire,
   guideWire,
   moveAccessory,
+  resizeComb,
   movePart,
   moveRail,
   moveSegment,
@@ -73,6 +74,8 @@ type Drag =
   | { type: 'part'; id: string; dx: number; dy: number; base: BoardLayout }
   | { type: 'rail'; id: string; dx: number; dy: number; base: BoardLayout }
   | { type: 'accessory'; id: string; dx: number; dy: number; base: BoardLayout }
+  /** Una punta de un peine que se lleva para agrandarlo o achicarlo. */
+  | { type: 'combResize'; id: string; side: 'left' | 'right'; base: BoardLayout }
   /** Un cable nuevo que sale de un borne. */
   | { type: 'newWire'; from: BoardTerminalPoint; base: BoardLayout }
   /** Una punta de un cable que se agarró para guiarla o enchufarla en otro borne. */
@@ -254,6 +257,9 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
         case 'accessory':
           next = moveAccessory(drag.base, drag.id, point.x - drag.dx, point.y - drag.dy);
           break;
+        case 'combResize':
+          next = resizeComb(drag.base, drag.id, drag.side, point.x);
+          break;
         case 'segment': {
           const wire = drag.base.wires.find((candidate) => candidate.id === drag.wireId);
           if (!wire) return;
@@ -383,6 +389,13 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
     onSelect({ kind: 'accessory', id });
     const point = toBoard(event.clientX, event.clientY);
     startDrag({ type: 'accessory', id, dx: point.x - x, dy: point.y - y, base: board });
+  };
+
+  const combResizeDown = (event: React.PointerEvent, id: string, side: 'left' | 'right'): void => {
+    if (mode !== 'select') return;
+    event.stopPropagation();
+    onSelect({ kind: 'accessory', id });
+    startDrag({ type: 'combResize', id, side, base: board });
   };
 
   const onDragOver = (event: React.DragEvent): void => {
@@ -538,6 +551,19 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
             <AccessoryShape item={item} />
             {selected && (
               <rect x={-3} y={-3} width={item.w + 6} height={item.h + 6} rx={4} fill="none" stroke={SELECTION} strokeWidth={2.5} strokeDasharray="7 4" data-export="hide" pointerEvents="none" />
+            )}
+            {selected && interactive && item.kind === 'peine' && (
+              <g data-export="hide">
+                {(['left', 'right'] as const).map((side) => {
+                  const x = side === 'left' ? -9 : item.w + 9;
+                  return (
+                    <g key={side} style={{ cursor: 'ew-resize' }} onPointerDown={(event) => combResizeDown(event, item.id, side)}>
+                      <rect x={x - 9} y={-4} width={18} height={item.h + 8} fill="transparent" />
+                      <rect x={x - 4} y={item.h / 2 - 11} width={8} height={22} rx={4} fill="#ffffff" stroke={SELECTION} strokeWidth={2} />
+                    </g>
+                  );
+                })}
+              </g>
             )}
           </g>
         );

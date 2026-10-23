@@ -9,7 +9,7 @@
  */
 import type { BoardLayout, BoardPart, BoardWire, BoardWireRole } from '../types/electrical';
 import { KIND_LABEL, sectionForAmps } from './boardCatalog';
-import { combCoveredKeys, combLinks, partTerminals, terminalKey, terminalOf, wiresAtTerminal } from './boardLayout';
+import { combCoveredKeys, combLinks, connectorLink, connectorTerminal, isFed, partTerminals, terminalKey, terminalOf, wiresAtTerminal } from './boardLayout';
 
 export type ReviewSeverity = 'error' | 'warning';
 
@@ -29,7 +29,7 @@ const ROLE_NAME: Record<BoardWireRole, string> = {
   PE: 'tierra',
 };
 const PHASES: BoardWireRole[] = ['L1', 'L2', 'L3'];
-const PROTECTIONS = ['termica', 'diferencial', 'corte'];
+const PROTECTIONS = ['termica', 'diferencial', 'corte', 'protector_tension', 'contactor'];
 
 const nameOf = (part: BoardPart): string => `«${part.label.trim() || KIND_LABEL[part.kind]}»`;
 const sectionText = (section: number): string => `${String(section).replace('.', ',')} mm²`;
@@ -78,9 +78,29 @@ export function reviewBoard(board: BoardLayout): BoardIssue[] {
     }
     if (board.wires.length > 0) {
       for (const role of new Set(links.filter((candidate) => candidate.match).map((candidate) => candidate.pin.role))) {
-        const fed = links.some((link) => link.match && link.pin.role === role && wiresAtTerminal(board, link.terminal).length > 0);
+        const fed = links.some((link) => link.match && link.pin.role === role && isFed(board, link.terminal));
         if (!fed) add({ id: `peine-sin-alimentar-${comb.id}-${role}`, severity: 'warning', message: `El peine no recibe ${ROLE_NAME[role]}: conectá un cable a cualquiera de los bornes que cubre.` });
       }
+    }
+  }
+
+  /* Conectores para peine: el pin tiene que estar en un borne de su función y el tornillo con su cable */
+  for (const connector of (board.accessories ?? []).filter((item) => item.kind === 'conector')) {
+    const link = connectorLink(board, connector);
+    if (!link) {
+      add({ id: `conector-suelto-${connector.id}`, severity: 'warning', message: 'Hay un conector para peine que no está enchufado en ningún borne.' });
+      continue;
+    }
+    const part = board.parts.find((candidate) => candidate.id === link.terminal.partId);
+    if (!link.match) {
+      add({
+        id: `conector-rol-${connector.id}`,
+        severity: PHASES.includes(link.pin.role) && PHASES.includes(link.terminal.role) ? 'warning' : 'error',
+        partId: part?.id,
+        message: `Un conector de ${ROLE_NAME[link.pin.role]} está enchufado en un borne de ${ROLE_NAME[link.terminal.role]}${part ? ` de ${nameOf(part)}` : ''}.`,
+      });
+    } else if (board.wires.length > 0 && wiresAtTerminal(board, connectorTerminal(connector)).length === 0) {
+      add({ id: `conector-sin-cable-${connector.id}`, severity: 'warning', partId: part?.id, message: `El conector de ${ROLE_NAME[link.pin.role]} no tiene cable en su tornillo: no alimenta nada.` });
     }
   }
 

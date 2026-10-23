@@ -125,7 +125,8 @@ export function terminalSpecs({ kind, modules, poles, phase, neutralLeft }: Term
     default: {
       const roles = rolesOfPoles(poles, modules, phase).slice(0, modules);
       // Con el neutro a la izquierda, el neutro pasa al primer módulo y las fases se corren a la derecha.
-      const ordered = neutralLeft && roles.includes('N') ? ['N' as WireRole, ...roles.filter((role) => role !== 'N')] : roles;
+      // Los protectores de tensión traen siempre el neutro a la izquierda (N, L1, L2, L3).
+      const ordered = (neutralLeft || kind === 'protector_tension') && roles.includes('N') ? ['N' as WireRole, ...roles.filter((role) => role !== 'N')] : roles;
       return ordered.map((role, index) => ({ x: MODULE_W * index + MODULE_W / 2, role, sides: ['top', 'bottom'] }));
     }
   }

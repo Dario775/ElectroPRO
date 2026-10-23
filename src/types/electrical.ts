@@ -259,6 +259,8 @@ export type BoardPartKind =
   | 'diferencial'
   | 'corte'
   | 'dps'
+  | 'protector_tension'
+  | 'contactor'
   | 'bornera_tierra'
   | 'bornera_neutro'
   | 'repartidor'
@@ -293,7 +295,7 @@ export interface BoardPart {
 }
 
 /** Accesorios sueltos del armado: no van sobre el riel ni tienen bornes. */
-export type BoardAccessoryKind = 'prensacable' | 'canaleta' | 'peine';
+export type BoardAccessoryKind = 'prensacable' | 'canaleta' | 'peine' | 'conector';
 
 export interface BoardAccessory {
   id: string;
@@ -303,7 +305,7 @@ export interface BoardAccessory {
   y: number;
   w: number;
   h: number;
-  /** Color del peine (la fase o el neutro que reparte) cuando tiene un solo pin repetido. */
+  /** Color del peine (la fase o el neutro que reparte) cuando tiene un solo pin repetido, o función de un conector. */
   role?: BoardWireRole;
   /**
    * Peine: función de cada pin, que se repite a lo largo del peine (por ejemplo N, L1, L2, L3). Cada pin

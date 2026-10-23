@@ -63,6 +63,32 @@ const Comb: React.FC<Pick<BoardAccessory, 'w' | 'h' | 'role' | 'pattern'>> = ({ 
   );
 };
 
+/**
+ * Conector aislado tipo pin para peines: bloque blanco con el tornillo del cable arriba (dentro de su
+ * collar) y el pin de metal abajo, que se enchufa en el borne del aparato. La banda marca la función.
+ */
+const PinConnector: React.FC<Pick<BoardAccessory, 'w' | 'h' | 'role'>> = ({ w, h, role }) => {
+  const color = WIRE_STYLES[role ?? 'L1'].main;
+  const cx = w / 2;
+  const block = Math.min(h - 12, 32);
+  return (
+    <g>
+      <rect x={cx - 4} y={block - 2} width={8} height={h - block + 2} rx={1} fill="#cfd3d9" stroke="#6c737d" strokeWidth={0.8} />
+      {Array.from({ length: 3 }, (_, index) => (
+        <line key={index} x1={cx - 3} y1={block + 3 + index * 3.2} x2={cx + 3} y2={block + 3 + index * 3.2} stroke="#8d949e" strokeWidth={0.6} />
+      ))}
+      <rect x={3} y={0} width={w - 6} height={block} rx={4} fill="#f6f6f1" stroke="#9aa0a8" strokeWidth={1} />
+      <rect x={3} y={block - 6} width={w - 6} height={6} rx={2} fill={color} stroke="#00000044" strokeWidth={0.6} />
+      <circle cx={cx} cy={13} r={9} fill="#ffffff" stroke="#b5bac1" strokeWidth={1} />
+      <circle cx={cx} cy={13} r={6} fill="#aab1ba" stroke="#6c737d" strokeWidth={0.8} />
+      <line x1={cx - 4} y1={13} x2={cx + 4} y2={13} stroke="#4d545d" strokeWidth={1.2} />
+      <line x1={cx} y1={9} x2={cx} y2={17} stroke="#4d545d" strokeWidth={1.2} />
+      <rect x={5} y={3} width={3} height={3} fill="#d8a63a" />
+      <rect x={w - 8} y={3} width={3} height={3} fill="#d8a63a" />
+    </g>
+  );
+};
+
 export const AccessoryShape: React.FC<{ item: Pick<BoardAccessory, 'kind' | 'w' | 'h' | 'role' | 'flip' | 'pattern'> }> = ({ item }) => {
   switch (item.kind) {
     case 'prensacable':
@@ -71,6 +97,8 @@ export const AccessoryShape: React.FC<{ item: Pick<BoardAccessory, 'kind' | 'w' 
       return <Duct w={item.w} h={item.h} />;
     case 'peine':
       return <Comb w={item.w} h={item.h} role={item.role} pattern={item.pattern} />;
+    case 'conector':
+      return <PinConnector w={item.w} h={item.h} role={item.role} />;
   }
 };
 

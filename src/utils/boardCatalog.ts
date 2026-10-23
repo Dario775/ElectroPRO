@@ -113,6 +113,15 @@ export const POLES_BY_KIND: Partial<Record<BoardPartKind, Array<{ poles: string;
     { poles: '2P', modules: 2 },
     { poles: '4P', modules: 4 },
   ],
+  protector_tension: [
+    { poles: '1P+N', modules: 2 },
+    { poles: '3P+N', modules: 4 },
+  ],
+  contactor: [
+    { poles: '2P', modules: 2 },
+    { poles: '3P', modules: 3 },
+    { poles: '4P', modules: 4 },
+  ],
 };
 
 export const KIND_LABEL: Record<BoardPartKind, string> = {
@@ -120,6 +129,8 @@ export const KIND_LABEL: Record<BoardPartKind, string> = {
   diferencial: 'Diferencial',
   corte: 'Interruptor de corte',
   dps: 'Descargador (DPS)',
+  protector_tension: 'Protector de tensión',
+  contactor: 'Contactor',
   bornera_tierra: 'Bornera de tierra',
   bornera_neutro: 'Bornera de neutro',
   repartidor: 'Repartidor',
@@ -139,6 +150,11 @@ export const CATALOG: CatalogEntry[] = [
   { id: 'corte-4p', label: 'Corte 4P', group: 'Protecciones', spec: { kind: 'corte', modules: 4, label: 'CORTE GRAL', amps: 63, poles: '4P' } },
   { id: 'dps', label: 'Descargador 1P+N', group: 'Protecciones', spec: { kind: 'dps', modules: 2, label: 'DPS' } },
   { id: 'dps-4', label: 'Descargador 3P+N', group: 'Protecciones', spec: { kind: 'dps', modules: 4, label: 'DPS' } },
+  { id: 'protector-1p', label: 'Protector de tensión monofásico', group: 'Protecciones', spec: { kind: 'protector_tension', modules: 2, label: 'PROTECTOR', amps: 63, poles: '1P+N', phase: 'L1' } },
+  { id: 'protector-3p', label: 'Protector de tensión trifásico', group: 'Protecciones', spec: { kind: 'protector_tension', modules: 4, label: 'PROTECTOR', amps: 63, poles: '3P+N' } },
+  { id: 'contactor-2p', label: 'Contactor 2P', group: 'Protecciones', spec: { kind: 'contactor', modules: 2, label: 'CONTACTOR', amps: 25, poles: '2P', phase: 'L1' } },
+  { id: 'contactor-3p', label: 'Contactor 3P', group: 'Protecciones', spec: { kind: 'contactor', modules: 3, label: 'CONTACTOR', amps: 25, poles: '3P' } },
+  { id: 'contactor-4p', label: 'Contactor 4P', group: 'Protecciones', spec: { kind: 'contactor', modules: 4, label: 'CONTACTOR', amps: 40, poles: '4P' } },
   { id: 'bornera-tierra', label: 'Bornera de tierra', group: 'Borneras y otros', spec: { kind: 'bornera_tierra', modules: 4, label: 'TIERRA' } },
   { id: 'bornera-neutro', label: 'Bornera de neutro', group: 'Borneras y otros', spec: { kind: 'bornera_neutro', modules: 4, label: 'NEUTRO' } },
   { id: 'repartidor', label: 'Repartidor', group: 'Borneras y otros', spec: { kind: 'repartidor', modules: 6, label: 'REPARTIDOR' } },
@@ -154,6 +170,10 @@ export const CATALOG: CatalogEntry[] = [
   { id: 'peine-4p-der', label: 'Peine 4P (L1, L2, L3, N)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 360, h: 46, pattern: ['L1', 'L2', 'L3', 'N'] } },
   { id: 'peine-3p', label: 'Peine 3P (L1, L2, L3)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 360, h: 46, pattern: ['L1', 'L2', 'L3'] } },
   { id: 'peine-2p', label: 'Peine 1P+N (L1, N)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 360, h: 46, pattern: ['L1', 'N'] } },
+  { id: 'conector-r', label: 'Conector para peine (fase R)', group: 'Accesorios de armado', accessory: { kind: 'conector', w: 30, h: 44, role: 'L1' } },
+  { id: 'conector-s', label: 'Conector para peine (fase S)', group: 'Accesorios de armado', accessory: { kind: 'conector', w: 30, h: 44, role: 'L2' } },
+  { id: 'conector-t', label: 'Conector para peine (fase T)', group: 'Accesorios de armado', accessory: { kind: 'conector', w: 30, h: 44, role: 'L3' } },
+  { id: 'conector-n', label: 'Conector para peine (neutro)', group: 'Accesorios de armado', accessory: { kind: 'conector', w: 30, h: 44, role: 'N' } },
   { id: 'peine-r', label: 'Peine monofásico (fase R)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 180, h: 46, pattern: ['L1'] } },
 ];
 
@@ -168,6 +188,10 @@ export function partDetail(part: Pick<BoardPart, 'kind' | 'amps' | 'curve' | 'se
         .join(' · ');
     case 'corte':
       return part.amps !== undefined ? `Corte ${part.amps} A` : 'Corte';
+    case 'protector_tension':
+      return [part.amps !== undefined ? `${part.amps} A` : '', part.poles].filter(Boolean).join(' · ') || 'Protector de tensión';
+    case 'contactor':
+      return [part.amps !== undefined ? `${part.amps} A` : '', part.poles].filter(Boolean).join(' · ') || 'Contactor';
     default:
       return KIND_LABEL[part.kind];
   }

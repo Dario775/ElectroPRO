@@ -302,6 +302,100 @@ const SurgeProtector: React.FC<DeviceArtProps> = ({ modules }) => {
   );
 };
 
+const ROLE_TEXT: Record<string, string> = { L1: 'L1', L2: 'L2', L3: 'L3', N: 'N', PE: '⏚' };
+
+/**
+ * Protector de tensión (sobre y subtensión, con voltímetro y amperímetro), como los de venta común:
+ * va en serie con la línea, entra por arriba (IN) y sale por abajo (OUT) con el neutro a la izquierda
+ * (N, L1, L2, L3). Una columna del visor por fase: la tensión en rojo y la corriente en verde.
+ */
+const VoltageProtector: React.FC<DeviceArtProps> = ({ modules, amps }) => {
+  const width = modules * MODULE_W;
+  const phases = Math.max(1, modules - 1);
+  const col = (width - 12) / phases;
+  const ratedAmps = String(amps ?? 63).padStart(2, '0');
+  const labels = Array.from({ length: modules }, (_, index) => (modules === 2 ? ['N', 'L'][index] : ['N', 'L1', 'L2', 'L3'][index] ?? ''));
+  return (
+    <g>
+      <Body width={width} fill="#e4e7eb" />
+      <Terminals width={width} y={2} />
+      <Terminals width={width} y={DEVICE_H - 17} />
+      {labels.map((label, index) => (
+        <g key={index}>
+          <FaceText x={MODULE_W * index + MODULE_W / 2} y={29} size={7}>
+            {label}
+          </FaceText>
+          <FaceText x={MODULE_W * index + MODULE_W / 2} y={DEVICE_H - 21} size={7}>
+            {label}
+          </FaceText>
+        </g>
+      ))}
+      <FaceText x={width - 9} y={38} size={5.5} weight={700} fill="#5d646e">
+        IN
+      </FaceText>
+      {/* Visor */}
+      <rect x={4} y={40} width={width - 8} height={42} rx={3} fill="#15181c" stroke="#0b0d10" strokeWidth={1} />
+      {Array.from({ length: phases }, (_, index) => {
+        const cx = 6 + col * index + col / 2;
+        return (
+          <g key={index}>
+            <text x={cx} y={58} textAnchor="middle" fontSize={Math.min(11, col * 0.42)} fontWeight={700} fontFamily="monospace" fill="#ff3b30">
+              220
+            </text>
+            <text x={cx} y={74} textAnchor="middle" fontSize={Math.min(11, col * 0.42)} fontWeight={700} fontFamily="monospace" fill="#34d058">
+              {ratedAmps}
+            </text>
+          </g>
+        );
+      })}
+      {/* Botones */}
+      {[0, 1, 2, 3].slice(0, Math.max(2, modules)).map((index) => (
+        <circle key={index} cx={width / 2 + (index - (Math.max(2, modules) - 1) / 2) * 11} cy={92} r={3.4} fill={index % 2 ? '#e8912d' : '#4a4f57'} stroke="#15181c" strokeWidth={0.6} />
+      ))}
+      <FaceText x={width / 2} y={DEVICE_H - 28} size={5.5} weight={700} fill="#5d646e">
+        OUT
+      </FaceText>
+    </g>
+  );
+};
+
+/**
+ * Contactor modular: bornes de potencia numerados (1, 3, 5… arriba y 2, 4, 6… abajo), la ventanita
+ * del indicador de contactos y la bobina (A1/A2).
+ */
+const Contactor: React.FC<DeviceArtProps> = ({ modules, amps }) => {
+  const width = modules * MODULE_W;
+  return (
+    <g>
+      <Body width={width} fill="#dfe3e8" />
+      <Terminals width={width} y={2} />
+      <Terminals width={width} y={DEVICE_H - 17} />
+      {Array.from({ length: modules }, (_, index) => (
+        <g key={index}>
+          <FaceText x={MODULE_W * index + MODULE_W / 2} y={29} size={7}>
+            {String(index * 2 + 1)}
+          </FaceText>
+          <FaceText x={MODULE_W * index + MODULE_W / 2} y={DEVICE_H - 21} size={7}>
+            {String(index * 2 + 2)}
+          </FaceText>
+        </g>
+      ))}
+      <rect x={4} y={36} width={width - 8} height={DEVICE_H - 58} rx={2} fill="#2f343b" stroke="#16181c" strokeWidth={0.9} />
+      <FaceText x={width / 2} y={50} size={7} fill="#e8eaed">
+        CONTACTOR
+      </FaceText>
+      <rect x={width / 2 - 9} y={58} width={18} height={9} rx={1.5} fill="#f2f3f5" stroke="#8d949e" strokeWidth={0.7} />
+      <rect x={width / 2 - 8} y={59} width={8} height={7} fill="#2fa84f" />
+      <FaceText x={width / 2} y={79} size={6.5} fill="#c8ccd2" weight={500}>
+        {`${amps ?? 25} A`}
+      </FaceText>
+      <FaceText x={width / 2} y={89} size={6} fill="#c8ccd2" weight={500}>
+        A1 · A2
+      </FaceText>
+    </g>
+  );
+};
+
 /** Bornera de barra: una fila de tornillos arriba y los agujeros del conductor abajo. */
 const TerminalBlock: React.FC<{ modules: number; gradient: string; mark: string; stripe?: string }> = ({
   modules,
@@ -438,6 +532,10 @@ export const DeviceArt: React.FC<DeviceArtProps> = (props) => {
       return <Differential {...props} />;
     case 'dps':
       return <SurgeProtector {...props} />;
+    case 'protector_tension':
+      return <VoltageProtector {...props} />;
+    case 'contactor':
+      return <Contactor {...props} />;
     case 'bornera_tierra':
       return <TerminalBlock modules={props.modules} gradient="url(#pf-green)" mark="TIERRA" stripe="#f2d21b" />;
     case 'bornera_neutro':
