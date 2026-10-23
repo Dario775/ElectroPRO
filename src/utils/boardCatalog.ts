@@ -122,6 +122,14 @@ export const POLES_BY_KIND: Partial<Record<BoardPartKind, Array<{ poles: string;
     { poles: '3P', modules: 3 },
     { poles: '4P', modules: 4 },
   ],
+  guardamotor: [
+    { poles: '1P+N', modules: 2 },
+    { poles: '3P', modules: 3 },
+  ],
+  rele_termico: [
+    { poles: '1P+N', modules: 2 },
+    { poles: '3P', modules: 3 },
+  ],
 };
 
 export const KIND_LABEL: Record<BoardPartKind, string> = {
@@ -131,6 +139,8 @@ export const KIND_LABEL: Record<BoardPartKind, string> = {
   dps: 'Descargador (DPS)',
   protector_tension: 'Protector de tensión',
   contactor: 'Contactor',
+  guardamotor: 'Guardamotor',
+  rele_termico: 'Relé térmico',
   bornera_tierra: 'Bornera de tierra',
   bornera_neutro: 'Bornera de neutro',
   repartidor: 'Repartidor',
@@ -155,6 +165,10 @@ export const CATALOG: CatalogEntry[] = [
   { id: 'contactor-2p', label: 'Contactor 2P', group: 'Protecciones', spec: { kind: 'contactor', modules: 2, label: 'CONTACTOR', amps: 25, poles: '2P', phase: 'L1' } },
   { id: 'contactor-3p', label: 'Contactor 3P', group: 'Protecciones', spec: { kind: 'contactor', modules: 3, label: 'CONTACTOR', amps: 25, poles: '3P' } },
   { id: 'contactor-4p', label: 'Contactor 4P', group: 'Protecciones', spec: { kind: 'contactor', modules: 4, label: 'CONTACTOR', amps: 40, poles: '4P' } },
+  { id: 'guardamotor-1p', label: 'Guardamotor monofásico', group: 'Protecciones', spec: { kind: 'guardamotor', modules: 2, label: 'MOTOR', amps: 10, poles: '1P+N', phase: 'L1' } },
+  { id: 'guardamotor-3p', label: 'Guardamotor trifásico', group: 'Protecciones', spec: { kind: 'guardamotor', modules: 3, label: 'MOTOR', amps: 10, poles: '3P' } },
+  { id: 'rele-1p', label: 'Relé térmico monofásico', group: 'Protecciones', spec: { kind: 'rele_termico', modules: 2, label: 'RELÉ', amps: 10, poles: '1P+N', phase: 'L1' } },
+  { id: 'rele-3p', label: 'Relé térmico trifásico', group: 'Protecciones', spec: { kind: 'rele_termico', modules: 3, label: 'RELÉ', amps: 10, poles: '3P' } },
   { id: 'bornera-tierra', label: 'Bornera de tierra', group: 'Borneras y otros', spec: { kind: 'bornera_tierra', modules: 4, label: 'TIERRA' } },
   { id: 'bornera-neutro', label: 'Bornera de neutro', group: 'Borneras y otros', spec: { kind: 'bornera_neutro', modules: 4, label: 'NEUTRO' } },
   { id: 'repartidor', label: 'Repartidor', group: 'Borneras y otros', spec: { kind: 'repartidor', modules: 6, label: 'REPARTIDOR' } },
@@ -192,6 +206,9 @@ export function partDetail(part: Pick<BoardPart, 'kind' | 'amps' | 'curve' | 'se
       return [part.amps !== undefined ? `${part.amps} A` : '', part.poles].filter(Boolean).join(' · ') || 'Protector de tensión';
     case 'contactor':
       return [part.amps !== undefined ? `${part.amps} A` : '', part.poles].filter(Boolean).join(' · ') || 'Contactor';
+    case 'guardamotor':
+    case 'rele_termico':
+      return [part.amps !== undefined ? `Regulado a ${part.amps} A` : '', part.poles].filter(Boolean).join(' · ') || KIND_LABEL[part.kind];
     default:
       return KIND_LABEL[part.kind];
   }

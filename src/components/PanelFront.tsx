@@ -23,6 +23,9 @@ import { downloadBlob, svgToPngBlob } from '../services/svgExport';
 import { PanelCabinet } from './panel/PanelCabinet';
 import { BoardEditor } from './panel/board/BoardEditor';
 import { PartPhotoSlots } from './panel/PartPhotoSlots';
+import { BoardCanvas } from './panel/board/BoardCanvas';
+import { frontRowsFromBoard } from '../utils/boardLayout';
+import { readImageStore } from '../services/partImages';
 import { cx } from '../utils/cx';
 import { Badge } from './ui/Card';
 import { Button, IconButton } from './ui/Button';
@@ -72,11 +75,15 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
   const [editorMaximized, setEditorMaximized] = useState(false);
   const [exportError, setExportError] = useState('');
   const cabinetRef = useRef<HTMLDivElement>(null);
+  const boardSvgRef = useRef<SVGSVGElement | null>(null);
 
   const circuits = useMemo(() => (client.circuits ?? []).filter((c) => c.panelId === panel.id), [client, panel.id]);
   const rows = useMemo(() => frontRows(panel, circuits, client.loads), [panel, circuits, client.loads]);
   const perRow = panel.modulesPerRow ?? DEFAULT_MODULES_PER_ROW;
-  const selectedItem = rows.flat().find((item) => item.key === selected);
+  // Con un tablero armado en el editor, la vista simple y los rótulos salen de ese tablero.
+  const armedBoard = panel.board && (panel.board.rails.length > 0 || panel.board.parts.length > 0) ? panel.board : undefined;
+  const shownRows = useMemo(() => (armedBoard ? frontRowsFromBoard(armedBoard) : rows), [armedBoard, rows]);
+  const selectedItem = armedBoard ? undefined : rows.flat().find((item) => item.key === selected);
 
   const updatePanel = (patch: Partial<ElectricalPanel>, base: ClientRecord = client) =>
     onUpdateClient({ ...base, panels: (base.panels ?? []).map((p) => (p.id === panel.id ? { ...p, ...patch } : p)) });
@@ -98,10 +105,14 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
     }
   };
 
+  // Un tablero armado en el editor es el que se muestra en el frente realista.
+  const armed = !!panel.board && (panel.board.rails.length > 0 || panel.board.parts.length > 0);
+  void photosVersion;
+
   const subtitle = [
     panel.mainBreakerPoles,
     `${panel.mainBreakerAmps} A`,
-    `${usedModules(rows)} módulos`,
+    `${usedModules(shownRows)} módulos`,
   ].join(' · ');
 
   const accessoryOf = (key: string) => (panel.accessories ?? []).find((a) => `acc:${a.id}` === key);
@@ -188,7 +199,7 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
           >
             Ordenar solo
           </Button>
-          <Button size="sm" variant="primary" icon={<FileDown className="h-4 w-4" />} onClick={() => generatePanelLabelsPdf(panel.name, rows)}>
+          <Button size="sm" variant="primary" icon={<FileDown className="h-4 w-4" />} onClick={() => generatePanelLabelsPdf(panel.name, shownRows)}>
             Rótulos para imprimir (PDF)
           </Button>
         </div>
@@ -197,7 +208,9 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
       {exportError && <p className="text-xs font-semibold text-danger-text">{exportError}</p>}
 
       <p className={cx('text-xs text-muted', view === 'editor' && 'hidden')}>
-        Tocá un aparato para moverlo o cambiarle el rótulo. El ancho de cada uno es el de sus módulos DIN, como en el riel.
+        {armed && view === 'realista'
+          ? 'Estás viendo el tablero que armaste en el editor. Para cambiarlo, pasá a «Editor»; si lo vaciás, vuelve el frente automático.'
+          : 'Tocá un aparato para moverlo o cambiarle el rótulo. El ancho de cada uno es el de sus módulos DIN, como en el riel.'}
       </p>
 
       {/* Editor: armado a mano con cables */}
@@ -243,7 +256,25 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
       )}
 
       {/* Frente realista */}
-      {view === 'realista' && (
+      {view === 'realista' && armed && panel.board && (
+        <div ref={cabinetRef} className="overflow-x-auto rounded-xl border border-hairline bg-sunken p-3">
+          <BoardCanvas
+            board={{ ...panel.board, labels: showLabels, wires: showWires ? panel.board.wires : [] }}
+            title={panel.name}
+            subtitle={subtitle}
+            mode="select"
+            selection={null}
+            photos={readImageStore()}
+            svgRef={boardSvgRef}
+            onSelect={() => undefined}
+            onChange={() => undefined}
+            onDropSpec={() => undefined}
+            onAddNote={() => undefined}
+            readOnly
+          />
+        </div>
+      )}
+      {view === 'realista' && !armed && (
         <div ref={cabinetRef} className="overflow-x-auto rounded-xl border border-hairline bg-sunken p-3">
           <PanelCabinet
             rows={rows}
@@ -261,7 +292,7 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
       {/* Filas de riel */}
       {view === 'simple' && (
       <div className="space-y-3 overflow-x-auto rounded-xl border border-hairline bg-sunken p-3">
-        {rows.map((row, r) => {
+        {shownRows.map((row, r) => {
           const used = usedModules([row]);
           const overflow = used > perRow;
           return (
@@ -281,7 +312,7 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
                   <button
                     key={item.key}
                     type="button"
-                    onClick={() => setSelected(item.key === selected ? '' : item.key)}
+                    onClick={() => !armedBoard && setSelected(item.key === selected ? '' : item.key)}
                     aria-pressed={item.key === selected}
                     title={`${item.label} · ${item.detail}`}
                     style={{ width: item.modules * MODULE_PX }}

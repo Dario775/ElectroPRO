@@ -18,7 +18,7 @@ import type {
 } from '../types/electrical';
 import { terminalSpecs } from '../components/panel/wiring';
 import { artKindOf, DEVICE_H, EDITOR_LABEL_GAP, LABEL_TAG_H, MODULE_W } from '../components/panel/deviceMetrics';
-import { combRoles, sectionForAmps, type AccessorySpec } from './boardCatalog';
+import { combRoles, partDetail, sectionForAmps, type AccessorySpec } from './boardCatalog';
 import type { FrontItem } from './panelDevices';
 
 /** Lo que ocupan, debajo del aparato, la separación y la etiqueta con su nombre (en el editor). */
@@ -42,7 +42,7 @@ export const WIRE_SPACING = 7.5;
 const SNAP_Y = 60;
 const STEP = 18;
 const BLOCK_KINDS = ['bornera_tierra', 'bornera_neutro', 'repartidor'];
-const NUMBERED_KINDS = ['termica', 'diferencial', 'corte', 'dps', 'protector_tension', 'contactor'];
+const NUMBERED_KINDS = ['termica', 'diferencial', 'corte', 'dps', 'protector_tension', 'contactor', 'guardamotor', 'rele_termico'];
 
 let idCounter = 0;
 export function newBoardId(prefix: string): string {
@@ -785,6 +785,40 @@ export function removeNote(board: BoardLayout, noteId: string): BoardLayout {
 /* ------------------------------------------------------------------ */
 /* Armado desde el frente del tablero y cableado automático            */
 /* ------------------------------------------------------------------ */
+
+const FRONT_ACCESSORIES = ['dps', 'bornera_tierra', 'bornera_neutro', 'repartidor'];
+
+/**
+ * El frente de un tablero armado en el editor, fila por fila (un riel es una fila), para la vista simple
+ * y los rótulos. Los topes de riel no llevan rótulo.
+ */
+export function frontRowsFromBoard(board: BoardLayout): FrontItem[][] {
+  return [...board.rails]
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+    .map((rail) =>
+      partsOnRail(board, rail)
+        .filter((part) => part.kind !== 'tope')
+        .sort((a, b) => a.x - b.x)
+        .map((part): FrontItem => {
+          const kind = part.kind === 'termica' ? (part.code ? 'circuito' : 'termica') : part.kind === 'diferencial' || part.kind === 'corte' ? part.kind : 'accesorio';
+          return {
+            key: `board:${part.id}`,
+            kind,
+            label: part.label,
+            code: part.code,
+            modules: part.modules,
+            detail: partDetail(part),
+            amps: part.amps,
+            curve: part.curve,
+            sensitivityMa: part.sensitivityMa,
+            poles: part.poles,
+            phase: part.phase,
+            accessoryKind: kind === 'accesorio' ? (FRONT_ACCESSORIES.includes(part.kind) ? (part.kind as FrontItem['accessoryKind']) : 'otro') : undefined,
+          };
+        })
+    )
+    .filter((row) => row.length > 0);
+}
 
 /** Un riel por fila del frente, con los aparatos en su orden. No tiende cables. */
 export function boardFromFront(rows: FrontItem[][], perRow: number): BoardLayout {

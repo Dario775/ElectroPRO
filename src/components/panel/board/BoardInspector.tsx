@@ -349,7 +349,7 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
   if (!part) return null;
   const edit = (patch: Partial<Omit<BoardPart, 'id'>>): void => onChange(updatePart(board, part.id, patch));
   const poleOptions = POLES_BY_KIND[part.kind];
-  const hasAmps = ['termica', 'diferencial', 'corte', 'protector_tension', 'contactor'].includes(part.kind);
+  const hasAmps = ['termica', 'diferencial', 'corte', 'protector_tension', 'contactor', 'guardamotor', 'rele_termico'].includes(part.kind);
   const hasPhase = hasAmps;
   const blockLike = !poleOptions;
   const photo = partPhoto(photos, part);

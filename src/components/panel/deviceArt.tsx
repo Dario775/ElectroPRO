@@ -396,6 +396,64 @@ const Contactor: React.FC<DeviceArtProps> = ({ modules, amps }) => {
   );
 };
 
+/**
+ * Guardamotor (disyuntor magnetotérmico para motores): perilla grande de color con la escala de
+ * regulación en amperes y los botones de marcha (I) y paro (O).
+ */
+const MotorStarter: React.FC<DeviceArtProps> = ({ modules, amps }) => {
+  const width = modules * MODULE_W;
+  const cx = width / 2;
+  return (
+    <g>
+      <Body width={width} fill="#d7dbe0" />
+      <Terminals width={width} y={2} />
+      <Terminals width={width} y={DEVICE_H - 17} />
+      <rect x={4} y={36} width={width - 8} height={DEVICE_H - 58} rx={2} fill="#2b3037" stroke="#15181c" strokeWidth={0.9} />
+      <circle cx={cx} cy={56} r={Math.min(15, width / 2 - 8)} fill="#1b1f24" stroke="#0b0d10" strokeWidth={1} />
+      <circle cx={cx} cy={56} r={Math.min(11, width / 2 - 12)} fill="url(#pf-lever)" stroke="#0b0d10" strokeWidth={0.8} />
+      <line x1={cx} y1={56} x2={cx + 5} y2={48} stroke="#f2f3f5" strokeWidth={1.8} strokeLinecap="round" />
+      <FaceText x={cx} y={82} size={7} fill="#e8eaed">
+        {`${amps ?? 10} A`}
+      </FaceText>
+      <rect x={6} y={88} width={Math.max(8, width / 2 - 8)} height={7} rx={1.5} fill="#2fa84f" />
+      <rect x={width / 2 + 2} y={88} width={Math.max(8, width / 2 - 8)} height={7} rx={1.5} fill="#d6342a" />
+      <FaceText x={width / 4 + 1} y={94} size={5} fill="#ffffff" weight={700}>
+        I
+      </FaceText>
+      <FaceText x={(width * 3) / 4 - 1} y={94} size={5} fill="#ffffff" weight={700}>
+        O
+      </FaceText>
+    </g>
+  );
+};
+
+/**
+ * Relé térmico de sobrecarga: se monta debajo del contactor. Dial de regulación de la corriente,
+ * botón azul de rearme (RESET) y rojo de paro (STOP).
+ */
+const ThermalRelay: React.FC<DeviceArtProps> = ({ modules, amps }) => {
+  const width = modules * MODULE_W;
+  const cx = width / 2;
+  return (
+    <g>
+      <Body width={width} fill="#e9ebee" />
+      <Terminals width={width} y={2} />
+      <Terminals width={width} y={DEVICE_H - 17} />
+      <rect x={4} y={36} width={width - 8} height={DEVICE_H - 58} rx={2} fill="#f6f7f8" stroke={EDGE_SOFT} strokeWidth={0.8} />
+      <FaceText x={cx} y={48} size={6} weight={700} fill="#5d646e">
+        RELÉ TÉRMICO
+      </FaceText>
+      <circle cx={cx} cy={65} r={Math.min(12, width / 2 - 8)} fill="#3a3f46" stroke="#15181c" strokeWidth={0.9} />
+      <line x1={cx} y1={65} x2={cx - 5} y2={57} stroke="#f2f3f5" strokeWidth={1.6} strokeLinecap="round" />
+      <FaceText x={cx} y={88} size={6.5} fill="#2b3037" weight={700}>
+        {`${amps ?? 10} A`}
+      </FaceText>
+      <rect x={6} y={92} width={Math.max(8, width / 2 - 8)} height={6} rx={1.5} fill="#2d6fc4" />
+      <rect x={width / 2 + 2} y={92} width={Math.max(8, width / 2 - 8)} height={6} rx={1.5} fill="#d6342a" />
+    </g>
+  );
+};
+
 /** Bornera de barra: una fila de tornillos arriba y los agujeros del conductor abajo. */
 const TerminalBlock: React.FC<{ modules: number; gradient: string; mark: string; stripe?: string }> = ({
   modules,
@@ -536,6 +594,10 @@ export const DeviceArt: React.FC<DeviceArtProps> = (props) => {
       return <VoltageProtector {...props} />;
     case 'contactor':
       return <Contactor {...props} />;
+    case 'guardamotor':
+      return <MotorStarter {...props} />;
+    case 'rele_termico':
+      return <ThermalRelay {...props} />;
     case 'bornera_tierra':
       return <TerminalBlock modules={props.modules} gradient="url(#pf-green)" mark="TIERRA" stripe="#f2d21b" />;
     case 'bornera_neutro':

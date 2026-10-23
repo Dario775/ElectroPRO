@@ -63,6 +63,8 @@ export interface BoardCanvasProps {
   onChange: (board: BoardLayout, persist: boolean) => void;
   onDropSpec: (specJson: string, at: BoardPoint) => void;
   onAddNote: (at: BoardPoint) => void;
+  /** Solo se mira: no se agarra ni se cambia nada. */
+  readOnly?: boolean;
 }
 
 const SELECTION = '#2563eb';
@@ -123,7 +125,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   board,
   title,
   subtitle,
-  mode,
+  mode: modeProp,
   selection,
   zoom,
   photos,
@@ -132,7 +134,10 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   onChange,
   onDropSpec,
   onAddNote,
+  readOnly = false,
 }) => {
+  // Sin edición, el lienzo se comporta como en el modo de notas pero sin agregar nada.
+  const mode: BoardMode = readOnly ? 'note' : modeProp;
   const bounds = useMemo(() => boardBounds(board), [board]);
   const numbered = useMemo(() => (board.numbering ? numberedParts(board) : []), [board]);
   const terminals = useMemo(() => allTerminals(board), [board]);
@@ -327,6 +332,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
   const onSvgPointerDown = (event: React.PointerEvent<SVGSVGElement>): void => {
     const point = toBoard(event.clientX, event.clientY);
+    if (readOnly) return;
     if (mode === 'note') onAddNote(point);
     else onSelect(null);
   };
@@ -429,7 +435,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
         maxWidth: zoom !== undefined ? 'none' : '100%',
         height: 'auto',
         touchAction: 'none',
-        cursor: mode === 'note' ? 'crosshair' : 'default',
+        cursor: mode === 'note' && !readOnly ? 'crosshair' : 'default',
       }}
       onPointerDown={onSvgPointerDown}
       onPointerMove={onSvgPointerMove}

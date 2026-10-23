@@ -261,6 +261,8 @@ export type BoardPartKind =
   | 'dps'
   | 'protector_tension'
   | 'contactor'
+  | 'guardamotor'
+  | 'rele_termico'
   | 'bornera_tierra'
   | 'bornera_neutro'
   | 'repartidor'

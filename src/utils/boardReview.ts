@@ -29,7 +29,7 @@ const ROLE_NAME: Record<BoardWireRole, string> = {
   PE: 'tierra',
 };
 const PHASES: BoardWireRole[] = ['L1', 'L2', 'L3'];
-const PROTECTIONS = ['termica', 'diferencial', 'corte', 'protector_tension', 'contactor'];
+const PROTECTIONS = ['termica', 'diferencial', 'corte', 'protector_tension', 'contactor', 'guardamotor', 'rele_termico'];
 
 const nameOf = (part: BoardPart): string => `«${part.label.trim() || KIND_LABEL[part.kind]}»`;
 const sectionText = (section: number): string => `${String(section).replace('.', ',')} mm²`;
