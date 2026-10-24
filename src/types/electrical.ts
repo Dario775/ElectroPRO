@@ -382,6 +382,14 @@ export interface BoardLayout {
   labels?: boolean;
   /** Separar en paralelo los cables que corren juntos, para que se vean todos (por omisión, sí). */
   separate?: boolean;
+  /** Medidas exteriores del gabinete en milímetros. Si falta, el tablero se mide según su contenido. */
+  enclosure?: BoardEnclosure;
+}
+
+/** Medidas del gabinete en milímetros (ancho y alto exteriores). */
+export interface BoardEnclosure {
+  widthMm: number;
+  heightMm: number;
 }
 
 export type SupportedCurrency = 'USD' | 'ARS';

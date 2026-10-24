@@ -14,6 +14,7 @@ import {
   accessoryEntry,
   allTerminals,
   boardBounds,
+  enclosureUnits,
   endNear,
   freeWire,
   guideWire,
@@ -418,7 +419,10 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
   const interactive = mode === 'select';
   const eventsStyle: React.CSSProperties = { pointerEvents: interactive ? 'auto' : 'none' };
-  const frameBottom = bounds.legendTop;
+  // Con medidas de gabinete, el marco es de ese tamaño; lo que sobre queda fuera del marco y se avisa.
+  const sized = enclosureUnits(board);
+  const frameWidth = sized ? sized.width : bounds.width;
+  const frameBottom = sized ? sized.height : bounds.legendTop;
   const draggingWire = ghost !== null || (dragging && dragRef.current?.type === 'wireEnd');
 
   return (
@@ -454,13 +458,13 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
       <rect width={bounds.width} height={bounds.height} fill="#ffffff" data-board-bg="true" />
 
       {/* Gabinete y chapa de montaje */}
-      <rect x={2} y={2} width={bounds.width - 4} height={frameBottom - 4} rx={14} fill="url(#pf-door)" stroke="#8a919b" strokeWidth={4} data-board-bg="true" />
-      <rect x={16} y={16} width={bounds.width - 32} height={frameBottom - 32} rx={8} fill="#fafbfc" stroke="#c3c8ce" strokeWidth={2} data-board-bg="true" />
+      <rect x={2} y={2} width={frameWidth - 4} height={frameBottom - 4} rx={14} fill="url(#pf-door)" stroke="#8a919b" strokeWidth={4} data-board-bg="true" />
+      <rect x={16} y={16} width={frameWidth - 32} height={frameBottom - 32} rx={8} fill="#fafbfc" stroke="#c3c8ce" strokeWidth={2} data-board-bg="true" />
       {[
         [32, 32],
-        [bounds.width - 32, 32],
+        [frameWidth - 32, 32],
         [32, frameBottom - 32],
-        [bounds.width - 32, frameBottom - 32],
+        [frameWidth - 32, frameBottom - 32],
       ].map(([x, y]) => (
         <g key={`${x}-${y}`}>
           <circle cx={x} cy={y} r={6} fill="#b5bac1" stroke="#7d848e" strokeWidth={1} />

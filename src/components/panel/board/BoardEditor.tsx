@@ -20,7 +20,7 @@ import {
   Wand2,
   RotateCcw,
 } from 'lucide-react';
-import type { BoardLayout, ElectricalPanel } from '../../../types/electrical';
+import type { BoardEnclosure, BoardLayout, ElectricalPanel } from '../../../types/electrical';
 import type { FrontItem } from '../../../utils/panelDevices';
 import type { AccessorySpec, CatalogEntry } from '../../../utils/boardCatalog';
 import {
@@ -34,6 +34,8 @@ import {
   duplicateAccessory,
   duplicatePart,
   emptyBoard,
+  neededEnclosureMm,
+  outsideEnclosure,
   removeAccessory,
   removeNote,
   removePart,
@@ -120,6 +122,15 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
   void photosVersion;
   const bounds = board ? boardBounds(board) : { width: 800, height: 600 };
   const viewport = useBoardViewport(bounds.width, bounds.height);
+  const outsideCount = board ? outsideEnclosure(board).length : 0;
+
+  /** Cambia una medida del gabinete. Un valor que no sea positivo se ignora: no hay gabinete sin medidas. */
+  const setEnclosureSize = (change: Partial<BoardEnclosure>): void => {
+    if (!board?.enclosure) return;
+    const next = { ...board.enclosure, ...change };
+    if (!(next.widthMm > 0) || !(next.heightMm > 0)) return;
+    commit({ ...board, enclosure: next });
+  };
 
   const commit = useCallback(
     (next: BoardLayout | undefined): void => {
@@ -372,6 +383,53 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
           <IconButton label="Rehacer (Ctrl+Y)" size="sm" variant="secondary" disabled={!canRedo} onClick={redo}>
             <Redo2 className="h-4 w-4" />
           </IconButton>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 font-semibold text-muted" role="group" aria-label="Medidas del gabinete">
+          {board.enclosure ? (
+            <>
+              <span>Gabinete</span>
+              <label className="flex items-center gap-1">
+                Ancho
+                <input
+                  type="number"
+                  min={50}
+                  step={5}
+                  value={board.enclosure.widthMm}
+                  onChange={(e) => setEnclosureSize({ widthMm: Number(e.target.value) })}
+                  className="w-20 rounded-md border border-hairline bg-surface px-2 py-1 text-right text-strong"
+                />
+                mm
+              </label>
+              <label className="flex items-center gap-1">
+                Alto
+                <input
+                  type="number"
+                  min={50}
+                  step={5}
+                  value={board.enclosure.heightMm}
+                  onChange={(e) => setEnclosureSize({ heightMm: Number(e.target.value) })}
+                  className="w-20 rounded-md border border-hairline bg-surface px-2 py-1 text-right text-strong"
+                />
+                mm
+              </label>
+              <Button size="sm" variant="ghost" title="Fija el gabinete a las medidas que necesita lo armado; después volvé a cablear automáticamente" onClick={() => commit({ ...board, enclosure: neededEnclosureMm(board) })}>
+                Ajustar a lo armado
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => commit({ ...board, enclosure: undefined })}>
+                Quitar medidas
+              </Button>
+              {outsideCount > 0 && (
+                <span className="text-danger-text">
+                  {outsideCount} {outsideCount === 1 ? 'cable sale' : 'cables salen'} del gabinete
+                </span>
+              )}
+            </>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => commit({ ...board, enclosure: { widthMm: 300, heightMm: 200 } })}>
+              Medir gabinete
+            </Button>
+          )}
         </div>
 
         <label className="flex items-center gap-1.5 font-semibold text-muted">

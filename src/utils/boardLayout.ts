@@ -7,6 +7,7 @@
  */
 import type {
   BoardAccessory,
+  BoardEnclosure,
   BoardLayout,
   BoardNote,
   BoardPart,
@@ -33,6 +34,10 @@ export const BOARD_TOP = 190;
 export const RAIL_OVERHANG = 10;
 /** Largo de los cables de salida de cada térmica. */
 export const OUTPUT_STUB = 120;
+/** Ancho real de un módulo DIN, en milímetros. */
+const DIN_MODULE_MM = 17.5;
+/** Margen interior del gabinete: los cables no pasan de esta distancia del marco. */
+export const ENCLOSURE_INSET = 24;
 /** Los cables de un descargador son de 4 mm² como mínimo (se calculan como los de una protección de 25 A). */
 const SURGE_LEAD_AMPS = 25;
 
@@ -991,7 +996,8 @@ export function autoWire(board: BoardLayout): BoardLayout {
         diffOut.find((t) => t.role === role) ?? (role !== 'N' ? diffOut.find((t) => PHASE_ROLES.includes(t.role)) : undefined);
       if (!source) return;
       const dropY = source.y + 14 + laneCenter(lane);
-      const laneX = rail.x - 16 - laneCenter(lane);
+      // Con medidas de gabinete, el carril no se corre más allá del margen: los cables se agrupan adentro.
+      const laneX = insideX(board, rail.x - 16 - laneCenter(lane));
       const busY = rail.y - 14 - laneCenter(lane);
       for (const target of targetsOf(role)) {
         add(
@@ -1192,9 +1198,45 @@ export interface BoardBounds {
 
 export const LEGEND_LINE_H = 19;
 
+/** Milímetros de gabinete a unidades del dibujo (un módulo DIN = `MODULE_W` unidades). */
+export function mmToUnits(mm: number): number {
+  return (mm * MODULE_W) / DIN_MODULE_MM;
+}
+
+/** Tamaño del gabinete en unidades del dibujo, o `undefined` si el tablero no tiene medidas. */
+export function enclosureUnits(board: BoardLayout): { width: number; height: number } | undefined {
+  if (!board.enclosure) return undefined;
+  return { width: Math.round(mmToUnits(board.enclosure.widthMm)), height: Math.round(mmToUnits(board.enclosure.heightMm)) };
+}
+
+/** Los cables que tienen algún punto fuera del margen interior del gabinete. Sin medidas no hay nada que revisar. */
+export function outsideEnclosure(board: BoardLayout): string[] {
+  const size = enclosureUnits(board);
+  if (!size) return [];
+  const inside = (p: BoardPoint): boolean =>
+    p.x >= ENCLOSURE_INSET && p.x <= size.width - ENCLOSURE_INSET && p.y >= ENCLOSURE_INSET && p.y <= size.height - ENCLOSURE_INSET;
+  return board.wires.filter((wire) => !wire.points.every(inside)).map((wire) => wire.id);
+}
+
+/**
+ * Medidas (en mm, múltiplos de 5) que necesita el armado para que entren todos sus aparatos y
+ * cables. Sirve para fijar el gabinete sin adivinar.
+ */
+export function neededEnclosureMm(board: BoardLayout): BoardEnclosure {
+  const content = boardBounds({ ...board, enclosure: undefined });
+  const toMm = (units: number): number => Math.ceil((units * DIN_MODULE_MM) / MODULE_W / 5) * 5;
+  return { widthMm: toMm(content.width), heightMm: toMm(content.legendTop) };
+}
+
+/** Una coordenada horizontal dentro del gabinete: si no hay medidas, la deja como está. */
+function insideX(board: BoardLayout, x: number): number {
+  return enclosureUnits(board) ? Math.max(ENCLOSURE_INSET, x) : x;
+}
+
 export function boardBounds(board: BoardLayout): BoardBounds {
-  let maxX = 640;
-  let maxY = BOARD_TOP + DEVICE_H + LABEL_STRIP_H + 60;
+  const sized = enclosureUnits(board);
+  let maxX = sized ? sized.width : 640;
+  let maxY = sized ? sized.height : BOARD_TOP + DEVICE_H + LABEL_STRIP_H + 60;
   for (const rail of board.rails) {
     maxX = Math.max(maxX, railEnd(rail) + RAIL_OVERHANG + BOARD_LEFT);
     maxY = Math.max(maxY, rail.y + DEVICE_H + LABEL_STRIP_H + OUTPUT_STUB + 20);
