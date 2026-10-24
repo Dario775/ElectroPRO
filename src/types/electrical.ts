@@ -33,6 +33,8 @@ export interface ApplianceLoad {
   circuitId?: string;
   hoursPerDay: number;
   daysPerMonth: number;
+  /** Relación corriente de arranque / de marcha del compresor (LRA/RLA). Solo refrigeración. */
+  startRatio?: number;
   notes?: string;
 }
 
@@ -101,6 +103,8 @@ export interface CatalogItem {
   defaultVoltage: number;
   defaultSystemPhase: PhaseType;
   defaultHours: number;
+  /** Relación de arranque del compresor (LRA/RLA); se pasa a la carga al agregarla. */
+  startRatio?: number;
   iconName: string;
 }
 

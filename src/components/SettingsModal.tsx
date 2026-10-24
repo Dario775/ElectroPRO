@@ -9,6 +9,7 @@ import { Modal } from './ui/Modal';
 import { promptInstall, usePwa } from '../pwa';
 import { RecoverySummary, StorageService } from '../services/storageService';
 import { StorageStatus, requestPersistence, storageStatus } from '../services/kvStore';
+import { LEGAL_NOTICE_PARAGRAPHS } from '../utils/legalNotice';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -358,6 +359,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </ul>
           </section>
         )}
+
+        <section className="space-y-3 border-t border-hairline pt-5">
+          <h3 className="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide text-accent-text">
+            <Shield className="h-4 w-4" /> Aviso legal
+          </h3>
+          {LEGAL_NOTICE_PARAGRAPHS.map((paragraph) => (
+            <p key={paragraph} className="text-xs leading-relaxed text-soft">
+              {paragraph}
+            </p>
+          ))}
+        </section>
       </form>
     </Modal>
   );

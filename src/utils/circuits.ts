@@ -1,5 +1,6 @@
 import type {
   ApplianceLoad,
+  BreakerCurve,
   CircuitType,
   ClientRecord,
   ElectricalCircuit,
@@ -9,6 +10,7 @@ import type {
   PhaseType,
   ServiceSupply,
 } from '../types/electrical';
+import { isRefrigerationLoad, magneticCurveFor, refrigerationStartingCurrent } from './refrigeration';
 import {
   CABLE_SECTIONS,
   IEC_BREAKERS,
@@ -218,7 +220,14 @@ export interface CircuitAnalysis {
   dropPercent?: number;
   issues: CircuitIssue[];
   /** Térmica y cable que propone la AEA para esta corriente y este tipo de circuito. */
-  suggestion: { breakerAmps: number; cableSection: string };
+  suggestion: CircuitSuggestion;
+}
+
+/** Lo que se aplica al circuito. `curve` solo aparece en circuitos con refrigeración. */
+export interface CircuitSuggestion {
+  breakerAmps: number;
+  cableSection: string;
+  curve?: BreakerCurve;
 }
 
 type SupplyVoltages = Pick<ServiceSupply, 'serviceType' | 'nominalVoltage' | 'lineVoltage'>;
@@ -259,8 +268,9 @@ function phaseOfCircuit(loads: ApplianceLoad[]): PhaseAssignment | undefined {
 export function suggestCircuit(
   circuit: Pick<ElectricalCircuit, 'kind' | 'breakerAmps'>,
   demandAmps: number,
-  loaded: LoadedConductors
-): { breakerAmps: number; cableSection: string } {
+  loaded: LoadedConductors,
+  peakAmps?: number
+): CircuitSuggestion {
   const keepCurrent = IEC_BREAKERS.includes(circuit.breakerAmps) && circuit.breakerAmps >= demandAmps;
   const sizing = sizeBreakerAndCable({
     nominalAmps: keepCurrent ? circuit.breakerAmps : Math.max(demandAmps, MIN_BREAKER_AMPS[circuit.kind]),
@@ -271,13 +281,57 @@ export function suggestCircuit(
     material: 'copper',
     minSectionMm2: MIN_SECTION_MM2[circuit.kind],
   });
-  return { breakerAmps: sizing.recommendedBreaker, cableSection: sizing.conductor.label };
+  const suggestion: CircuitSuggestion = { breakerAmps: sizing.recommendedBreaker, cableSection: sizing.conductor.label };
+  // El calibre sale de la marcha; el pico de arranque decide solo la curva. Se omite la clave si no hay
+  // refrigeración, porque al aplicar la sugerencia una clave con valor undefined borraría la curva actual.
+  const curve = peakAmps !== undefined ? magneticCurveFor(peakAmps, suggestion.breakerAmps) : null;
+  return curve ? { ...suggestion, curve } : suggestion;
 }
 
 function phaseLabelOf(loads: ApplianceLoad[]): string {
   if (loads.some((l) => l.systemPhase === '3F')) return 'L1-L2-L3';
   const phases = [...new Set(loads.map((l) => l.assignedPhase))].sort();
   return phases.length > 0 ? phases.join(' + ') : '—';
+}
+
+/**
+ * Revisa un circuito con los criterios de la AEA 771: térmica de la serie IEC y suficiente
+ * para la carga (IB ≤ In), cable protegido por la térmica (In ≤ Iz), sección mínima del tipo
+ * de circuito y caída de tensión (3 % en iluminación, 5 % en el resto) si se cargó el largo.
+ */
+
+/** Orden de tolerancia al arranque: la B dispara antes que la C, y la C antes que la D. */
+const CURVE_TOLERANCE: Record<'B' | 'C' | 'D', number> = { B: 0, C: 1, D: 2 };
+
+/**
+ * Compresores de refrigeración: su pico de arranque puede hacer disparar una térmica
+ * que en régimen normal está bien. Compara la curva elegida con la que el pico necesita.
+ */
+function refrigerationIssues(circuit: ElectricalCircuit, loads: ApplianceLoad[]): CircuitIssue[] {
+  const refrigerationLoads = loads.filter(isRefrigerationLoad);
+  if (refrigerationLoads.length === 0) return [];
+
+  const { peakAmps } = refrigerationStartingCurrent(refrigerationLoads);
+  const recommended = magneticCurveFor(peakAmps, circuit.breakerAmps);
+  if (recommended === null) {
+    return [
+      {
+        level: 'danger',
+        text: `El pico de arranque de los compresores es ${formatAmps(peakAmps)} A, más de 10 veces la térmica de ${circuit.breakerAmps} A: ninguna curva lo soporta. Revisar el equipo o usar arranque suave.`,
+      },
+    ];
+  }
+
+  const current = circuit.curve ?? 'C';
+  if (CURVE_TOLERANCE[current] < CURVE_TOLERANCE[recommended]) {
+    return [
+      {
+        level: 'warning',
+        text: `La curva ${current} puede disparar con el arranque de los compresores (pico ${formatAmps(peakAmps)} A): conviene curva ${recommended}.`,
+      },
+    ];
+  }
+  return [];
 }
 
 /**
@@ -295,6 +349,8 @@ export function analyzeCircuit(
   const summary = calculatePhaseBalance(loads, supply.serviceType, supply.nominalVoltage, supply.lineVoltage);
   const demand = calculateDemand(loads, summary, simultaneity);
   const demandAmps = demand.demandMaxAmps;
+  const refrigerationLoads = loads.filter(isRefrigerationLoad);
+  const peakAmps = refrigerationLoads.length > 0 ? refrigerationStartingCurrent(refrigerationLoads).peakAmps : undefined;
   const loaded: LoadedConductors = loads.some((l) => l.systemPhase === '3F') ? 3 : 2;
   const issues: CircuitIssue[] = [];
 
@@ -304,6 +360,7 @@ export function analyzeCircuit(
       text: `La térmica de ${circuit.breakerAmps} A es chica: la carga pide ${formatAmps(demandAmps)} A.`,
     });
   }
+  issues.push(...refrigerationIssues(circuit, loads));
   const { differential } = context;
   if (differential === null && circuit.kind !== 'ESPECIAL') {
     issues.push({
@@ -395,7 +452,7 @@ export function analyzeCircuit(
     phaseLabel: phaseLabelOf(loads),
     dropPercent,
     issues,
-    suggestion: suggestCircuit(circuit, demandAmps, loaded),
+    suggestion: suggestCircuit(circuit, demandAmps, loaded, peakAmps),
   };
 }
 

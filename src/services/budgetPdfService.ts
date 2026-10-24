@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable, { type CellHookData, type RowInput, type UserOptions } from 'jspdf-autotable';
 import { ClientRecord, ProjectBudget, TechnicianProfile, SupportedCurrency } from '../types/electrical';
 import { formatCurrency } from '../utils/electricalMath';
+import { LEGAL_NOTICE_SHORT } from '../utils/legalNotice';
 
 /**
  * Generador del PDF de presupuesto.
@@ -940,6 +941,8 @@ function drawFooter(doc: jsPDF, ctx: PdfContext): void {
     doc.text(`Página ${page} de ${totalPages} • Documento técnico oficial`, SHEET.width - SHEET.margin, SHEET.footerLine + 4.2, {
       align: 'right',
     });
+    setFont(doc, 5.6, 'normal');
+    doc.text(LEGAL_NOTICE_SHORT, SHEET.margin, SHEET.footerLine + 8.2);
   }
 }
 

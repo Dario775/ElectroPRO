@@ -39,6 +39,7 @@ import { Collapsible } from './ui/Collapsible';
 import { getSupplies, loadsOfSupply, supplyOfLoad, supplyOfPanel } from '../utils/supplies';
 import { predictAssignment } from '../utils/loadAssignment';
 import { IEC_BREAKERS } from '../utils/aea';
+import { isRefrigerationLoad, refrigerationStartingCurrent } from '../utils/refrigeration';
 import {
   addLoadToCircuit,
   assignLoadToCircuit,
@@ -218,6 +219,9 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
     client.fixedCharge
   );
   const demand = calculateDemand(client.loads, summary, client.simultaneityFactor);
+  const refrigerationLoads = client.loads.filter(isRefrigerationLoad);
+  const refrigeration = refrigerationStartingCurrent(refrigerationLoads);
+  const refrigerationUnits = refrigerationLoads.reduce((acc, l) => acc + l.quantity, 0);
   const simultaneityOptions = ['0.5', '0.6', '0.7', '0.8', '1'] as const;
   type SimultaneityOption = (typeof simultaneityOptions)[number];
   const currentSimultaneity = (simultaneityOptions.find((o) => Number(o) === demand.factor) ?? '0.7') as SimultaneityOption;
@@ -271,6 +275,7 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
       breakerRatingAmps: 0,
       hoursPerDay: item.defaultHours,
       daysPerMonth: 30,
+      startRatio: item.startRatio,
     };
   };
 
@@ -498,6 +503,22 @@ export const AuditView: React.FC<AuditViewProps> = ({ client, onUpdateClient, on
           encendido a la vez.
         </span>
       </div>
+
+      {/* Refrigeración comercial: compresores que trabajan casi todo el día y arrancan con mucha corriente */}
+      {refrigerationUnits > 0 && (
+        <div className="p-3.5 rounded-xl bg-accent-soft border border-accent-line text-sm text-soft">
+          <span className="text-xs font-bold text-accent-text block">Refrigeración: {refrigerationUnits} equipos</span>
+          <span>
+            Marcha <strong className="text-strong">{refrigeration.runningAmps.toFixed(1)} A</strong> · pico de arranque{' '}
+            <strong className="text-strong">{refrigeration.peakAmps.toFixed(1)} A</strong>
+            {client.mainBreakerAmps > 0 &&
+              ` · equivale al ${Math.round(
+                (refrigeration.peakAmps / client.mainBreakerAmps) * 100
+              )} % de la térmica principal de ${client.mainBreakerAmps} A`}
+            . Cada circuito revisa su curva en Circuitos.
+          </span>
+        </div>
+      )}
 
       {/* 2. PHASE UNBALANCE WARNING BANNER (If unbalance detected) */}
       {client.serviceType !== 'Monofásico (1F+N)' && summary.unbalancePercent > 10 && (

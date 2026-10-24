@@ -4,6 +4,8 @@ import { ClientRecord, TechnicianProfile, PhaseBalanceSummary, SupportedCurrency
 import { calculatePhaseBalance, calculateCurrent, calculateMonthlyKwh, formatCurrency } from '../utils/electricalMath';
 import { analyzeInstallation } from '../utils/diagnosticEngine';
 import { getSupplies } from '../utils/supplies';
+import { LEGAL_NOTICE_SHORT } from '../utils/legalNotice';
+import { toPdfText } from '../utils/pdfText';
 
 export function generateTechnicalReportPDF(
   client: ClientRecord,
@@ -420,8 +422,8 @@ export function generateTechnicalReportPDF(
       `#${i + 1}`,
       act.priority.toUpperCase(),
       act.category,
-      act.title,
-      act.recommendedMaterial || '-',
+      toPdfText(act.title),
+      toPdfText(act.recommendedMaterial || '-'),
       `${act.estimatedHours} h`,
     ]);
 
@@ -457,7 +459,8 @@ export function generateTechnicalReportPDF(
   }
 
   // Check if signatures fit or require new page
-  if (bottomY + 28 > pageHeight) {
+  // Deja lugar para las firmas y para el aviso legal del pie de página.
+  if (bottomY + 36 > pageHeight) {
     doc.addPage();
     bottomY = 20;
   }
@@ -504,6 +507,7 @@ export function generateTechnicalReportPDF(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(148, 163, 184);
+    doc.text(LEGAL_NOTICE_SHORT, pageWidth / 2, pageHeight - 10, { align: 'center' });
     doc.text(
       `ElectroPro v1.0 - Software Profesional para Electricistas | Página ${i} de ${totalPages}`,
       pageWidth / 2,

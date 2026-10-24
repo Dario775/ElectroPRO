@@ -398,6 +398,22 @@ export interface DemandSummary {
 }
 
 /**
+ * Potencia de demanda: la refrigeración (compresores que trabajan casi todo el día) se suma
+ * completa; el resto de los equipos se afecta por el factor de simultaneidad.
+ */
+export function calculateDemandWatts(loads: ApplianceLoad[], simultaneity?: number): number {
+  const factor = clampSimultaneity(simultaneity);
+  const isRefrigeration = (l: ApplianceLoad) => l.category === 'Refrigeración';
+  const refrigerationWatts = loads
+    .filter(isRefrigeration)
+    .reduce((acc, l) => acc + l.powerWatts * l.quantity, 0);
+  const otherWatts = loads
+    .filter((l) => !isRefrigeration(l))
+    .map((l) => l.powerWatts * l.quantity);
+  return refrigerationWatts + simultaneousDemandWatts(otherWatts, factor);
+}
+
+/**
  * Demanda máxima simultánea: lo que realmente se le pide a la térmica general. Comparar la
  * suma de todos los artefactos encendidos a la vez marca sobrecargas que no existen.
  */
@@ -409,7 +425,7 @@ export function calculateDemand(
   const factor = clampSimultaneity(simultaneity);
   const watts = loads.map((l) => l.powerWatts * l.quantity);
   const connectedWatts = watts.reduce((acc, w) => acc + w, 0);
-  const demandWatts = simultaneousDemandWatts(watts, factor);
+  const demandWatts = calculateDemandWatts(loads, simultaneity);
   const ratio = connectedWatts > 0 ? demandWatts / connectedWatts : 0;
   return {
     factor,

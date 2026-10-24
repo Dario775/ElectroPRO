@@ -121,7 +121,8 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
     loadCount(row.circuit.id) > 0 &&
     row.analysis.issues.some((i) => i.level !== 'info') &&
     (row.analysis.suggestion.breakerAmps !== row.circuit.breakerAmps ||
-      row.analysis.suggestion.cableSection !== row.circuit.cableSection);
+      row.analysis.suggestion.cableSection !== row.circuit.cableSection ||
+      (row.analysis.suggestion.curve !== undefined && row.analysis.suggestion.curve !== (row.circuit.curve ?? 'C')));
   const fixable = rows.filter(needsFix);
   const withIssues = rows.filter((r) => r.analysis.issues.some((i) => i.level !== 'info')).length;
 
@@ -272,6 +273,7 @@ export const CircuitsSection: React.FC<CircuitsSectionProps> = ({ client, panel,
                 {needsFix(row) && (
                   <Button size="sm" variant="ghost" icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => applyAea([row])}>
                     AEA: {analysis.suggestion.breakerAmps} A · {analysis.suggestion.cableSection}
+                    {analysis.suggestion.curve ? ` · curva ${analysis.suggestion.curve}` : ''}
                   </Button>
                 )}
                 <Button
