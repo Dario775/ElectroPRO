@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, Check, CheckCircle2, ChevronDown, Map, Users } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, ChevronDown, ClipboardCheck, Map, Users } from 'lucide-react';
 import { cx } from '../utils/cx';
 import {
   APP_MODULES,
@@ -29,6 +29,7 @@ import { Button } from './ui/Button';
 /** Ícono de cada módulo, para reconocerlo de un vistazo en el menú. */
 const MODULE_ICONS: Record<ModuleId, React.ReactNode> = {
   plan: <Map className="h-4 w-4 flex-shrink-0 text-muted" />,
+  review: <ClipboardCheck className="h-4 w-4 flex-shrink-0 text-muted" />,
   clients: <Users className="h-4 w-4 flex-shrink-0 text-muted" />,
 };
 

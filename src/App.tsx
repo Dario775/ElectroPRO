@@ -12,6 +12,7 @@ import { ReportPreview } from './components/ReportPreview';
 import { ClientList } from './components/ClientList';
 import { ClientModal } from './components/ClientModal';
 import { PlanView } from './components/PlanView';
+import { ProjectReviewView } from './components/ProjectReviewView';
 import { SettingsModal } from './components/SettingsModal';
 import { PwaBanner } from './components/PwaBanner';
 import { FileMenu } from './components/FileMenu';
@@ -253,6 +254,8 @@ function AppContent() {
             onGoToSurvey={() => handleNavigate('panels')}
           />
         );
+      case 'review':
+        return <ProjectReviewView client={activeClient} onUpdateClient={handleUpdateActiveClient} />;
       case 'clients':
         return (
           <ClientList
