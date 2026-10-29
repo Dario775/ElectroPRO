@@ -720,6 +720,10 @@ export interface BudgetItem {
   markupPercent?: number; // margen de beneficio opcional
   subtotal: number;
   suggestedFromSource?: 'tablero' | 'carga' | 'diagnostico' | 'manual';
+  /** Renglón que sale del tablero armado en el editor y se mantiene al día con él (ver `utils/boardBudget`). */
+  origin?: 'tablero-armado';
+  /** Qué material del tablero es (para reconocerlo al actualizar). */
+  sourceKey?: string;
   notes?: string;
 }
 

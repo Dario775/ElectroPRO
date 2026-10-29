@@ -48,6 +48,8 @@ import { convertCurrency, formatCurrency } from '../utils/electricalMath';
 import { useCurrency } from '../context/CurrencyContext';
 import { BudgetGeneratorService, CatalogMaterial, CATALOG_CURRENCY } from '../services/budgetGeneratorService';
 import { generateBudgetPDF } from '../services/budgetPdfService';
+import { CatalogService } from '../services/catalogService';
+import { boardBudgetItems, hasBoardItems, syncBoardItems } from '../utils/boardBudget';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
@@ -250,6 +252,15 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
     setIsRenameModalOpen(false);
   };
 
+  // Los materiales del tablero armado en el editor: se agregan o se ponen al día
+  const convertFromCatalog = (pesos: number): number => convertCurrency(pesos, CATALOG_CURRENCY, client.currency, usdToArsRate);
+  const boardItemCount = currentBudget.items.filter((item) => item.origin === 'tablero-armado').length;
+  const boardUnpriced = currentBudget.items.filter((item) => item.origin === 'tablero-armado' && item.unitPrice === 0).length;
+  const boardNotes = useMemo(() => boardBudgetItems(client, CatalogService.getItems(), convertFromCatalog).notes, [client]);
+  const handleBoardMaterials = () => {
+    handleUpdateBudget(syncBoardItems(currentBudget, client, CatalogService.getItems(), convertFromCatalog));
+  };
+
   // Re-generate current budget from project
   const handleRegenerateFromProject = () => {
     if (
@@ -263,12 +274,18 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
     const freshBudget = BudgetGeneratorService.generateBudgetFromProject(client, {
       title: currentBudget.title,
     });
-    handleUpdateBudget({
+    const regenerated: ProjectBudget = {
       ...freshBudget,
       id: currentBudget.id,
       budgetNumber: currentBudget.budgetNumber,
       status: currentBudget.status,
-    });
+    };
+    // Los materiales del tablero armado se conservan (con sus precios) y se ponen al día.
+    handleUpdateBudget(
+      hasBoardItems(currentBudget)
+        ? syncBoardItems({ ...regenerated, items: [...regenerated.items, ...currentBudget.items.filter((item) => item.origin === 'tablero-armado')] }, client, CatalogService.getItems(), convertFromCatalog)
+        : regenerated
+    );
   };
 
   // Filtered items list
@@ -922,6 +939,16 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
 
           <button
             type="button"
+            onClick={handleBoardMaterials}
+            className="px-2.5 py-1.5 rounded-xl bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            title="Agrega al presupuesto los materiales que hay dibujados en el tablero armado en el editor. Después se mantienen al día solos."
+          >
+            <Package className="w-3.5 h-3.5 text-accent-text" />
+            <span>{boardItemCount > 0 ? 'Actualizar materiales del tablero' : 'Materiales del tablero armado'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleRegenerateFromProject}
             className="px-2.5 py-1.5 rounded-xl bg-raised hover:bg-raised-strong text-strong border border-edge text-xs font-semibold flex items-center gap-1.5 transition-colors"
             title="Sincronizar y recalcular materiales según tableros, cargas y mediciones"
@@ -1069,6 +1096,16 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
         defaultOpen
       >
         <div className="space-y-4">
+        {boardItemCount > 0 && (
+          <div className="rounded-xl border border-info-line bg-info-soft px-3 py-2 text-xs leading-relaxed text-info-text">
+            <strong>{boardItemCount} rubros salen del tablero armado en el editor</strong> y se mantienen al día solos: si agregás o sacás algo del
+            dibujo, cambia el presupuesto.
+            {boardUnpriced > 0 && (
+              <> {boardUnpriced} {boardUnpriced === 1 ? 'no tiene' : 'no tienen'} precio porque no están en el catálogo: cargalos acá o agregá el producto al catálogo.</>
+            )}
+            {boardNotes.length > 0 && <ul className="mt-1 list-disc pl-4">{boardNotes.map((note) => <li key={note}>{note}</li>)}</ul>}
+          </div>
+        )}
         {/* Table Toolbar */}
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           <div className="flex items-center gap-2 flex-wrap flex-1">

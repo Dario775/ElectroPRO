@@ -51,6 +51,12 @@ function writeStored(key: string, value: string): void {
   }
 }
 
+/** La cotización dólar-peso guardada, para quien calcula importes fuera de la pantalla. */
+export function readStoredRate(): number {
+  const saved = parseFloat(readStored(STORAGE_KEY_RATE) ?? '');
+  return !isNaN(saved) && saved > 0 ? saved : DEFAULT_USD_ARS_RATE;
+}
+
 export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeCurrency, setActiveCurrencyState] = useState<SupportedCurrency>(() => {
     const saved = readStored(STORAGE_KEY_CURRENCY);

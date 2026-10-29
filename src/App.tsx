@@ -17,13 +17,17 @@ import { PwaBanner } from './components/PwaBanner';
 import { FileMenu } from './components/FileMenu';
 import { ClientRecord, TechnicianProfile } from './types/electrical';
 import { StorageService, DEFAULT_TECHNICIAN } from './services/storageService';
+import { CATALOG_CURRENCY } from './services/budgetGeneratorService';
 import { EXTERNAL_CHANGE_EVENT, kvClear } from './services/kvStore';
-import { CurrencyProvider } from './context/CurrencyContext';
+import { CurrencyProvider, readStoredRate } from './context/CurrencyContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ViewId, buildWorkflow } from './utils/workflow';
 import { clientToBoards } from './utils/boardSync';
 import { syncPlans } from './utils/planSync';
 import { elementsFromPanels } from './utils/plan';
+import { syncBoardBudgets } from './utils/boardBudget';
+import { CatalogService } from './services/catalogService';
+import { convertCurrency } from './utils/electricalMath';
 import { Button } from './components/ui/Button';
 import { Callout, EmptyState } from './components/ui/Card';
 import { ClipboardList, UserPlus } from 'lucide-react';
@@ -96,7 +100,10 @@ function AppContent() {
     // Lo que cambió en los circuitos o en los datos del tablero llega también al tablero armado.
     const before = clients.find((c) => c.id === updated.id);
     // Y a los planos: nombres, acometidas, vínculos rotos y tableros nuevos.
-    const synced = syncPlans(before, clientToBoards(before, updated), { place: elementsFromPanels });
+    const withPlans = syncPlans(before, clientToBoards(before, updated), { place: elementsFromPanels });
+    // Y al presupuesto: los renglones que salen del tablero armado siguen lo que hay dibujado.
+    const rate = readStoredRate();
+    const synced = syncBoardBudgets(withPlans, CatalogService.getItems(), (pesos) => convertCurrency(pesos, CATALOG_CURRENCY, withPlans.currency, rate));
     const saved = StorageService.saveClient(synced);
     setClients((prev) => prev.map((c) => (c.id === saved.id ? saved : c)));
   };
