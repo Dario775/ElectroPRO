@@ -22,6 +22,8 @@ import { CurrencyProvider } from './context/CurrencyContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ViewId, buildWorkflow } from './utils/workflow';
 import { clientToBoards } from './utils/boardSync';
+import { syncPlans } from './utils/planSync';
+import { elementsFromPanels } from './utils/plan';
 import { Button } from './components/ui/Button';
 import { Callout, EmptyState } from './components/ui/Card';
 import { ClipboardList, UserPlus } from 'lucide-react';
@@ -92,7 +94,9 @@ function AppContent() {
   const handleUpdateActiveClient = (updated: ClientRecord) => {
     // Se sigue con lo que quedó guardado (trae la revisión nueva), no con lo que se mandó.
     // Lo que cambió en los circuitos o en los datos del tablero llega también al tablero armado.
-    const synced = clientToBoards(clients.find((c) => c.id === updated.id), updated);
+    const before = clients.find((c) => c.id === updated.id);
+    // Y a los planos: nombres, acometidas, vínculos rotos y tableros nuevos.
+    const synced = syncPlans(before, clientToBoards(before, updated), { place: elementsFromPanels });
     const saved = StorageService.saveClient(synced);
     setClients((prev) => prev.map((c) => (c.id === saved.id ? saved : c)));
   };

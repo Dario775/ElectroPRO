@@ -169,6 +169,7 @@ import {
   wallsOf,
 } from '../utils/plan';
 import type { MirrorAxis } from '../utils/plan';
+import { applyPlanFix, planIssues, type PlanFix, type PlanIssue } from '../utils/planSync';
 import {
   canRedo,
   canUndo,
@@ -3037,6 +3038,18 @@ export const PlanView: React.FC<PlanViewProps> = ({
     });
   };
 
+  /** Lo que sigue sin vincular en el plano que se está viendo, y cómo resolverlo. */
+  const linkIssues = useMemo(
+    () => planIssues({ ...client, plans }).filter((issue) => issue.planId === activePlan?.id),
+    [client, plans, activePlan?.id]
+  );
+
+  const handleLinkFix = (issue: PlanIssue, fix: PlanFix): void => {
+    const next = applyPlanFix({ ...clientRef.current, plans: plansRef.current }, issue, fix);
+    applyPlans(next.plans ?? []);
+    setSelectedIds([]);
+  };
+
   const handleBringFromSurvey = (): void => {
     if (!activePlan) return;
     const panelSupply = new Map(
@@ -5171,6 +5184,42 @@ export const PlanView: React.FC<PlanViewProps> = ({
                     </ul>
                   )}
                 </PanelSection>
+
+                {/* --- Símbolos que no están vinculados al proyecto --- */}
+                {linkIssues.length > 0 && (
+                  <PanelSection
+                    title="Vínculos con el proyecto"
+                    count={linkIssues.length}
+                    hint="Estos símbolos no remiten a un tablero o una acometida del proyecto: vinculalos para que los cambios se reflejen en todas partes."
+                  >
+                    <ul className="space-y-2">
+                      {linkIssues.map((issue) => (
+                        <li key={issue.id} className="space-y-1.5 rounded-lg border border-hairline bg-sunken px-2 py-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedIds([issue.elementId])}
+                            className="text-left text-xs font-semibold leading-snug text-soft hover:text-strong"
+                          >
+                            <span className={issue.severity === 'error' ? 'text-danger-text' : 'text-accent-text'}>● </span>
+                            {issue.message}
+                          </button>
+                          <div className="flex flex-wrap gap-1">
+                            {issue.fixes.map((fix) => (
+                              <button
+                                key={`${issue.id}-${fix.kind}-${fix.label}`}
+                                type="button"
+                                onClick={() => handleLinkFix(issue, fix)}
+                                className="rounded-md border border-edge bg-raised px-2 py-0.5 text-xs font-bold text-soft transition-colors hover:text-strong"
+                              >
+                                {fix.label}
+                              </button>
+                            ))}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </PanelSection>
+                )}
 
                 {/* --- Lo que falta ubicar del relevamiento --- */}
                 <PanelSection
