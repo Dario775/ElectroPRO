@@ -170,6 +170,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       created = BudgetGeneratorService.generateBudgetFromProject(client, {
         title: newBudgetTitle.trim() || defaultTitle,
         scope: newBudgetScope,
+        usdToArsRate,
       });
     }
 
@@ -273,6 +274,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
     }
     const freshBudget = BudgetGeneratorService.generateBudgetFromProject(client, {
       title: currentBudget.title,
+      usdToArsRate,
     });
     const regenerated: ProjectBudget = {
       ...freshBudget,

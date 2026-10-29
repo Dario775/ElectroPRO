@@ -109,6 +109,19 @@ export function calculateMonthlyKwh(
   return (powerWatts * quantity * Math.max(0, hoursPerDay) * Math.max(1, daysPerMonth)) / 1000;
 }
 
+/** Dónde se guarda la cotización dólar-peso que se eligió en la pantalla. */
+export const USD_ARS_RATE_KEY = 'electropro_usd_ars_rate_v1';
+
+/** La cotización dólar-peso guardada, o la de por omisión si no hay (o no hay dónde leerla). */
+export function readStoredUsdArsRate(): number {
+  try {
+    const saved = parseFloat((typeof localStorage === 'undefined' ? null : localStorage.getItem(USD_ARS_RATE_KEY)) ?? '');
+    return !isNaN(saved) && saved > 0 ? saved : 1250;
+  } catch {
+    return 1250;
+  }
+}
+
 /**
  * Converts amounts between USD and ARS using a specified or default rate
  */

@@ -7,6 +7,8 @@ import type {
   SupportedCurrency,
 } from '../types/electrical';
 
+import { convertCurrency, readStoredUsdArsRate } from '../utils/electricalMath';
+
 export interface CatalogMaterial {
   id: string;
   type: BudgetItemType;
@@ -1018,6 +1020,8 @@ export const BudgetGeneratorService = {
     options?: {
       title?: string;
       scope?: 'integral' | 'tableros' | 'seguridad';
+      /** Cotización dólar-peso para clientes en dólares; sin valor, la guardada. */
+      usdToArsRate?: number;
     }
   ): ProjectBudget {
     const items: BudgetItem[] = [];
@@ -1320,6 +1324,11 @@ export const BudgetGeneratorService = {
         : scope === 'seguridad'
         ? `Plan de Seguridad Eléctrica y P.A.T. • ${client.clientName}`
         : `Adecuación y Optimización Eléctrica Integral • ${client.clientName}`;
+
+    // Los precios de acá están en pesos: un cliente en dólares los recibe convertidos.
+    const rate = options?.usdToArsRate ?? readStoredUsdArsRate();
+    const priced = (value: number): number => parseFloat(convertCurrency(value, CATALOG_CURRENCY, client.currency, rate).toFixed(2));
+    finalItems = finalItems.map((item) => ({ ...item, unitPrice: priced(item.unitPrice), subtotal: priced(item.subtotal) }));
 
     return {
       id: `budget_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
