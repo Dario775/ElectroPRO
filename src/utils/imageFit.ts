@@ -12,6 +12,10 @@ export interface PhotoFit {
   zoom: number;
   x: number;
   y: number;
+  /** Estira la foto en horizontal: más de 1 la hace más ancha (se recorta a los costados). Se omite si vale 1. */
+  scaleX?: number;
+  /** Estira la foto en vertical: más de 1 la hace más alta (se recorta arriba y abajo). Se omite si vale 1. */
+  scaleY?: number;
   /** Estira la foto entera hasta llenar la caja, aunque se deforme. */
   stretch?: boolean;
 }
@@ -19,6 +23,8 @@ export interface PhotoFit {
 export const DEFAULT_FIT: PhotoFit = { zoom: 1, x: 0, y: 0 };
 export const MIN_ZOOM = 0.3;
 export const MAX_ZOOM = 6;
+export const MIN_SCALE = 0.3;
+export const MAX_SCALE = 3;
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
@@ -29,7 +35,11 @@ export function normalizeFit(fit?: Partial<PhotoFit>): PhotoFit {
     x: clamp(number(fit?.x, 0), -1, 1),
     y: clamp(number(fit?.y, 0), -1, 1),
   };
-  return fit?.stretch === true ? { ...normalized, stretch: true } : normalized;
+  const scale = (value: unknown): number => clamp(number(value, 1), MIN_SCALE, MAX_SCALE);
+  const scales: Partial<PhotoFit> = {};
+  if (scale(fit?.scaleX) !== 1) scales.scaleX = scale(fit?.scaleX);
+  if (scale(fit?.scaleY) !== 1) scales.scaleY = scale(fit?.scaleY);
+  return fit?.stretch === true ? { ...normalized, ...scales, stretch: true } : { ...normalized, ...scales };
 }
 
 export interface CropRect {
@@ -41,12 +51,13 @@ export interface CropRect {
 
 /** La parte de la foto (en sus píxeles) que se ve dentro de una caja `boxW` × `boxH`. */
 export function imageCrop(size: { width: number; height: number }, boxW: number, boxH: number, fit?: Partial<PhotoFit>): CropRect {
-  const { zoom, x, y } = normalizeFit(fit);
+  const { zoom, x, y, scaleX = 1, scaleY = 1 } = normalizeFit(fit);
   const ratio = boxW / boxH;
   const baseW = size.width / size.height > ratio ? size.height * ratio : size.width;
   const baseH = size.width / size.height > ratio ? size.height : size.width / ratio;
-  const w = baseW / zoom;
-  const h = baseH / zoom;
+  // Con escalas distintas de 1 la ventana deja de tener la proporción de la caja: eso es lo que se pidió.
+  const w = baseW / (zoom * scaleX);
+  const h = baseH / (zoom * scaleY);
   const slackX = size.width - w;
   const slackY = size.height - h;
   return { x: slackX / 2 + (x * slackX) / 2, y: slackY / 2 + (y * slackY) / 2, w, h };

@@ -825,6 +825,14 @@ export function frontRowsFromBoard(board: BoardLayout): FrontItem[][] {
     .filter((row) => row.length > 0);
 }
 
+/** A qué circuito, diferencial o térmica general del proyecto corresponde un aparato del frente. */
+function linkOfItem(key: string): Pick<BoardPart, 'circuitId' | 'differentialId' | 'isMain'> {
+  if (key.startsWith('cir:')) return { circuitId: key.slice(4) };
+  if (key.startsWith('dif:')) return { differentialId: key.slice(4) };
+  if (key === 'entrada:termica') return { isMain: true };
+  return {};
+}
+
 /** Un riel por fila del frente, con los aparatos en su orden. No tiende cables. */
 export function boardFromFront(rows: FrontItem[][], perRow: number): BoardLayout {
   const rails: BoardRail[] = [];
@@ -848,6 +856,7 @@ export function boardFromFront(rows: FrontItem[][], perRow: number): BoardLayout
         sensitivityMa: item.sensitivityMa,
         poles: item.poles,
         phase: item.phase,
+        ...linkOfItem(item.key),
       });
       x += item.modules * MODULE_W;
     }

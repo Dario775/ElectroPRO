@@ -146,3 +146,47 @@ test('el nombre de archivo sugerido sale del cliente, sin tildes ni caracteres r
   assert.equal(P.suggestedFileName(client('x', 'Casa Gómez / Planta Alta')), 'casa-gomez-planta-alta.electropro');
   assert.equal(P.suggestedFileName(client('x', '   ')), 'proyecto.electropro');
 });
+
+// --- Fotos de los aparatos -----------------------------------------------------
+
+const photoStore = () => ({
+  images: {
+    'img-a': { id: 'img-a', name: 'termica.png', dataUrl: 'data:image/png;base64,AAAA', width: 10, height: 20 },
+    'img-b': { id: 'img-b', name: 'dif.png', dataUrl: 'data:image/png;base64,BBBB' },
+    'img-c': { id: 'img-c', name: 'otra.png', dataUrl: 'data:image/png;base64,CCCC' },
+  },
+  slots: { 'termica:2': 'img-a', 'corte:4': 'img-c' },
+});
+const withBoard = (c) => ({
+  ...c,
+  panels: [{ ...(c.panels?.[0] ?? {}), id: 'p1', board: { rails: [], wires: [], notes: [], numbering: true, parts: [
+    { id: 'x', kind: 'termica', modules: 2, x: 0, y: 0, label: 'T' },
+    { id: 'y', kind: 'diferencial', modules: 2, x: 60, y: 0, label: 'D', imageId: 'img-b' },
+  ] } }],
+});
+
+test('el archivo del proyecto lleva las fotos que usan sus tableros, y solo esas', async () => {
+  const { photosForBoards } = await import('../src/services/partImages.ts');
+  const c = withBoard(client('foto', 'Con fotos'));
+  const subset = photosForBoards(photoStore(), c.panels.map((p) => p.board));
+  assert.deepEqual(Object.keys(subset.images).sort(), ['img-a', 'img-b']);
+  assert.deepEqual(subset.slots, { 'termica:2': 'img-a' });
+  const parsed = P.parseProjectFile(P.serializeProject(c, subset));
+  assert.deepEqual(Object.keys(parsed.photos.images).sort(), ['img-a', 'img-b']);
+  assert.equal(parsed.photos.slots['termica:2'], 'img-a');
+});
+
+test('un proyecto sin fotos no agrega nada al archivo', () => {
+  const parsed = P.parseProjectFile(P.serializeProject(client('sin', 'Sin fotos'), { images: {}, slots: {} }));
+  assert.equal(parsed.photos, undefined);
+});
+
+test('al abrir un proyecto las fotos se suman a las del equipo sin pisar las que ya están', async () => {
+  const { mergeImageStores } = await import('../src/services/partImages.ts');
+  const local = { images: { 'img-a': { id: 'img-a', name: 'mia.png', dataUrl: 'data:image/png;base64,MIA' } }, slots: { 'termica:2': 'img-a' } };
+  const merged = mergeImageStores(local, photoStore());
+  assert.equal(merged.images['img-a'].name, 'mia.png');
+  assert.ok(merged.images['img-b']);
+  assert.equal(merged.slots['termica:2'], 'img-a');
+  assert.equal(merged.slots['corte:4'], 'img-c');
+});

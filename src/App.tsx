@@ -21,6 +21,7 @@ import { EXTERNAL_CHANGE_EVENT, kvClear } from './services/kvStore';
 import { CurrencyProvider } from './context/CurrencyContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ViewId, buildWorkflow } from './utils/workflow';
+import { clientToBoards } from './utils/boardSync';
 import { Button } from './components/ui/Button';
 import { Callout, EmptyState } from './components/ui/Card';
 import { ClipboardList, UserPlus } from 'lucide-react';
@@ -90,7 +91,9 @@ function AppContent() {
 
   const handleUpdateActiveClient = (updated: ClientRecord) => {
     // Se sigue con lo que quedó guardado (trae la revisión nueva), no con lo que se mandó.
-    const saved = StorageService.saveClient(updated);
+    // Lo que cambió en los circuitos o en los datos del tablero llega también al tablero armado.
+    const synced = clientToBoards(clients.find((c) => c.id === updated.id), updated);
+    const saved = StorageService.saveClient(synced);
     setClients((prev) => prev.map((c) => (c.id === saved.id ? saved : c)));
   };
 

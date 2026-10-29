@@ -11,11 +11,15 @@ import {
   Phone,
   MapPin,
   Download,
+  FolderOpen,
+  Save,
   Upload,
   Zap,
 } from 'lucide-react';
 import { ClientRecord } from '../types/electrical';
 import { StorageService } from '../services/storageService';
+import { OPEN_PROJECT_EVENT } from '../services/projectFileService';
+import { saveProjectFile } from '../services/projectSaveService';
 import { calculatePhaseBalance } from '../utils/electricalMath';
 import { Button } from './ui/Button';
 import { Callout, SectionHeader } from './ui/Card';
@@ -141,6 +145,23 @@ export const ClientList: React.FC<ClientListProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  /** Guarda ese proyecto, con todo su trabajo y las fotos de sus aparatos, en un archivo .electropro. */
+  const handleSaveProject = async (client: ClientRecord) => {
+    setBackupError(null);
+    const result = await saveProjectFile(client.id, false);
+    if (result.status === 'cancelled') return;
+    if (result.status === 'missing') {
+      setBackupError('No se encontró el proyecto para guardar.');
+      return;
+    }
+    setBackupSuccess(
+      result.status === 'saved'
+        ? `«${client.clientName}» se guardó en ${result.name}.`
+        : `Se descargó ${result.name} con el proyecto «${client.clientName}».`
+    );
+    setTimeout(() => setBackupSuccess(null), 5000);
+  };
+
   const handleDiscardDamaged = () => {
     if (!confirm('¿Quitar los clientes que no se pueden leer? Antes queda una copia de rescate en Ajustes → Recuperar datos.')) return;
     StorageService.discardDamagedClients();
@@ -158,8 +179,21 @@ export const ClientList: React.FC<ClientListProps> = ({
         icon={<Users className="h-4 w-4" />}
         actions={
           <>
-            <Button variant="secondary" icon={<Download className="h-4 w-4" />} onClick={handleExportBackup}>
-              Exportar copia
+            <Button
+              variant="secondary"
+              icon={<FolderOpen className="h-4 w-4" />}
+              onClick={() => window.dispatchEvent(new Event(OPEN_PROJECT_EVENT))}
+            >
+              Abrir proyecto
+            </Button>
+
+            <Button
+              variant="secondary"
+              icon={<Download className="h-4 w-4" />}
+              onClick={handleExportBackup}
+              title="Una copia de todos los clientes juntos, para cambiar de equipo"
+            >
+              Copia de todos
             </Button>
 
             <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-edge bg-raised px-4 text-sm font-semibold text-strong transition-colors hover:brightness-110">
@@ -318,6 +352,15 @@ export const ClientList: React.FC<ClientListProps> = ({
                     <span>En Edición</span>
                   </div>
                 )}
+
+                <button
+                  onClick={() => void handleSaveProject(client)}
+                  className="p-1.5 rounded-lg text-muted hover:text-strong hover:bg-raised transition-colors"
+                  title="Guardar este proyecto en un archivo (.electropro) para seguir después o compartirlo"
+                  aria-label={`Guardar el proyecto ${client.clientName} en un archivo`}
+                >
+                  <Save className="w-3.5 h-3.5" />
+                </button>
 
                 <button
                   onClick={() => onEditClient(client)}

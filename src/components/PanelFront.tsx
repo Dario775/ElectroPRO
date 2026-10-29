@@ -25,9 +25,10 @@ import { BoardEditor } from './panel/board/BoardEditor';
 import { PartPhotoSlots } from './panel/PartPhotoSlots';
 import { BoardCanvas } from './panel/board/BoardCanvas';
 import { frontRowsFromBoard } from '../utils/boardLayout';
+import { boardDiscrepancies, boardToClient, resolveDiscrepancy } from '../utils/boardSync';
 import { readImageStore } from '../services/partImages';
 import { cx } from '../utils/cx';
-import { Badge } from './ui/Card';
+import { Badge, Callout } from './ui/Card';
 import { Button, IconButton } from './ui/Button';
 import { SegmentedControl } from './ui/Form';
 
@@ -85,8 +86,14 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
   const shownRows = useMemo(() => (armedBoard ? frontRowsFromBoard(armedBoard) : rows), [armedBoard, rows]);
   const selectedItem = armedBoard ? undefined : rows.flat().find((item) => item.key === selected);
 
-  const updatePanel = (patch: Partial<ElectricalPanel>, base: ClientRecord = client) =>
-    onUpdateClient({ ...base, panels: (base.panels ?? []).map((p) => (p.id === panel.id ? { ...p, ...patch } : p)) });
+  const updatePanel = (patch: Partial<ElectricalPanel>, base: ClientRecord = client) => {
+    const next = { ...base, panels: (base.panels ?? []).map((p) => (p.id === panel.id ? { ...p, ...patch } : p)) };
+    // Lo que se cambia en el tablero del editor llega a los circuitos, sus cargas y los datos del tablero.
+    onUpdateClient(patch.board ? boardToClient(next, panel.id, patch.board, panel.board) : next);
+  };
+
+  // Lo que el tablero y los circuitos dicen distinto desde antes de que se mantuvieran de acuerdo.
+  const discrepancies = useMemo(() => boardDiscrepancies(client, panel.id), [client, panel.id]);
 
   const move = (key: string, direction: FrontMove) =>
     updatePanel({ frontRows: moveFrontItem(rows.map((row) => row.map((item) => item.key)), key, direction) });
@@ -206,6 +213,28 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
       </div>
 
       {exportError && <p className="text-xs font-semibold text-danger-text">{exportError}</p>}
+
+      {discrepancies.length > 0 && (
+        <Callout tone="warning" title="El tablero armado y los circuitos no coinciden">
+          <p>Elegí cuál vale en cada caso: el otro se actualiza para que quede igual en todo el proyecto.</p>
+          <ul className="mt-2 space-y-1.5">
+            {discrepancies.map((item) => (
+              <li key={item.id} className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="min-w-0 flex-1">
+                  <strong>{item.what}</strong>: en {item.fieldName} el tablero dice <strong>{String(item.boardValue)}</strong> y el circuito{' '}
+                  <strong>{String(item.circuitValue)}</strong>.
+                </span>
+                <Button size="sm" variant="secondary" onClick={() => onUpdateClient(resolveDiscrepancy(client, item, 'board'))}>
+                  Vale el del tablero
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => onUpdateClient(resolveDiscrepancy(client, item, 'circuit'))}>
+                  Vale el del circuito
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Callout>
+      )}
 
       <p className={cx('text-xs text-muted', view === 'editor' && 'hidden')}>
         {armed && view === 'realista'

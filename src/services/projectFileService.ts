@@ -1,6 +1,7 @@
 import type { ClientRecord } from '../types/electrical';
 import { kvGet, kvSet } from './kvStore';
 import { StorageService, readClientRecord } from './storageService';
+import { mergeImageStores, parseImageStore, photosForBoards, readImageStore, writeImageStore, type PartImageStore } from './partImages';
 
 /**
  * Proyecto como archivo: un cliente con todo su trabajo en un `.electropro`.
@@ -26,24 +27,30 @@ interface ProjectFile {
   app: 'ElectroPro';
   savedAt: string;
   client: ClientRecord;
+  /** Las fotos propias de aparatos que usan los tableros del proyecto, para que viajen con él. */
+  photos?: PartImageStore;
 }
 
 /* ------------------------------------------------------------------ */
 /* Formato                                                             */
 /* ------------------------------------------------------------------ */
 
-export function serializeProject(client: ClientRecord): string {
+export function serializeProject(
+  client: ClientRecord,
+  photos: PartImageStore = photosForBoards(readImageStore(), (client.panels ?? []).map((panel) => panel.board))
+): string {
   const file: ProjectFile = {
     format: PROJECT_FILE_FORMAT,
     version: PROJECT_FILE_VERSION,
     app: 'ElectroPro',
     savedAt: new Date().toISOString(),
     client,
+    ...(Object.keys(photos.images).length > 0 ? { photos } : {}),
   };
   return JSON.stringify(file);
 }
 
-export type ParsedProject = { client: ClientRecord; savedAt?: string } | { error: string };
+export type ParsedProject = { client: ClientRecord; savedAt?: string; photos?: PartImageStore } | { error: string };
 
 /** Lee un archivo de proyecto. Si no lo es, dice qué es y dónde se abre. */
 export function parseProjectFile(text: string): ParsedProject {
@@ -73,7 +80,12 @@ export function parseProjectFile(text: string): ParsedProject {
 
   const read = readClientRecord(file.client);
   if ('error' in read) return { error: `El proyecto está dañado: ${read.error}.` };
-  return { client: read.client, savedAt: typeof file.savedAt === 'string' ? file.savedAt : undefined };
+  const photos = file.photos ? parseImageStore(JSON.stringify(file.photos)) : undefined;
+  return {
+    client: read.client,
+    savedAt: typeof file.savedAt === 'string' ? file.savedAt : undefined,
+    photos: photos && Object.keys(photos.images).length > 0 ? photos : undefined,
+  };
 }
 
 /** Nombre de archivo sugerido: el del cliente, sin tildes ni caracteres que Windows no admite. */
@@ -188,7 +200,8 @@ export function addRecentProject(entry: Omit<RecentProject, 'at'>): void {
 export type OpenMode = 'new' | 'replace' | 'copy';
 
 /** Guarda en el equipo el proyecto abierto y lo deja vinculado a su archivo. Devuelve cómo quedó. */
-export function openProjectInApp(client: ClientRecord, fileName: string, mode: OpenMode): ClientRecord {
+export function openProjectInApp(client: ClientRecord, fileName: string, mode: OpenMode, photos?: PartImageStore): ClientRecord {
+  if (photos) writeImageStore(mergeImageStores(readImageStore(), photos));
   const existing = StorageService.getClientById(client.id);
   let incoming: ClientRecord;
   if (mode === 'copy') {
@@ -208,3 +221,17 @@ export function openProjectInApp(client: ClientRecord, fileName: string, mode: O
   else markProjectSaved(saved.id, fileName);
   return StorageService.getClientById(saved.id) ?? saved;
 }
+
+/* ------------------------------------------------------------------ */
+/* Guardar en un archivo                                               */
+/* ------------------------------------------------------------------ */
+
+export type SaveProjectResult =
+  | { status: 'cancelled' }
+  | { status: 'missing' }
+  | { status: 'saved' | 'downloaded'; name: string };
+
+/** Avisa a la pantalla que un proyecto quedó escrito en su archivo (para refrescar el indicador). */
+export const PROJECT_SAVED_EVENT = 'electropro:project-saved';
+/** Pide abrir un proyecto desde un archivo (lo atiende el menú Archivo). */
+export const OPEN_PROJECT_EVENT = 'electropro:open-project';

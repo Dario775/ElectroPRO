@@ -20,7 +20,9 @@ import {
   Flame,
   GitBranch,
 } from 'lucide-react';
-import { ClientRecord, ElectricalPanel, ApplianceLoad, PanelMeasurements, PanelType, ServiceSupply } from '../types/electrical';
+import { BoardLayout, ClientRecord, ElectricalPanel, ApplianceLoad, PanelMeasurements, PanelType, ServiceSupply } from '../types/electrical';
+import { frontRowsFromBoard } from '../utils/boardLayout';
+import { hasBoard } from '../utils/boardSync';
 import { describeSupply, getSupplies, supplyOfPanel } from '../utils/supplies';
 import { cableOptions } from '../utils/aea';
 import { calculateDemand, calculatePhaseBalance } from '../utils/electricalMath';
@@ -149,9 +151,12 @@ export const PanelsView: React.FC<PanelsViewProps> = ({
 
       // DIN occupancy estimation
       // Módulos ocupados según el frente real: entrada, diferenciales, térmicas con sus polos y accesorios
-      const estimatedDinOccupied = usedModules(
-        frontRows(syncedPanelOf(panel), (synced.circuits ?? []).filter((c) => c.panelId === panel.id), synced.loads)
-      );
+      // Con un tablero armado en el editor, los módulos son los de ese tablero.
+      const estimatedDinOccupied = hasBoard(panel)
+        ? usedModules(frontRowsFromBoard(panel.board as BoardLayout))
+        : usedModules(
+            frontRows(syncedPanelOf(panel), (synced.circuits ?? []).filter((c) => c.panelId === panel.id), synced.loads)
+          );
 
       const dinUtilization = panel.totalDinModules > 0
         ? Math.round((estimatedDinOccupied / panel.totalDinModules) * 100)

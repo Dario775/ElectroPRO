@@ -46,7 +46,7 @@ export const PhotoFitDialog: React.FC<PhotoFitDialogProps> = ({ imageId, kind, m
       description="La foto llena toda la caja del aparato sin deformarse. Acercala y movela hasta que quede como el dibujo."
       footer={
         <>
-          <Button variant="ghost" onClick={() => apply({ ...DEFAULT_FIT, stretch: false })}>
+          <Button variant="ghost" onClick={() => apply({ ...DEFAULT_FIT, scaleX: 1, scaleY: 1, stretch: false })}>
             Restablecer
           </Button>
           <Button variant="primary" onClick={onClose}>
@@ -97,13 +97,13 @@ export const PhotoFitDialog: React.FC<PhotoFitDialogProps> = ({ imageId, kind, m
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => apply({ zoom: containZoom({ width: image.width ?? 1, height: image.height ?? 1 }, width, DEVICE_H), x: 0, y: 0, stretch: false })}
+                onClick={() => apply({ zoom: containZoom({ width: image.width ?? 1, height: image.height ?? 1 }, width, DEVICE_H), x: 0, y: 0, scaleX: 1, scaleY: 1, stretch: false })}
                 title="Alejar hasta ver la foto completa, sin recortar nada"
               >
                 Ver entera
               </Button>
             )}
-            <Button size="sm" variant="secondary" onClick={() => apply({ zoom: 1, x: 0, y: 0, stretch: false })} title="Llenar la caja recortando lo que sobre">
+            <Button size="sm" variant="secondary" onClick={() => apply({ zoom: 1, x: 0, y: 0, scaleX: 1, scaleY: 1, stretch: false })} title="Llenar la caja recortando lo que sobre">
               Llenar
             </Button>
           </div>
@@ -118,6 +118,18 @@ export const PhotoFitDialog: React.FC<PhotoFitDialogProps> = ({ imageId, kind, m
               Arriba ↔ abajo <span className="font-mono">{Math.round(fit.y * 100)}</span>
             </span>
             <input type="range" min={-1} max={1} step={0.02} value={fit.y} disabled={fit.stretch === true} onChange={(e) => apply({ y: Number(e.target.value) })} className={SLIDER} />
+          </label>
+          <label className="block space-y-1 text-xs font-semibold text-muted" title="Más de 100 %: la foto se hace más ancha y se recorta a los costados. Menos: se angosta">
+            <span className="flex justify-between">
+              Angosta ↔ ancha <span className="font-mono">{Math.round((fit.scaleX ?? 1) * 100)} %</span>
+            </span>
+            <input type="range" min={0.3} max={3} step={0.01} value={fit.scaleX ?? 1} disabled={fit.stretch === true} onChange={(e) => apply({ scaleX: Number(e.target.value) })} className={SLIDER} />
+          </label>
+          <label className="block space-y-1 text-xs font-semibold text-muted" title="Más de 100 %: la foto se hace más alta y se recorta arriba y abajo. Menos: se achata">
+            <span className="flex justify-between">
+              Baja ↔ alta <span className="font-mono">{Math.round((fit.scaleY ?? 1) * 100)} %</span>
+            </span>
+            <input type="range" min={0.3} max={3} step={0.01} value={fit.scaleY ?? 1} disabled={fit.stretch === true} onChange={(e) => apply({ scaleY: Number(e.target.value) })} className={SLIDER} />
           </label>
           <label className="flex items-center gap-2 text-xs font-semibold text-muted">
             <input type="checkbox" checked={fit.stretch === true} onChange={(e) => apply({ stretch: e.target.checked })} className="h-4 w-4 accent-current text-accent-text" />

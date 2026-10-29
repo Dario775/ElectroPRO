@@ -44,6 +44,7 @@ import { partPhoto } from '../../../services/partImages';
 import { DEVICE_H, DeviceArt, DeviceDefs, MODULE_W } from '../deviceArt';
 import { EDITOR_LABEL_GAP } from '../deviceMetrics';
 import { PartLabel, LABEL_H } from '../partLabel';
+import { moveGroup, selectionIn, type GroupItem, type Rect } from '../../../utils/boardGroup';
 import { WIRE_STYLES } from '../wiring';
 
 export type BoardMode = 'select' | 'note';
@@ -64,11 +65,15 @@ export interface BoardCanvasProps {
   onChange: (board: BoardLayout, persist: boolean) => void;
   onDropSpec: (specJson: string, at: BoardPoint) => void;
   onAddNote: (at: BoardPoint) => void;
+  /** Elementos elegidos con un recuadro (o sumados con Shift). Un solo elemento va por `onSelect`. */
+  group?: GroupItem[];
+  onSelectGroup?: (items: GroupItem[], additive: boolean) => void;
   /** Solo se mira: no se agarra ni se cambia nada. */
   readOnly?: boolean;
 }
 
 const SELECTION = '#2563eb';
+const NO_GROUP: GroupItem[] = [];
 const FONT = "Inter, 'Segoe UI', Arial, sans-serif";
 const GRID = 5;
 const snap = (value: number): number => Math.round(value / GRID) * GRID;
@@ -85,7 +90,9 @@ type Drag =
   | { type: 'wireEnd'; wireId: string; end: 'start' | 'end'; base: BoardLayout }
   | { type: 'segment'; wireId: string; segment: number; vertical: boolean; base: BoardLayout }
   | { type: 'note'; id: string; dx: number; dy: number; base: BoardLayout }
-  | { type: 'noteTarget'; id: string; base: BoardLayout };
+  | { type: 'noteTarget'; id: string; base: BoardLayout }
+  /** Un grupo seleccionado que se lleva entero. */
+  | { type: 'group'; items: GroupItem[]; start: BoardPoint; base: BoardLayout };
 
 /** Un cable dibujado: sombra, color y, si es de tierra, la franja amarilla. */
 const WireStroke: React.FC<{ points: BoardPoint[]; role: BoardWireRole; glow?: boolean; section?: number }> = ({ points, role, glow, section }) => {
@@ -136,6 +143,8 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   onDropSpec,
   onAddNote,
   readOnly = false,
+  group = NO_GROUP,
+  onSelectGroup,
 }) => {
   // Sin edición, el lienzo se comporta como en el modo de notas pero sin agregar nada.
   const mode: BoardMode = readOnly ? 'note' : modeProp;
@@ -158,6 +167,9 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   const [ghost, setGhost] = useState<BoardWire | null>(null);
   /** El borne sobre el que está el puntero, mientras se tiende o se guía un cable. */
   const [target, setTarget] = useState<BoardTerminalPoint | undefined>();
+  /** Recuadro de selección que se arrastra sobre el fondo (con el gabinete bloqueado). */
+  const [marquee, setMarquee] = useState<Rect | null>(null);
+  const marqueeStart = useRef<{ start: BoardPoint; additive: boolean } | null>(null);
   const targetRef = useRef<BoardTerminalPoint | undefined>(undefined);
   const ghostRef = useRef<BoardWire | null>(null);
   /** La boca de un prensacable sobre la que está el puntero: el cable entra por ahí al tubo. */
@@ -272,6 +284,9 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
           next = replaceWire(drag.base, moveSegment(wire, drag.segment, snap(drag.vertical ? point.x : point.y)));
           break;
         }
+        case 'group':
+          next = moveGroup(drag.base, drag.items, Math.round(point.x - drag.start.x), Math.round(point.y - drag.start.y));
+          break;
         case 'note':
           next = updateNote(drag.base, drag.id, { x: Math.round(point.x - drag.dx), y: Math.round(point.y - drag.dy) });
           break;
@@ -329,13 +344,46 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
     };
   }, [dragging, onChange, onSelect, toBoard]);
 
+  const marqueeOn = marquee !== null;
+  useEffect(() => {
+    if (!marqueeOn) return;
+    const onMove = (event: PointerEvent): void => {
+      const from = marqueeStart.current;
+      if (!from) return;
+      const p = toBoard(event.clientX, event.clientY);
+      setMarquee({ x0: from.start.x, y0: from.start.y, x1: p.x, y1: p.y });
+    };
+    const onUp = (event: PointerEvent): void => {
+      const from = marqueeStart.current;
+      marqueeStart.current = null;
+      setMarquee(null);
+      if (!from) return;
+      const p = toBoard(event.clientX, event.clientY);
+      onSelectGroup?.(selectionIn(latest.current, { x0: from.start.x, y0: from.start.y, x1: p.x, y1: p.y }), from.additive);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [marqueeOn, onSelectGroup, toBoard]);
+
   /* Entradas del mouse ------------------------------------------------ */
 
   const onSvgPointerDown = (event: React.PointerEvent<SVGSVGElement>): void => {
     const point = toBoard(event.clientX, event.clientY);
     if (readOnly) return;
-    if (mode === 'note') onAddNote(point);
-    else onSelect(null);
+    if (mode === 'note') {
+      onAddNote(point);
+      return;
+    }
+    // Con el gabinete bloqueado, el fondo sirve para elegir con un recuadro (Shift suma a la selección).
+    if (mode === 'select' && board.frameLocked && event.button === 0) {
+      marqueeStart.current = { start: point, additive: event.shiftKey };
+      setMarquee({ x0: point.x, y0: point.y, x1: point.x, y1: point.y });
+    }
+    if (!event.shiftKey) onSelect(null);
   };
 
   const onSvgPointerMove = (event: React.PointerEvent<SVGSVGElement>): void => {
@@ -360,6 +408,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   /** Un cable: por la punta se desenchufa y se guía; por el medio se corre el tramo que se agarró. */
   const wireDown = (event: React.PointerEvent, wire: BoardWire): void => {
     if (mode !== 'select') return;
+    if (groupDown(event, { kind: 'wire', id: wire.id })) return;
     event.stopPropagation();
     onSelect({ kind: 'wire', id: wire.id });
     const point = toBoard(event.clientX, event.clientY);
@@ -374,8 +423,19 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
     if (segment) startDrag({ type: 'segment', wireId: wire.id, segment: segment.index, vertical: segment.vertical, base: board });
   };
 
+  const inGroup = (kind: GroupItem['kind'], id: string): boolean => group.some((item) => item.kind === kind && item.id === id);
+
+  /** Si el elemento es parte de un grupo de varios, se lleva el grupo entero. */
+  const groupDown = (event: React.PointerEvent, item: GroupItem): boolean => {
+    if (group.length < 2 || !inGroup(item.kind, item.id)) return false;
+    event.stopPropagation();
+    startDrag({ type: 'group', items: group, start: toBoard(event.clientX, event.clientY), base: board });
+    return true;
+  };
+
   const partDown = (event: React.PointerEvent, part: BoardPart): void => {
     if (mode !== 'select') return;
+    if (groupDown(event, { kind: 'part', id: part.id })) return;
     event.stopPropagation();
     onSelect({ kind: 'part', id: part.id });
     const point = toBoard(event.clientX, event.clientY);
@@ -384,6 +444,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
   const railDown = (event: React.PointerEvent, rail: BoardRail): void => {
     if (mode !== 'select') return;
+    if (groupDown(event, { kind: 'rail', id: rail.id })) return;
     event.stopPropagation();
     onSelect({ kind: 'rail', id: rail.id });
     const point = toBoard(event.clientX, event.clientY);
@@ -392,6 +453,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
   const accessoryDown = (event: React.PointerEvent, id: string, x: number, y: number): void => {
     if (mode !== 'select') return;
+    if (groupDown(event, { kind: 'accessory', id })) return;
     event.stopPropagation();
     onSelect({ kind: 'accessory', id });
     const point = toBoard(event.clientX, event.clientY);
@@ -515,7 +577,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
             onPointerLeave={() => setHoverWire((current) => (current === wire.id ? null : current))}
           >
             <title>{`${WIRE_STYLES[wire.role].label} · ${String(wire.section ?? 2.5).replace('.', ',')} mm²`}</title>
-            <WireStroke points={points} role={wire.role} glow={selected || hoverWire === wire.id} section={wire.section} />
+            <WireStroke points={points} role={wire.role} glow={selected || inGroup('wire', wire.id) || hoverWire === wire.id} section={wire.section} />
             {board.ferrules !== false && points.length >= 2 && (
               <g pointerEvents="none">
                 {wire.from && <Ferrule at={points[0]} toward={points[1]} section={wire.section} />}
@@ -545,12 +607,15 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
             photo={partPhoto(photos, part)}
           />
           <rect x={0} y={0} width={partWidth(part)} height={DEVICE_H} fill="transparent" data-export="hide" />
+          {inGroup('part', part.id) && (
+            <rect x={-3} y={-3} width={partWidth(part) + 6} height={DEVICE_H + 6} rx={4} fill="none" stroke={SELECTION} strokeWidth={2.5} strokeDasharray="7 4" data-export="hide" pointerEvents="none" />
+          )}
         </g>
       ))}
 
       {/* 3b. Accesorios sueltos: tubos, canaletas y peines, por encima de los cables */}
       {(board.accessories ?? []).map((item) => {
-        const selected = selection?.kind === 'accessory' && selection.id === item.id;
+        const selected = (selection?.kind === 'accessory' && selection.id === item.id) || inGroup('accessory', item.id);
         return (
           <g
             key={item.id}
@@ -742,6 +807,21 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
             );
           })}
       </g>
+      {marquee && (
+        <rect
+          x={Math.min(marquee.x0, marquee.x1)}
+          y={Math.min(marquee.y0, marquee.y1)}
+          width={Math.abs(marquee.x1 - marquee.x0)}
+          height={Math.abs(marquee.y1 - marquee.y0)}
+          fill={SELECTION}
+          fillOpacity={0.08}
+          stroke={SELECTION}
+          strokeWidth={1.5}
+          strokeDasharray="6 4"
+          data-export="hide"
+          pointerEvents="none"
+        />
+      )}
     </svg>
   );
 };

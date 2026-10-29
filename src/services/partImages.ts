@@ -169,6 +169,39 @@ export function partPhoto(
   return slotPhoto(store, part.kind, part.modules);
 }
 
+/**
+ * Las fotos que usan los tableros de un proyecto: las propias de sus aparatos y las de los casilleros
+ * de los tipos y anchos que tiene. Es lo que viaja dentro del archivo del proyecto.
+ */
+export function photosForBoards(
+  store: PartImageStore,
+  boards: Array<{ parts: Array<{ kind: BoardPartKind; modules: number; imageId?: string }> } | undefined>
+): PartImageStore {
+  const ids = new Set<string>();
+  const slots: Record<string, string> = {};
+  for (const board of boards) {
+    for (const part of board?.parts ?? []) {
+      if (part.imageId && store.images[part.imageId]) ids.add(part.imageId);
+      const key = slotKey(part.kind, part.modules);
+      if (store.slots[key]) {
+        slots[key] = store.slots[key];
+        ids.add(store.slots[key]);
+      }
+    }
+  }
+  const images: Record<string, PartImage> = {};
+  for (const id of ids) if (store.images[id]) images[id] = store.images[id];
+  return { images, slots };
+}
+
+/** Suma las fotos de un proyecto abierto a las del equipo: no pisa ninguna foto ni casillero que ya esté. */
+export function mergeImageStores(local: PartImageStore, incoming: PartImageStore): PartImageStore {
+  const images = { ...incoming.images, ...local.images };
+  const slots = { ...local.slots };
+  for (const [slot, id] of Object.entries(incoming.slots)) if (!slots[slot] && images[id]) slots[slot] = id;
+  return { images, slots };
+}
+
 /** Cambia cómo se acomoda una foto dentro de la caja del aparato. */
 export function setImageFit(store: PartImageStore, imageId: string, fit: Partial<PhotoFit>): PartImageStore {
   const image = store.images[imageId];

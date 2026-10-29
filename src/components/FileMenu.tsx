@@ -24,17 +24,18 @@ import {
   PROJECT_FILE_EXTENSION,
   PROJECT_FILE_MIME,
   getRecentProjects,
-  markProjectSaved,
+  OPEN_PROJECT_EVENT,
+  PROJECT_SAVED_EVENT,
   openProjectInApp,
   parseProjectFile,
   projectStatus,
-  serializeProject,
-  suggestedFileName,
   type OpenMode,
   type ProjectStatus,
   type RecentProject,
 } from '../services/projectFileService';
 import { ensurePermission, getFileHandle, putFileHandle, type ProjectFileHandle } from '../services/fileHandleStore';
+import type { PartImageStore } from '../services/partImages';
+import { saveProjectFile } from '../services/projectSaveService';
 import { readFileText, saveFile } from '../services/planFileService';
 import { generateTechnicalReportPDF } from '../services/pdfReportService';
 import { generateBudgetPDF } from '../services/budgetPdfService';
@@ -61,6 +62,7 @@ interface OpenPickerWindow {
 
 interface PendingOpen {
   client: ClientRecord;
+  photos?: PartImageStore;
   fileName: string;
   handle?: ProjectFileHandle;
 }
@@ -154,23 +156,12 @@ export const FileMenu: React.FC<FileMenuProps> = ({
       notify('No hay un proyecto abierto para guardar.', 'danger');
       return;
     }
-    const client = StorageService.getClientById(activeClient.id) ?? activeClient;
-    let handle: ProjectFileHandle | null = asNew ? null : await getFileHandle(client.id);
-    if (handle && !(await ensurePermission(handle, 'readwrite'))) handle = null;
-
-    const current = projectStatus(client);
-    const name = handle?.name ?? (!asNew && current.kind !== 'sin-archivo' ? current.fileName : suggestedFileName(client));
-    const result = await saveFile(
-      new Blob([serializeProject(client)], { type: PROJECT_FILE_MIME }),
-      name,
-      'Proyecto de ElectroPro',
-      PROJECT_FILE_MIME,
-      PROJECT_FILE_EXTENSION,
-      handle
-    );
+    const result = await saveProjectFile(activeClient.id, asNew);
     if (result.status === 'cancelled') return;
-    if (result.status === 'saved') await putFileHandle(client.id, result.handle);
-    markProjectSaved(client.id, result.name);
+    if (result.status === 'missing') {
+      notify('No se encontró el proyecto para guardar.', 'danger');
+      return;
+    }
     setRefresh((n) => n + 1);
     notify(
       result.status === 'saved'
@@ -182,9 +173,9 @@ export const FileMenu: React.FC<FileMenuProps> = ({
 
   /* --------------------------------- Abrir --------------------------------- */
 
-  const finishOpen = async ({ client, fileName, handle }: PendingOpen, mode: OpenMode) => {
+  const finishOpen = async ({ client, photos, fileName, handle }: PendingOpen, mode: OpenMode) => {
     setPending(null);
-    const opened = openProjectInApp(client, fileName, mode);
+    const opened = openProjectInApp(client, fileName, mode, photos);
     if (handle && mode !== 'copy') await putFileHandle(opened.id, handle);
     onProjectOpened(opened.id);
     setRefresh((n) => n + 1);
@@ -200,7 +191,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
       notify(parsed.error, 'danger');
       return;
     }
-    const next = { client: parsed.client, fileName, handle };
+    const next = { client: parsed.client, photos: parsed.photos, fileName, handle };
     if (StorageService.getClientById(parsed.client.id)) setPending(next);
     else void finishOpen(next, 'new');
   };
@@ -278,6 +269,17 @@ export const FileMenu: React.FC<FileMenuProps> = ({
 
   const actions = useRef({ save, openFile });
   actions.current = { save, openFile };
+  // Desde la lista de clientes se pide abrir un proyecto o se avisa que se guardó uno.
+  useEffect(() => {
+    const onOpen = () => void actions.current.openFile();
+    const onSaved = () => setRefresh((n) => n + 1);
+    window.addEventListener(OPEN_PROJECT_EVENT, onOpen);
+    window.addEventListener(PROJECT_SAVED_EVENT, onSaved);
+    return () => {
+      window.removeEventListener(OPEN_PROJECT_EVENT, onOpen);
+      window.removeEventListener(PROJECT_SAVED_EVENT, onSaved);
+    };
+  }, []);
   useEffect(() => {
     if (!shortcutsEnabled) return;
     const onKey = (event: KeyboardEvent) => {

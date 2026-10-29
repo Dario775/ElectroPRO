@@ -88,3 +88,22 @@ test('con zoom menor que 1 la ventana es más grande que la foto: se ve entera',
 test('containZoom es 1 cuando la foto ya tiene la proporción de la caja', () => {
   near(f.containZoom({ width: 60, height: 118 }, 60, 118), 1, 'zoom');
 });
+
+test('la escala de ancho estira la foto en horizontal: la ventana es más angosta', () => {
+  // Foto cuadrada 400×400 en una caja 200×100 (proporción 2): ventana base 400×200.
+  const crop = f.imageCrop({ width: 400, height: 400 }, 200, 100, { scaleX: 1.5 });
+  near(crop.w, 400 / 1.5, 'ancho de la ventana');
+  near(crop.h, 200, 'alto sin cambios');
+});
+
+test('la escala de alto estira la foto en vertical: la ventana es más baja', () => {
+  const crop = f.imageCrop({ width: 400, height: 400 }, 200, 100, { scaleY: 0.5 });
+  near(crop.w, 400, 'ancho sin cambios');
+  near(crop.h, 400, 'alto de la ventana: la foto entera');
+});
+
+test('las escalas se limitan entre 0,3 y 3, y se omiten cuando valen 1', () => {
+  assert.equal(f.normalizeFit({ scaleX: 10 }).scaleX, 3);
+  assert.equal(f.normalizeFit({ scaleY: 0.01 }).scaleY, 0.3);
+  assert.deepEqual(f.normalizeFit({ scaleX: 1, scaleY: 1 }), { zoom: 1, x: 0, y: 0 });
+});

@@ -298,6 +298,12 @@ export interface BoardPart {
   imageId?: string;
   /** El neutro va en el módulo de la izquierda (como en los 4P de Schneider) y no en el de la derecha. */
   neutralLeft?: boolean;
+  /** Circuito del proyecto al que corresponde esta térmica (ver `utils/boardSync`). */
+  circuitId?: string;
+  /** Diferencial del tablero al que corresponde. */
+  differentialId?: string;
+  /** Es la térmica general del tablero. */
+  isMain?: boolean;
 }
 
 /** Accesorios sueltos del armado: no van sobre el riel ni tienen bornes. */
@@ -384,6 +390,8 @@ export interface BoardLayout {
   separate?: boolean;
   /** Medidas exteriores del gabinete en milímetros. Si falta, el tablero se mide según su contenido. */
   enclosure?: BoardEnclosure;
+  /** Con el gabinete bloqueado, arrastrar el fondo no mueve el tablero: sirve para seleccionar lo que hay adentro. */
+  frameLocked?: boolean;
 }
 
 /** Medidas del gabinete en milímetros (ancho y alto exteriores). */

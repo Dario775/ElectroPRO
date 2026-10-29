@@ -48,6 +48,7 @@ import { downloadBlob, svgToPngBlob } from '../../../services/svgExport';
 import { cx } from '../../../utils/cx';
 import { Button, IconButton } from '../../ui/Button';
 import { BoardCanvas, type BoardMode, type BoardSelection } from './BoardCanvas';
+import { addToGroup, removeGroup, type GroupItem } from '../../../utils/boardGroup';
 import { BoardCatalogPanel } from './BoardCatalogPanel';
 import { BoardInspector } from './BoardInspector';
 import { PanelSwitcher } from './PanelSwitcher';
@@ -104,6 +105,8 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
   const [draft, setDraft] = useState<BoardLayout | null>(null);
   const [mode, setMode] = useState<BoardMode>('select');
   const [selection, setSelection] = useState<BoardSelection>(null);
+  /** Elementos elegidos con un recuadro (o sumados con Shift); se mueven y se borran juntos. */
+  const [group, setGroup] = useState<GroupItem[]>([]);
   const [message, setMessage] = useState('');
   const [innerMaximized, setInnerMaximized] = useState(false);
   const maximized = maximizedProp ?? innerMaximized;
@@ -209,14 +212,20 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
 
   const deleteSelection = useCallback((): void => {
     const current = savedRef.current;
-    if (!current || !selection) return;
+    if (!current) return;
+    if (group.length > 0) {
+      commit(removeGroup(current, group));
+      setGroup([]);
+      return;
+    }
+    if (!selection) return;
     if (selection.kind === 'part') commit(removePart(current, selection.id));
     else if (selection.kind === 'wire') commit(removeWire(current, selection.id));
     else if (selection.kind === 'note') commit(removeNote(current, selection.id));
     else if (selection.kind === 'accessory') commit(removeAccessory(current, selection.id));
     else commit(removeRail(current, selection.id));
     setSelection(null);
-  }, [commit, selection]);
+  }, [commit, group, selection]);
 
   const duplicateSelection = useCallback((): void => {
     const current = savedRef.current;
@@ -282,7 +291,7 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
         event.preventDefault();
         duplicateSelection();
       } else if (!ctrl && (key === 'delete' || key === 'backspace')) {
-        if (selection) {
+        if (selection || group.length > 0) {
           event.preventDefault();
           deleteSelection();
         }
@@ -290,6 +299,7 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
         if (maximized && !selection && mode === 'select') setMaximized(false);
         setMode('select');
         setSelection(null);
+        setGroup([]);
       } else if (!ctrl && (key === '+' || key === '=')) viewport.zoomIn();
       else if (!ctrl && key === '-') viewport.zoomOut();
       else if (!ctrl && key === '0') viewport.fit();
@@ -298,7 +308,7 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, duplicateSelection, deleteSelection, selection, maximized, mode, viewport]);
+  }, [undo, redo, duplicateSelection, deleteSelection, selection, group, maximized, mode, viewport]);
 
   // Maximizado, el editor ocupa toda la pantalla y la página de atrás no se desplaza.
   useEffect(() => {
@@ -432,6 +442,16 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
           )}
         </div>
 
+        <label className="flex items-center gap-1.5 font-semibold text-muted" title="Con el gabinete bloqueado, arrastrar el fondo no mueve el tablero: se elige y se mueve lo que hay adentro con un recuadro">
+          <input
+            type="checkbox"
+            checked={board.frameLocked === true}
+            onChange={(e) => commit({ ...board, frameLocked: e.target.checked })}
+            className="h-4 w-4 accent-current text-accent-text"
+          />
+          Bloquear gabinete
+        </label>
+        {group.length > 1 && <span className="font-semibold text-accent-text">{group.length} seleccionados</span>}
         <label className="flex items-center gap-1.5 font-semibold text-muted">
           <input
             type="checkbox"
@@ -531,7 +551,7 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
 
         <div
           ref={viewport.containerRef}
-          onPointerDown={(event) => viewport.onPanStart(event, mode === 'select')}
+          onPointerDown={(event) => viewport.onPanStart(event, mode === 'select' && !board.frameLocked)}
           className={cx(
             'relative min-w-0 overflow-hidden rounded-xl border border-hairline bg-sunken',
             maximized ? 'h-full min-h-0' : 'h-[72vh] min-h-[420px]'
@@ -556,7 +576,16 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
             zoom={viewport.scale}
             photos={photos}
             svgRef={svgRef}
-            onSelect={setSelection}
+            onSelect={(next) => {
+              setGroup([]);
+              setSelection(next);
+            }}
+            group={group}
+            onSelectGroup={(items, additive) => {
+              const next = addToGroup(additive ? (selection ? [...group, selection] : group) : [], items);
+              setGroup(next.length > 1 ? next : []);
+              setSelection(next.length === 1 ? next[0] : null);
+            }}
             onChange={handleChange}
             onDropSpec={handleDropSpec}
             onAddNote={(at) => {
