@@ -49,7 +49,8 @@ import { useCurrency } from '../context/CurrencyContext';
 import { BudgetGeneratorService, CatalogMaterial, CATALOG_CURRENCY } from '../services/budgetGeneratorService';
 import { generateBudgetPDF } from '../services/budgetPdfService';
 import { CatalogService } from '../services/catalogService';
-import { boardBudgetItems, hasBoardItems, syncBoardItems } from '../utils/boardBudget';
+import { boardBudgetItems, hasBoardItems, shoppingList, syncBoardItems } from '../utils/boardBudget';
+import { ShoppingListModal } from './ShoppingListModal';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
@@ -114,6 +115,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
 
   // Modals state
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
+  const [isShoppingOpen, setIsShoppingOpen] = useState(false);
 
   const [isItemEditModalOpen, setIsItemEditModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BudgetItem | null>(null);
@@ -1106,6 +1108,11 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               <> {boardUnpriced} {boardUnpriced === 1 ? 'no tiene' : 'no tienen'} precio porque no están en el catálogo: cargalos acá o agregá el producto al catálogo.</>
             )}
             {boardNotes.length > 0 && <ul className="mt-1 list-disc pl-4">{boardNotes.map((note) => <li key={note}>{note}</li>)}</ul>}
+            <div className="mt-2">
+              <Button size="sm" variant="secondary" onClick={() => setIsShoppingOpen(true)}>
+                Ver lista de compras
+              </Button>
+            </div>
           </div>
         )}
         {/* Table Toolbar */}
@@ -1563,6 +1570,15 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
         onAddToBudget={handleAddFromCatalog}
         formatPrice={(amount) => format(amount, CATALOG_CURRENCY)}
       />
+
+      {isShoppingOpen && (
+        <ShoppingListModal
+          isOpen
+          onClose={() => setIsShoppingOpen(false)}
+          rows={shoppingList(client, CatalogService.getItems(), convertFromCatalog)}
+          formatPrice={(amount) => format(amount, client.currency)}
+        />
+      )}
 
       {/* 7. MODAL: EDIT / CREATE DETAILED ITEM */}
       {isItemEditModalOpen && editingItem && (

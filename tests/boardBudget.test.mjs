@@ -192,3 +192,30 @@ test('avisa si el stock del producto elegido no alcanza, sin descontarlo', () =>
   const { notes } = B.boardBudgetItems(withProduct, [...catalog, { id: 'prod-1', description: 'Térmica 2P 16A Sica', unit: 'ud', unitPrice: 31000, stock: 0 }]);
   assert.ok(notes.some((note) => note.startsWith('Stock: ')));
 });
+
+test('la lista de compras resta el stock de lo que hay que juntar', () => {
+  const base = project();
+  const parts = base.panels[0].board.parts.filter((part) => part.kind === 'termica' && part.amps === 16 && !part.isMain);
+  const ids = new Set(parts.map((part) => part.id));
+  const withProduct = {
+    ...base,
+    panels: [{ ...base.panels[0], board: { ...base.panels[0].board, parts: base.panels[0].board.parts.map((part) => (ids.has(part.id) ? { ...part, productId: 'prod-1' } : part)) } }],
+  };
+  const stocked = { id: 'prod-1', description: 'Térmica 2P 16A Sica', unit: 'ud', unitPrice: 31000, cost: 20000, stock: 1 };
+  const rows = B.shoppingList(withProduct, [...catalog, stocked]);
+  const row = rows.find((item) => item.key.includes('|p:prod-1'));
+  assert.ok(row);
+  assert.equal(row.needed, parts.length);
+  assert.equal(row.stock, 1);
+  assert.equal(row.toBuy, parts.length - 1);
+  assert.equal(row.unitCost, 20000);
+  assert.ok(row.hasCost);
+  assert.ok(!B.shoppingListText(rows).includes('Térmica 2P 16A Sica'), 'lo que ya está en stock no se pide');
+  assert.match(B.shoppingListText(rows), /Gabinete/);
+});
+
+test('sin stock cargado se compra todo y lo que no está en el catálogo se marca', () => {
+  const rows = B.shoppingList(project(), catalog);
+  assert.ok(rows.every((row) => row.stock === undefined && row.toBuy === row.needed));
+  assert.ok(rows.some((row) => !row.inCatalog));
+});

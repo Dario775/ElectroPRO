@@ -36,6 +36,8 @@ export interface PriceEntry {
   category?: BudgetCategory;
   /** Cuántos hay en stock, si se lleva la cuenta (informativo). */
   stock?: number;
+  /** Lo que cuesta al instalador, si lo cargó. */
+  cost?: number;
 }
 
 interface BomLine {
@@ -359,6 +361,61 @@ export function boardBudgetItems(client: ClientRecord, catalog: PriceEntry[], co
     };
   });
   return { items, notes };
+}
+
+/** Un material que hay que tener para armar los tableros del proyecto. */
+export interface ShoppingRow {
+  key: string;
+  description: string;
+  brand?: string;
+  unit: BudgetItem['unit'];
+  needed: number;
+  /** En stock, si el producto está en el catálogo y se lleva la cuenta (informativo). */
+  stock?: number;
+  /** Lo que falta comprar: lo necesario menos el stock. */
+  toBuy: number;
+  /** Precio de venta por unidad; 0 si el material no está en el catálogo. */
+  unitPrice: number;
+  /** Costo por unidad si se cargó; si no, el precio de venta. */
+  unitCost: number;
+  /** El costo de `unitCost` es el real cargado, no el precio de venta. */
+  hasCost: boolean;
+  inCatalog: boolean;
+}
+
+/**
+ * Lista de compras de los tableros armados: qué hay que juntar, cuánto hay en stock y cuánto falta comprar.
+ * Es informativa: no descuenta nada del catálogo.
+ */
+export function shoppingList(client: ClientRecord, catalog: PriceEntry[], convert: (pesos: number) => number = (n) => n): ShoppingRow[] {
+  return boardMaterials(client).lines.map((line): ShoppingRow => {
+    const entry = matchEntry(line, catalog);
+    const sameUnit = !!entry && (entry.unit === line.unit);
+    const stock = sameUnit && entry.stock !== undefined ? Math.max(0, entry.stock) : undefined;
+    const toBuy = stock === undefined ? line.quantity : Math.max(0, round1(line.quantity - stock));
+    const unitPrice = entry ? money(convert(unitPriceOf(line, entry))) : 0;
+    const hasCost = !!entry && entry.cost !== undefined && entry.cost > 0;
+    const unitCost = entry && hasCost ? money(convert(unitPriceOf(line, { ...entry, unitPrice: entry.cost as number }))) : unitPrice;
+    return {
+      key: line.key,
+      description: entry && line.productId && entry.id === line.productId ? entry.description : line.description,
+      brand: entry?.brand ?? line.brand,
+      unit: line.unit,
+      needed: line.quantity,
+      stock,
+      toBuy,
+      unitPrice,
+      unitCost,
+      hasCost,
+      inCatalog: !!entry,
+    };
+  });
+}
+
+/** La lista de compras como texto para pegar en un mensaje al proveedor: solo lo que falta comprar. */
+export function shoppingListText(rows: ShoppingRow[]): string {
+  const lines = rows.filter((row) => row.toBuy > 0).map((row) => `- ${row.toBuy} ${row.unit} · ${row.description}${row.brand ? ` (${row.brand})` : ''}`);
+  return lines.join('\n');
 }
 
 export const hasBoardItems = (budget: Pick<ProjectBudget, 'items'>): boolean => budget.items.some((item) => item.origin === BOARD_ORIGIN);
