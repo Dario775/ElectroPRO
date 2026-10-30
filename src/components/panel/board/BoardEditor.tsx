@@ -196,7 +196,8 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
 
   const addFromSpec = useCallback(
     (spec: PartSpec, at?: { x: number; y: number }): void => {
-      const result = addPart(savedRef.current ?? emptyBoard(), brandRef.current ? { ...spec, brand: brandRef.current } : spec, at);
+      // Un producto del catálogo trae su propia marca; si no, se usa la que está elegida para los aparatos nuevos.
+      const result = addPart(savedRef.current ?? emptyBoard(), brandRef.current ? { brand: brandRef.current, ...spec } : spec, at);
       commit(result.board);
       setSelection({ kind: 'part', id: result.part.id });
       setMode('select');

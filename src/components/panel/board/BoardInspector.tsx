@@ -2,8 +2,8 @@
  * Panel de propiedades del editor: lo que se puede cambiar del aparato, riel, cable o nota
  * elegidos, incluida la foto del aparato.
  */
-import React, { useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Copy, ImagePlus, Trash2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { CheckCircle2, Copy, Trash2 } from 'lucide-react';
 import type { BoardAccessory, BoardLayout, BoardPart } from '../../../types/electrical';
 import {
   AMP_OPTIONS,
@@ -20,19 +20,13 @@ import {
 } from '../../../utils/boardCatalog';
 import { combLinks, combPinCount, connectorLink, combPins, partTerminals, setWireRole, setWireSection, updateAccessory, updateNote, updatePart } from '../../../utils/boardLayout';
 import {
-  addImage,
-  assignSlot,
-  fileToPartImage,
   partPhoto,
-  partVariant,
-  writeImageStore,
   type PartImageStore,
 } from '../../../services/partImages';
 import { reviewBoard, type BoardIssue } from '../../../utils/boardReview';
 import { CatalogService } from '../../../services/catalogService';
 import { isStalePrice, productsForPart, specFits, specOf, specOfPart, stockStatus } from '../../../utils/productSpec';
 import { Button } from '../../ui/Button';
-import { PhotoFitDialog } from '../PhotoFitDialog';
 import { BrandSelect } from '../BrandSelect';
 import { WIRE_ROLES, WIRE_STYLES } from '../wiring';
 import type { BoardSelection } from './BoardCanvas';
@@ -42,7 +36,7 @@ interface BoardInspectorProps {
   selection: BoardSelection;
   photos: PartImageStore;
   onChange: (board: BoardLayout) => void;
-  onPhotosChange: () => void;
+  onPhotosChange?: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
   /** Para llevar la selección al aparato o al cable de un aviso de la revisión. */
@@ -241,16 +235,11 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
   selection,
   photos,
   onChange,
-  onPhotosChange,
   onDuplicate,
   onDelete,
   onSelect,
 }) => {
   const issues = useMemo(() => reviewBoard(board), [board]);
-  const [photoError, setPhotoError] = useState('');
-  const [fitting, setFitting] = useState<string | null>(null);
-  const ownInput = useRef<HTMLInputElement>(null);
-  const slotInput = useRef<HTMLInputElement>(null);
 
   if (!selection) {
     return (
@@ -408,22 +397,6 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
   const blockLike = !poleOptions;
   const photo = partPhoto(photos, part);
 
-  const pickPhoto = async (file: File | undefined, scope: 'part' | 'slot'): Promise<void> => {
-    if (!file) return;
-    try {
-      setPhotoError('');
-      const { name, dataUrl, width, height } = await fileToPartImage(file);
-      const added = addImage(photos, name, dataUrl, { width, height });
-      writeImageStore(scope === 'slot' ? assignSlot(added.store, part.kind, part.modules, added.id, part.brand, partVariant(part)) : added.store);
-      if (scope === 'part') onChange(updatePart(board, part.id, { imageId: added.id }));
-      onPhotosChange();
-      // La foto casi nunca tiene la proporción del aparato: se abre el ajuste para acomodarla.
-      setFitting(added.id);
-    } catch (error: unknown) {
-      setPhotoError(error instanceof Error ? error.message : 'No se pudo cargar la foto.');
-    }
-  };
-
   return (
     <div className="space-y-3 rounded-xl border border-accent-line bg-accent-soft p-3 text-sm">
       <div>
@@ -562,7 +535,7 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
 
       <ProductPicker part={part} onPick={(product) => edit(product ? { productId: product.id, brand: product.brand ?? part.brand } : { productId: undefined })} />
 
-      {/* Casillero de foto */}
+      {/* La foto sale del módulo Materiales: acá solo se ve */}
       <div className="space-y-2 rounded-lg border border-hairline bg-surface p-2.5">
         <p className="text-xs font-bold uppercase tracking-wide text-muted">Foto del aparato</p>
         <div className="flex items-center gap-2">
@@ -571,40 +544,14 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
           </div>
           <p className="text-xs leading-snug text-muted">
             {photo
-              ? part.imageId
-                ? 'Foto propia de este aparato.'
-                : part.brand
-                  ? `Foto de ${part.brand} para este tipo de aparato.`
-                  : 'Foto del casillero de este tipo.'
+              ? part.brand
+                ? `Foto de ${part.brand} cargada en Materiales.`
+                : 'Foto general de este tipo, cargada en Materiales.'
               : part.brand
-                ? `Todavía no hay foto de ${part.brand} para este aparato: se usa el dibujo.`
-                : 'Sin foto: se usa el dibujo.'}
+                ? `${part.brand} no tiene foto para este aparato: se ve el dibujo. Se carga en el módulo Materiales.`
+                : 'Sin foto: se ve el dibujo. Las fotos se cargan en el módulo Materiales.'}
           </p>
         </div>
-        <input ref={ownInput} type="file" accept="image/*" className="hidden" onChange={(e) => { void pickPhoto(e.target.files?.[0], 'part'); e.target.value = ''; }} />
-        <input ref={slotInput} type="file" accept="image/*" className="hidden" onChange={(e) => { void pickPhoto(e.target.files?.[0], 'slot'); e.target.value = ''; }} />
-        <div className="flex flex-wrap gap-1.5">
-          <Button size="sm" icon={<ImagePlus className="h-3.5 w-3.5" />} onClick={() => ownInput.current?.click()}>
-            Solo este
-          </Button>
-          <Button size="sm" icon={<ImagePlus className="h-3.5 w-3.5" />} onClick={() => slotInput.current?.click()} title="La foto se usa en todos los aparatos de este tipo y ancho">
-            {part.brand
-              ? `Para todos los de ${part.brand} de ${part.modules} ${part.modules === 1 ? 'módulo' : 'módulos'}`
-              : `Para todos los de ${part.modules} ${part.modules === 1 ? 'módulo' : 'módulos'}`}
-          </Button>
-          {photo && (
-            <Button size="sm" variant="secondary" onClick={() => setFitting(photo.id)} title="Acercar, mover y alinear la foto con el aparato">
-              Ajustar
-            </Button>
-          )}
-          {part.imageId && (
-            <Button size="sm" variant="ghost" onClick={() => edit({ imageId: undefined })}>
-              Quitar la propia
-            </Button>
-          )}
-        </div>
-        {photoError && <p className="text-xs font-semibold text-danger-text">{photoError}</p>}
-        <PhotoFitDialog imageId={fitting} kind={part.kind} modules={part.modules} onClose={() => setFitting(null)} onChange={onPhotosChange} />
       </div>
 
       <div className="flex flex-wrap gap-2">

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Package, ShoppingCart } from 'lucide-react';
+import { Image as ImageIcon, Package, ShoppingCart } from 'lucide-react';
 import type { ClientRecord } from '../types/electrical';
 import { CATALOG_CURRENCY } from '../services/budgetGeneratorService';
 import { CatalogService } from '../services/catalogService';
@@ -9,6 +9,8 @@ import { useCurrency } from '../context/CurrencyContext';
 import { MaterialCatalogModal } from './MaterialCatalogModal';
 import { ShoppingListPanel } from './ShoppingListPanel';
 import { SegmentedControl } from './ui/Form';
+import { PartPhotoSlots } from './panel/PartPhotoSlots';
+import { allPartImageIds } from '../services/partImageUsage';
 
 /**
  * Módulo de materiales: el lugar donde se concentra todo lo relacionado a materiales. El catálogo (productos, marcas,
@@ -24,7 +26,7 @@ export interface MaterialsViewProps {
 
 export const MaterialsView: React.FC<MaterialsViewProps> = ({ client, onUpdateClient }) => {
   const { format, usdToArsRate } = useCurrency();
-  const [tab, setTab] = useState<'catalogo' | 'proyecto'>('catalogo');
+  const [tab, setTab] = useState<'catalogo' | 'fotos' | 'proyecto'>('catalogo');
 
   const rows = useMemo(() => {
     if (!client) return [];
@@ -41,6 +43,7 @@ export const MaterialsView: React.FC<MaterialsViewProps> = ({ client, onUpdateCl
         onChange={setTab}
         options={[
           { value: 'catalogo', label: 'Catálogo', icon: <Package className="h-3.5 w-3.5" /> },
+          { value: 'fotos', label: 'Fotos por marca', icon: <ImageIcon className="h-3.5 w-3.5" /> },
           { value: 'proyecto', label: client ? `Compras de ${client.clientName}` : 'Compras del proyecto', icon: <ShoppingCart className="h-3.5 w-3.5" /> },
         ]}
       />
@@ -53,6 +56,8 @@ export const MaterialsView: React.FC<MaterialsViewProps> = ({ client, onUpdateCl
           </p>
           <MaterialCatalogModal variant="page" formatPrice={(amount) => format(amount, CATALOG_CURRENCY)} />
         </>
+      ) : tab === 'fotos' ? (
+        <PartPhotoSlots onChange={() => undefined} keepImageIds={allPartImageIds()} />
       ) : client ? (
         <>
           <p className="text-xs text-muted">

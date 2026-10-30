@@ -7,6 +7,9 @@ import { Button, IconButton } from './ui/Button';
 import { NumberField, SegmentedControl, SelectField, TextField } from './ui/Form';
 import { Modal } from './ui/Modal';
 import { PriceImportModal } from './PriceImportModal';
+import { PhotoSlotCard } from './panel/PartPhotoSlots';
+import { presetForSpec } from '../services/partImages';
+import { allPartImageIds } from '../services/partImageUsage';
 import { SPEC_KINDS, inferSpec, isStalePrice, priceAgeDays, salePrice, specOf, stockStatus, type ProductSpec } from '../utils/productSpec';
 
 /**
@@ -686,6 +689,29 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
               </div>
             )}
           </div>
+
+          {form.spec && (
+            <div className="space-y-2 rounded-xl border border-hairline bg-sunken p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Foto del producto</p>
+              {!form.brand ? (
+                <p className="text-xs text-muted">Elegí la marca para cargar su foto: cada marca tiene la suya.</p>
+              ) : !presetForSpec(form.spec.kind, form.spec.poles) ? (
+                <p className="text-xs text-muted">Indicá los polos para saber qué casillero de foto le corresponde.</p>
+              ) : (
+                <div className="max-w-[12rem]">
+                  <PhotoSlotCard
+                    key={`${form.spec.kind}-${form.spec.poles ?? ''}-${form.brand}`}
+                    preset={presetForSpec(form.spec.kind, form.spec.poles) as NonNullable<ReturnType<typeof presetForSpec>>}
+                    brand={form.brand}
+                    keepImageIds={allPartImageIds()}
+                    onChange={() => undefined}
+                    withDefs
+                  />
+                  <p className="mt-1 text-xs text-muted">Es la foto de {form.brand} para todos los aparatos de este tipo y ancho: la usan los tableros y el frente realista.</p>
+                </div>
+              )}
+            </div>
+          )}
 
           {formError && (
             <p className="rounded-xl border border-danger-line bg-danger-soft px-3 py-2 text-sm font-semibold text-danger-text">

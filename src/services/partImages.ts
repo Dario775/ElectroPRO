@@ -100,6 +100,14 @@ export interface SlotPreset {
   variant?: string;
 }
 
+/** El casillero de foto de un aparato según su tipo y sus polos («2p»): su ancho en módulos es la cantidad de polos. */
+export function presetForSpec(kind: BoardPartKind, poles?: string): SlotPreset | undefined {
+  const count = Number(poles?.match(/\d/)?.[0]);
+  const plain = SLOT_PRESETS.filter((preset) => preset.kind === kind && !preset.variant);
+  if (Number.isFinite(count) && count > 0) return plain.find((preset) => preset.modules === count);
+  return plain.length === 1 ? plain[0] : undefined;
+}
+
 /** Los casilleros que se ofrecen: los aparatos y anchos de un tablero común. */
 export const SLOT_PRESETS: SlotPreset[] = [
   { kind: 'termica', modules: 1, label: 'Térmica 1 módulo' },

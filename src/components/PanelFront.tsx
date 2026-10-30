@@ -22,7 +22,6 @@ import { generatePanelLabelsPdf } from '../services/panelLabelsPdf';
 import { downloadBlob, svgToPngBlob } from '../services/svgExport';
 import { PanelCabinet } from './panel/PanelCabinet';
 import { BoardEditor } from './panel/board/BoardEditor';
-import { PartPhotoSlots } from './panel/PartPhotoSlots';
 import { BoardCanvas } from './panel/board/BoardCanvas';
 import { frontRowsFromBoard } from '../utils/boardLayout';
 import { boardDiscrepancies, boardToClient, resolveDiscrepancy } from '../utils/boardSync';
@@ -69,7 +68,6 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
   const [accessoryKind, setAccessoryKind] = useState<PanelAccessoryKind>('bornera_tierra');
   const [view, setView] = useState<'realista' | 'editor' | 'simple'>('realista');
   const [photosVersion, setPhotosVersion] = useState(0);
-  const [showPhotos, setShowPhotos] = useState(false);
   const [showWires, setShowWires] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
   // La pantalla completa del editor sigue igual al pasar de un tablero a otro.
@@ -261,27 +259,9 @@ export const PanelFront: React.FC<PanelFrontProps> = ({ client, panel, onUpdateC
         />
       )}
 
-      {/* Fotos propias de los aparatos: sirven en el frente realista y en el editor */}
+      {/* Las fotos de los aparatos se cargan en el módulo Materiales */}
       {view !== 'simple' && (
-        <div className="rounded-xl border border-hairline bg-sunken p-3">
-          <button
-            type="button"
-            onClick={() => setShowPhotos((open) => !open)}
-            aria-expanded={showPhotos}
-            className="flex w-full items-center justify-between text-left text-sm font-bold text-strong"
-          >
-            Fotos de los aparatos
-            <span className="text-xs font-semibold text-muted">{showPhotos ? 'Ocultar' : 'Cargar fotos propias'}</span>
-          </button>
-          {showPhotos && (
-            <div className="mt-3">
-              <PartPhotoSlots
-                onChange={() => setPhotosVersion((n) => n + 1)}
-                keepImageIds={(panel.board?.parts ?? []).flatMap((part) => (part.imageId ? [part.imageId] : []))}
-              />
-            </div>
-          )}
-        </div>
+        <p className="text-xs text-muted">Las fotos de los aparatos, por marca, se cargan en el módulo Materiales. Los que no tienen foto se ven como dibujo.</p>
       )}
 
       {/* Frente realista */}
