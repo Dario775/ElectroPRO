@@ -513,6 +513,13 @@ export function budgetShoppingRows(items: BudgetItem[], catalog: PriceEntry[], c
     });
 }
 
+/** Todo lo que hay que comprar para el proyecto: los materiales de los tableros y los rubros de material del presupuesto activo. */
+export function projectShoppingRows(client: ClientRecord, catalog: PriceEntry[], convert: (pesos: number) => number = (n) => n): ShoppingRow[] {
+  const activeId = client.activeBudgetId ?? client.budget?.id;
+  const budget = (client.budgets ?? []).find((candidate) => candidate.id === activeId) ?? client.budget;
+  return [...shoppingList(client, catalog, convert), ...budgetShoppingRows(budget?.items ?? [], catalog, convert)];
+}
+
 /** La lista de compras como texto para pegar en un mensaje al proveedor: solo lo que falta comprar. */
 export function shoppingListText(rows: ShoppingRow[]): string {
   const lines = rows.filter((row) => row.toBuy > 0).map((row) => `- ${row.toBuy} ${row.unit} · ${row.description}${row.brand ? ` (${row.brand})` : ''}`);
@@ -546,8 +553,12 @@ export function syncBoardItems(budget: ProjectBudget, client: ClientRecord, cata
 /** Los presupuestos que ya traen renglones del tablero, al día con el tablero actual. */
 export function syncBoardBudgets(client: ClientRecord, catalog: PriceEntry[], convert?: (pesos: number) => number): ClientRecord {
   const budgets = client.budgets ?? [];
-  if (!budgets.some(hasBoardItems)) return client;
-  const next = budgets.map((budget) => (hasBoardItems(budget) ? syncBoardItems(budget, client, catalog, convert) : budget));
+  // El presupuesto en borrador que se está armando recibe solo los materiales del tablero, sin tener que pedirlos.
+  const activeId = client.activeBudgetId ?? client.budget?.id;
+  const seedable = budgets.find((budget) => budget.id === activeId && budget.status === 'borrador' && !hasBoardItems(budget));
+  const follows = (budget: ProjectBudget): boolean => hasBoardItems(budget) || budget === seedable;
+  if (!budgets.some(follows)) return client;
+  const next = budgets.map((budget) => (follows(budget) ? syncBoardItems(budget, client, catalog, convert) : budget));
   if (next.every((budget, index) => budget === budgets[index])) return client;
   const active = next.find((budget) => budget.id === (client.activeBudgetId ?? client.budget?.id)) ?? next[0];
   return { ...client, budgets: next, budget: active };

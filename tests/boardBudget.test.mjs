@@ -292,3 +292,18 @@ test('los materiales sueltos del presupuesto entran a la lista de compras con su
   assert.equal(rows[1].unitCost, 22000);
   assert.ok(!rows[1].hasCost);
 });
+
+test('el presupuesto en borrador recibe solo los materiales del tablero', () => {
+  const base = project();
+  const draft = { id: 'b1', status: 'borrador', items: [] };
+  const seeded = B.syncBoardBudgets({ ...base, budgets: [draft], budget: draft, activeBudgetId: 'b1' }, catalog);
+  assert.ok(seeded.budgets[0].items.length > 0);
+  assert.ok(seeded.budgets[0].items.every((item) => item.origin === 'tablero-armado'));
+});
+
+test('un presupuesto ya enviado no recibe materiales solo', () => {
+  const base = project();
+  const sent = { id: 'b1', status: 'enviado', items: [] };
+  const same = B.syncBoardBudgets({ ...base, budgets: [sent], budget: sent, activeBudgetId: 'b1' }, catalog);
+  assert.equal(same.budgets[0].items.length, 0);
+});

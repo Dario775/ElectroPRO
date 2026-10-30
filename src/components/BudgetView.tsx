@@ -49,8 +49,7 @@ import { useCurrency } from '../context/CurrencyContext';
 import { BudgetGeneratorService, CatalogMaterial, CATALOG_CURRENCY } from '../services/budgetGeneratorService';
 import { generateBudgetPDF } from '../services/budgetPdfService';
 import { CatalogService } from '../services/catalogService';
-import { boardBudgetItems, budgetShoppingRows, hasBoardItems, shoppingList, syncBoardItems } from '../utils/boardBudget';
-import { ShoppingListModal } from './ShoppingListModal';
+import { boardBudgetItems, hasBoardItems, syncBoardItems } from '../utils/boardBudget';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
@@ -62,6 +61,7 @@ interface BudgetViewProps {
   onUpdateClient: (updated: ClientRecord) => void;
   onNavigateToPanels?: () => void;
   onNavigateToAudit?: () => void;
+  onNavigateToMaterials?: () => void;
 }
 
 export const BudgetView: React.FC<BudgetViewProps> = ({
@@ -70,6 +70,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
   onUpdateClient,
   onNavigateToPanels,
   onNavigateToAudit,
+  onNavigateToMaterials,
 }) => {
   const { format, activeCurrency, setActiveCurrency, usdToArsRate } = useCurrency();
   const [conversionToast, setConversionToast] = useState<string | null>(null);
@@ -115,7 +116,6 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
 
   // Modals state
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
-  const [isShoppingOpen, setIsShoppingOpen] = useState(false);
 
   const [isItemEditModalOpen, setIsItemEditModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BudgetItem | null>(null);
@@ -1115,9 +1115,11 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             {boardNotes.length > 0 && <ul className="mt-1 list-disc pl-4">{boardNotes.map((note) => <li key={note}>{note}</li>)}</ul>}
             <div className="mt-2">
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="secondary" onClick={() => setIsShoppingOpen(true)}>
-                  Ver lista de compras
-                </Button>
+                {onNavigateToMaterials && (
+                  <Button size="sm" variant="secondary" onClick={onNavigateToMaterials}>
+                    Ver lista de compras en Materiales
+                  </Button>
+                )}
                 <Button size="sm" variant="secondary" onClick={handleRefreshBoardPrices} title="Vuelve a tomar los precios del catálogo para los rubros que salen del tablero; pisa los que hayas editado a mano">
                   Actualizar precios del catálogo
                 </Button>
@@ -1580,24 +1582,6 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
         onAddToBudget={handleAddFromCatalog}
         formatPrice={(amount) => format(amount, CATALOG_CURRENCY)}
       />
-
-      {isShoppingOpen && (
-        <ShoppingListModal
-          isOpen
-          onClose={() => setIsShoppingOpen(false)}
-          rows={[
-            ...shoppingList(client, CatalogService.getItems(), convertFromCatalog),
-            ...budgetShoppingRows(currentBudget.items, CatalogService.getItems(), convertFromCatalog),
-          ]}
-          formatPrice={(amount) => format(amount, client.currency)}
-          onPick={(baseKey, productId) => {
-            const next = { ...(client.materialChoices ?? {}) };
-            if (productId) next[baseKey] = productId;
-            else delete next[baseKey];
-            onUpdateClient({ ...client, materialChoices: next });
-          }}
-        />
-      )}
 
       {/* 7. MODAL: EDIT / CREATE DETAILED ITEM */}
       {isItemEditModalOpen && editingItem && (

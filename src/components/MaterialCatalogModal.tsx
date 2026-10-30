@@ -18,10 +18,12 @@ import { SPEC_KINDS, inferSpec, isStalePrice, priceAgeDays, salePrice, specOf, s
  */
 
 export interface MaterialCatalogModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  /** Inserta el producto en el presupuesto activo. */
-  onAddToBudget: (material: CatalogMaterial) => void;
+  /** `page`: se muestra como página (módulo Materiales); `modal`: ventana emergente, para elegir un rubro desde el presupuesto. */
+  variant?: 'modal' | 'page';
+  isOpen?: boolean;
+  onClose?: () => void;
+  /** Inserta el producto en el presupuesto activo. Sin esto, la lista no ofrece «Agregar». */
+  onAddToBudget?: (material: CatalogMaterial) => void;
   /** Formatea el precio del catálogo en la moneda que esté seleccionada. */
   formatPrice: (amount: number) => string;
 }
@@ -75,11 +77,13 @@ const EMPTY_INPUT: CatalogItemInput = {
 };
 
 export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
-  isOpen,
-  onClose,
+  variant = 'modal',
+  isOpen = true,
+  onClose = () => undefined,
   onAddToBudget,
   formatPrice,
 }) => {
+  const isPage = variant === 'page';
   const [items, setItems] = useState<CatalogMaterial[]>(() => CatalogService.getItems());
   const [brands, setBrands] = useState<CatalogBrand[]>(() => CatalogService.getBrands());
   const [section, setSection] = useState<'productos' | 'marcas'>('productos');
@@ -236,16 +240,7 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
 
   const customCount = CatalogService.countCustom(items);
 
-  return (
-    <>
-      <Modal
-        isOpen={isOpen}
-        onClose={onClose}
-        title="Catálogo de productos"
-        description="Agregá productos al presupuesto con un clic. Podés corregir precios, dar de alta los que uses y borrar los que no. Todo se guarda en este equipo."
-        icon={<Package className="h-4 w-4" />}
-        size="xl"
-        footer={
+  const footerNode = (
           <>
             <Button variant="ghost" size="sm" icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={handleReset}>
               Restaurar catálogo de fábrica
@@ -254,9 +249,11 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
             <Button variant="secondary" icon={<FileUp className="h-4 w-4" />} onClick={() => setImporting(true)}>
               Importar lista de precios
             </Button>
-            <Button variant="secondary" onClick={onClose}>
-              Cerrar
-            </Button>
+            {!isPage && (
+              <Button variant="secondary" onClick={onClose}>
+                Cerrar
+              </Button>
+            )}
             {section === 'productos' ? (
               <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={openNew}>
                 Nuevo producto
@@ -275,8 +272,9 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
               </Button>
             )}
           </>
-        }
-      >
+  );
+
+  const bodyNode = (
         <div className="space-y-4">
           {/* Secciones: productos y marcas */}
           <SegmentedControl
@@ -395,14 +393,16 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </IconButton>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    icon={<Plus className="h-3.5 w-3.5" />}
-                    onClick={() => onAddToBudget(item)}
-                  >
-                    Agregar
-                  </Button>
+                  {onAddToBudget && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={<Plus className="h-3.5 w-3.5" />}
+                      onClick={() => onAddToBudget(item)}
+                    >
+                      Agregar
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -470,7 +470,28 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
             </>
           )}
         </div>
-      </Modal>
+  );
+
+  return (
+    <>
+      {isPage ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-hairline bg-sunken p-2">{footerNode}</div>
+          {bodyNode}
+        </div>
+      ) : (
+        <Modal
+          isOpen={isOpen}
+          onClose={onClose}
+          title="Catálogo de productos"
+          description="Agregá productos al presupuesto con un clic. Podés corregir precios, dar de alta los que uses y borrar los que no. Todo se guarda en este equipo."
+          icon={<Package className="h-4 w-4" />}
+          size="xl"
+          footer={footerNode}
+        >
+          {bodyNode}
+        </Modal>
+      )}
 
       {importing && (
         <PriceImportModal

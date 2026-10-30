@@ -13,6 +13,7 @@ import { ClientList } from './components/ClientList';
 import { ClientModal } from './components/ClientModal';
 import { PlanView } from './components/PlanView';
 import { ProjectReviewView } from './components/ProjectReviewView';
+import { MaterialsView } from './components/MaterialsView';
 import { SettingsModal } from './components/SettingsModal';
 import { PwaBanner } from './components/PwaBanner';
 import { FileMenu } from './components/FileMenu';
@@ -232,6 +233,7 @@ function AppContent() {
             onUpdateClient={handleUpdateActiveClient}
             onNavigateToPanels={() => handleNavigate('panels')}
             onNavigateToAudit={() => handleNavigate('audit')}
+            onNavigateToMaterials={() => handleNavigate('materials')}
           />
         );
       case 'calculators':
@@ -343,7 +345,13 @@ function AppContent() {
         }
         onGoToClients={() => handleNavigate('clients')}
       >
-        {activeClient ? renderView() : noClientContent}
+        {activeView === 'materials' ? (
+          <MaterialsView client={activeClient} onUpdateClient={handleUpdateActiveClient} />
+        ) : activeClient ? (
+          renderView()
+        ) : (
+          noClientContent
+        )}
       </AppShell>
 
       <ClientModal

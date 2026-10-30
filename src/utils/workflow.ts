@@ -29,7 +29,7 @@ export type GroupId = 'relevar' | 'analizar' | 'presupuestar' | 'entregar';
  * pero que se usan en cualquier momento del trabajo (el plano de ubicación, la
  * gestión de clientes). Van aparte de las etapas para no ensuciar el progreso.
  */
-export type ModuleId = 'plan' | 'review' | 'clients';
+export type ModuleId = 'plan' | 'review' | 'materials' | 'clients';
 
 export interface AppModule {
   id: ModuleId;
@@ -51,6 +51,12 @@ export const APP_MODULES: AppModule[] = [
     label: 'Revisión del proyecto',
     title: 'Revisión del proyecto',
     description: 'Controlá que los tableros, los circuitos, el plano, las acometidas y el presupuesto digan lo mismo.',
+  },
+  {
+    id: 'materials',
+    label: 'Materiales',
+    title: 'Materiales',
+    description: 'El catálogo de productos con precios, stock y proveedores, y la lista de compras del proyecto. Los tableros y el presupuesto toman los materiales de acá.',
   },
   {
     id: 'clients',

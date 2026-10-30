@@ -104,7 +104,7 @@ const ProductPicker: React.FC<{ part: BoardPart; onPick: (product: { id: string;
         </p>
       )}
       {mismatch && <p className="text-xs font-semibold text-danger-text">Este producto no coincide con los datos del aparato (polos, corriente o curva).</p>}
-      {!current && <p className="text-xs leading-snug text-muted">Sin producto elegido, el presupuesto busca el precio por el nombre del aparato.</p>}
+      {!current && <p className="text-xs leading-snug text-muted">Sin producto elegido, el presupuesto busca el precio por el nombre del aparato. Los productos se cargan en el módulo Materiales.</p>}
     </div>
   );
 };
