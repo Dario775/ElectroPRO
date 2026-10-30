@@ -273,3 +273,22 @@ test('los aparatos no se eligen desde los materiales: su producto va en el edito
   const termica = rows.find((r) => r.key.startsWith('termica|'));
   assert.deepEqual(termica.choices, []);
 });
+
+test('los materiales sueltos del presupuesto entran a la lista de compras con su stock', () => {
+  const items = [
+    { id: 'i1', type: 'material', category: 'cableado', description: 'Cable 4 mm²', unit: 'm', quantity: 50, unitPrice: 1900, subtotal: 95000, productId: 'cab', suggestedFromSource: 'carga' },
+    { id: 'i2', type: 'material', category: 'protecciones', description: 'Disyuntor sugerido', unit: 'ud', quantity: 2, unitPrice: 22000, subtotal: 44000 },
+    { id: 'i3', type: 'mano_de_obra', category: 'mano_de_obra', description: 'Instalación', unit: 'hora', quantity: 8, unitPrice: 9000, subtotal: 72000 },
+    { id: 'i4', type: 'material', category: 'tableros', description: 'Del tablero', unit: 'ud', quantity: 1, unitPrice: 100, subtotal: 100, origin: 'tablero-armado', sourceKey: 'x' },
+  ];
+  const cat = [{ id: 'cab', description: 'Cable unipolar 4 mm²', unit: 'm', unitPrice: 1900, cost: 1300, stock: 20, supplier: 'Eléctrica Sur', brand: 'Prysmian' }];
+  const rows = B.budgetShoppingRows(items, cat);
+  assert.deepEqual(rows.map((row) => row.key), ['item:i1', 'item:i2']);
+  assert.equal(rows[0].stock, 20);
+  assert.equal(rows[0].toBuy, 30);
+  assert.equal(rows[0].unitCost, 1300);
+  assert.equal(rows[0].supplier, 'Eléctrica Sur');
+  assert.equal(rows[1].toBuy, 2);
+  assert.equal(rows[1].unitCost, 22000);
+  assert.ok(!rows[1].hasCost);
+});

@@ -746,6 +746,8 @@ export interface BudgetItem {
   origin?: 'tablero-armado';
   /** Qué material del tablero es (para reconocerlo al actualizar). */
   sourceKey?: string;
+  /** Producto del catálogo de materiales al que está vinculado el rubro (da su stock, costo y proveedor). */
+  productId?: string;
   notes?: string;
 }
 

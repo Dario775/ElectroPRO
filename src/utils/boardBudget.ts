@@ -480,6 +480,39 @@ export function purchaseOrderText(order: PurchaseOrder): string {
   return [head, ...order.rows.map((row) => `- ${row.toBuy} ${row.unit} · ${row.description}${row.brand ? ` (${row.brand})` : ''}`)].join('\n');
 }
 
+/**
+ * Materiales del presupuesto que no salen del tablero armado (los que se agregaron a mano, desde el catálogo o los
+ * sugeridos): los vinculados a un producto del catálogo traen su stock, costo y proveedor; el resto se pide con
+ * su propio precio. Los de mano de obra y trámites no se compran.
+ */
+export function budgetShoppingRows(items: BudgetItem[], catalog: PriceEntry[], convert: (pesos: number) => number = (n) => n): ShoppingRow[] {
+  return items
+    .filter((item) => item.origin !== BOARD_ORIGIN && item.type !== 'mano_de_obra' && item.type !== 'tramite' && item.quantity > 0)
+    .map((item): ShoppingRow => {
+      const entry = item.productId ? catalog.find((candidate) => candidate.id === item.productId) : undefined;
+      const sameUnit = !!entry && entry.unit === item.unit;
+      const stock = sameUnit && entry.stock !== undefined ? Math.max(0, entry.stock) : undefined;
+      const hasCost = sameUnit && entry.cost !== undefined && entry.cost > 0;
+      return {
+        key: `item:${item.id}`,
+        baseKey: `item:${item.id}`,
+        description: item.description,
+        brand: item.brand ?? entry?.brand,
+        supplier: entry?.supplier,
+        choices: [],
+        unit: item.unit,
+        needed: item.quantity,
+        stock,
+        toBuy: stock === undefined ? item.quantity : Math.max(0, round1(item.quantity - stock)),
+        unitPrice: item.unitPrice,
+        unitCost: hasCost ? money(convert(entry.cost as number)) : item.unitPrice,
+        hasCost,
+        // Un rubro sin producto vinculado igual se compra: se cuenta con su propio precio.
+        inCatalog: item.unitPrice > 0,
+      };
+    });
+}
+
 /** La lista de compras como texto para pegar en un mensaje al proveedor: solo lo que falta comprar. */
 export function shoppingListText(rows: ShoppingRow[]): string {
   const lines = rows.filter((row) => row.toBuy > 0).map((row) => `- ${row.toBuy} ${row.unit} · ${row.description}${row.brand ? ` (${row.brand})` : ''}`);

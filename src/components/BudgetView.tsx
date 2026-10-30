@@ -49,7 +49,7 @@ import { useCurrency } from '../context/CurrencyContext';
 import { BudgetGeneratorService, CatalogMaterial, CATALOG_CURRENCY } from '../services/budgetGeneratorService';
 import { generateBudgetPDF } from '../services/budgetPdfService';
 import { CatalogService } from '../services/catalogService';
-import { boardBudgetItems, hasBoardItems, shoppingList, syncBoardItems } from '../utils/boardBudget';
+import { boardBudgetItems, budgetShoppingRows, hasBoardItems, shoppingList, syncBoardItems } from '../utils/boardBudget';
 import { ShoppingListModal } from './ShoppingListModal';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Card';
@@ -260,6 +260,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
   const boardItemCount = currentBudget.items.filter((item) => item.origin === 'tablero-armado').length;
   const boardUnpriced = currentBudget.items.filter((item) => item.origin === 'tablero-armado' && item.unitPrice === 0).length;
   const boardNotes = useMemo(() => boardBudgetItems(client, CatalogService.getItems(), convertFromCatalog).notes, [client]);
+  const catalogProducts = useMemo(() => CatalogService.getItems().filter((product) => product.type !== 'mano_de_obra' && product.type !== 'tramite'), [isItemEditModalOpen]);
   const handleRefreshBoardPrices = () => {
     handleUpdateBudget(syncBoardItems(currentBudget, client, CatalogService.getItems(), convertFromCatalog, true));
   };
@@ -478,6 +479,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       markupPercent: 0,
       subtotal: effectiveUnitPrice,
       suggestedFromSource: 'manual',
+      productId: mat.id,
     };
 
     handleUpdateBudget({
@@ -1583,7 +1585,10 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
         <ShoppingListModal
           isOpen
           onClose={() => setIsShoppingOpen(false)}
-          rows={shoppingList(client, CatalogService.getItems(), convertFromCatalog)}
+          rows={[
+            ...shoppingList(client, CatalogService.getItems(), convertFromCatalog),
+            ...budgetShoppingRows(currentBudget.items, CatalogService.getItems(), convertFromCatalog),
+          ]}
           formatPrice={(amount) => format(amount, client.currency)}
           onPick={(baseKey, productId) => {
             const next = { ...(client.materialChoices ?? {}) };
@@ -1620,6 +1625,43 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
 
             {/* Form Body */}
             <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
+              {/* Producto del catálogo */}
+              {editingItem.type !== 'mano_de_obra' && editingItem.type !== 'tramite' && (
+                <div>
+                  <label className="font-bold text-soft block mb-1">Producto del catálogo</label>
+                  <select
+                    value={editingItem.productId ?? ''}
+                    onChange={(e) => {
+                      const product = catalogProducts.find((candidate) => candidate.id === e.target.value);
+                      if (!product) {
+                        setEditingItem({ ...editingItem, productId: undefined });
+                        return;
+                      }
+                      setEditingItem({
+                        ...editingItem,
+                        productId: product.id,
+                        description: product.description,
+                        detail: product.detail || editingItem.detail,
+                        brand: product.brand,
+                        unit: product.unit,
+                        unitPrice: convertFromCatalog(product.unitPrice),
+                      });
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
+                  >
+                    <option value="">Sin vincular (precio propio)</option>
+                    {catalogProducts
+                      .filter((product) => product.category === editingItem.category || product.id === editingItem.productId)
+                      .map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {[product.brand, product.description].filter(Boolean).join(' · ')} — {format(convertFromCatalog(product.unitPrice), client.currency)}
+                        </option>
+                      ))}
+                  </select>
+                  <p className="mt-1 text-faint">Vinculado, el rubro entra a la lista de compras con su stock, costo y proveedor. Al elegir uno se completan descripción, marca, unidad y precio.</p>
+                </div>
+              )}
+
               {/* Description */}
               <div>
                 <label className="font-bold text-soft block mb-1">Descripción del Rubro</label>
