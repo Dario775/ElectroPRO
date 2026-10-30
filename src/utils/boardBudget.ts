@@ -38,6 +38,8 @@ export interface PriceEntry {
   stock?: number;
   /** Lo que cuesta al instalador, si lo cargó. */
   cost?: number;
+  /** A quién se le compra. */
+  supplier?: string;
 }
 
 interface BomLine {
@@ -368,6 +370,8 @@ export interface ShoppingRow {
   key: string;
   description: string;
   brand?: string;
+  /** Proveedor del producto, si está cargado. */
+  supplier?: string;
   unit: BudgetItem['unit'];
   needed: number;
   /** En stock, si el producto está en el catálogo y se lleva la cuenta (informativo). */
@@ -400,6 +404,7 @@ export function shoppingList(client: ClientRecord, catalog: PriceEntry[], conver
       key: line.key,
       description: entry && line.productId && entry.id === line.productId ? entry.description : line.description,
       brand: entry?.brand ?? line.brand,
+      supplier: entry?.supplier,
       unit: line.unit,
       needed: line.quantity,
       stock,
@@ -410,6 +415,35 @@ export function shoppingList(client: ClientRecord, catalog: PriceEntry[], conver
       inCatalog: !!entry,
     };
   });
+}
+
+/** Lo que hay que comprar a un proveedor. */
+export interface PurchaseOrder {
+  supplier: string;
+  rows: ShoppingRow[];
+  /** Costo estimado de la orden (con el precio de venta donde no hay costo cargado). */
+  total: number;
+}
+
+export const NO_SUPPLIER = 'Sin proveedor';
+
+/** Lo que falta comprar, agrupado por proveedor: una orden por cada uno y la de «Sin proveedor» al final. */
+export function purchaseOrders(rows: ShoppingRow[]): PurchaseOrder[] {
+  const groups = new Map<string, ShoppingRow[]>();
+  for (const row of rows) {
+    if (row.toBuy <= 0) continue;
+    const supplier = row.supplier?.trim() || NO_SUPPLIER;
+    groups.set(supplier, [...(groups.get(supplier) ?? []), row]);
+  }
+  return [...groups.entries()]
+    .map(([supplier, items]) => ({ supplier, rows: items, total: items.reduce((sum, row) => (row.inCatalog ? sum + row.toBuy * row.unitCost : sum), 0) }))
+    .sort((a, b) => Number(a.supplier === NO_SUPPLIER) - Number(b.supplier === NO_SUPPLIER) || a.supplier.localeCompare(b.supplier, 'es'));
+}
+
+/** El pedido a un proveedor como texto para mandarle: cantidades, descripciones y marcas. */
+export function purchaseOrderText(order: PurchaseOrder): string {
+  const head = order.supplier === NO_SUPPLIER ? 'Pedido de materiales' : `Pedido para ${order.supplier}`;
+  return [head, ...order.rows.map((row) => `- ${row.toBuy} ${row.unit} · ${row.description}${row.brand ? ` (${row.brand})` : ''}`)].join('\n');
 }
 
 /** La lista de compras como texto para pegar en un mensaje al proveedor: solo lo que falta comprar. */

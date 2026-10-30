@@ -219,3 +219,18 @@ test('sin stock cargado se compra todo y lo que no está en el catálogo se marc
   assert.ok(rows.every((row) => row.stock === undefined && row.toBuy === row.needed));
   assert.ok(rows.some((row) => !row.inCatalog));
 });
+
+test('lo que falta comprar se agrupa en un pedido por proveedor', () => {
+  const rows = [
+    { key: 'a', description: 'Térmica 2P 16A', unit: 'ud', needed: 3, toBuy: 2, unitPrice: 100, unitCost: 60, hasCost: true, inCatalog: true, supplier: 'Eléctrica Sur' },
+    { key: 'b', description: 'Diferencial 2P 40A', unit: 'ud', needed: 1, toBuy: 1, unitPrice: 300, unitCost: 200, hasCost: true, inCatalog: true, supplier: 'Eléctrica Sur', brand: 'Sica' },
+    { key: 'c', description: 'Riel DIN', unit: 'm', needed: 1, toBuy: 1, unitPrice: 50, unitCost: 50, hasCost: false, inCatalog: true },
+    { key: 'd', description: 'Gabinete', unit: 'ud', needed: 1, toBuy: 0, unitPrice: 900, unitCost: 900, hasCost: false, inCatalog: true, supplier: 'Otro' },
+  ];
+  const orders = B.purchaseOrders(rows);
+  assert.deepEqual(orders.map((order) => order.supplier), ['Eléctrica Sur', 'Sin proveedor']);
+  assert.equal(orders[0].rows.length, 2);
+  assert.equal(orders[0].total, 2 * 60 + 200);
+  assert.equal(B.purchaseOrderText(orders[0]), 'Pedido para Eléctrica Sur\n- 2 ud · Térmica 2P 16A\n- 1 ud · Diferencial 2P 40A (Sica)');
+  assert.equal(B.purchaseOrderText(orders[1]).split('\n')[0], 'Pedido de materiales');
+});

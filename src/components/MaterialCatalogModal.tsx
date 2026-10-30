@@ -183,6 +183,7 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
       unit: item.unit,
       unitPrice: item.unitPrice,
       sku: item.sku,
+      supplier: item.supplier,
       spec: specOf(item),
       cost: item.cost,
       marginPercent: item.marginPercent,
@@ -367,6 +368,7 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
                   </div>
                   <p className="mt-0.5 text-xs text-muted">
                     {item.sku ? `${item.sku} · ` : ''}
+                    {item.supplier ? `${item.supplier} · ` : ''}
                     {item.detail}
                   </p>
                 </div>
@@ -577,6 +579,20 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
               hint="Del proveedor o del fabricante."
             />
           </div>
+
+          <TextField
+            label="Proveedor"
+            value={form.supplier ?? ''}
+            onChange={(value) => setForm((previous) => ({ ...previous, supplier: value }))}
+            placeholder="Casa de electricidad, distribuidor…"
+            hint="A quién se lo comprás: agrupa los pedidos de la lista de compras."
+            list="catalog-suppliers"
+          />
+          <datalist id="catalog-suppliers">
+            {[...new Set(items.map((item) => item.supplier).filter((name): name is string => !!name))].map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <NumberField

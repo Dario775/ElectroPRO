@@ -31,6 +31,8 @@ export interface CatalogMaterial {
   custom?: boolean;
   /** Código del proveedor o del fabricante. */
   sku?: string;
+  /** A quién se le compra (casa de electricidad, distribuidor). Agrupa las órdenes de compra. */
+  supplier?: string;
   /** Datos técnicos: con ellos el editor de tableros ofrece el producto para el aparato que le corresponde. */
   spec?: ProductSpec;
   /** Lo que te cuesta a vos, en pesos. Con el margen da el precio de venta. */

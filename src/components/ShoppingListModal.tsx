@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Check, ClipboardCopy, ShoppingCart } from 'lucide-react';
-import { shoppingListText, type ShoppingRow } from '../utils/boardBudget';
+import { NO_SUPPLIER, purchaseOrders, purchaseOrderText, shoppingListText, type ShoppingRow } from '../utils/boardBudget';
 import { Badge } from './ui/Card';
 import { Button } from './ui/Button';
 import { Modal } from './ui/Modal';
@@ -22,11 +22,24 @@ const quantity = (value: number): string => String(Math.round(value * 10) / 10).
 
 export const ShoppingListModal: React.FC<ShoppingListModalProps> = ({ isOpen, onClose, rows, formatPrice }) => {
   const [copied, setCopied] = useState(false);
+  const [copiedOrder, setCopiedOrder] = useState('');
   const missing = useMemo(() => rows.filter((row) => row.toBuy > 0), [rows]);
   const covered = rows.length - missing.length;
   const total = useMemo(() => missing.reduce((sum, row) => sum + row.toBuy * row.unitCost, 0), [missing]);
   const withoutPrice = missing.filter((row) => !row.inCatalog).length;
   const estimatedCosts = missing.filter((row) => row.inCatalog && !row.hasCost).length;
+
+  const orders = useMemo(() => purchaseOrders(rows), [rows]);
+
+  const copyOrder = async (supplier: string, text: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedOrder(supplier);
+      window.setTimeout(() => setCopiedOrder(''), 2000);
+    } catch {
+      setCopiedOrder('');
+    }
+  };
 
   const copy = async (): Promise<void> => {
     try {
@@ -115,6 +128,32 @@ export const ShoppingListModal: React.FC<ShoppingListModalProps> = ({ isOpen, on
                 </tbody>
               </table>
             </div>
+
+            {orders.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">Pedidos por proveedor</p>
+                {orders.map((order) => (
+                  <div key={order.supplier} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-hairline bg-sunken px-3 py-2">
+                    <div className="min-w-0">
+                      <strong className="text-sm text-strong">{order.supplier}</strong>
+                      <p className="text-xs text-muted">
+                        {order.rows.length} {order.rows.length === 1 ? 'material' : 'materiales'}
+                        {order.total > 0 && ` · ${formatPrice(order.total)}`}
+                        {order.supplier === NO_SUPPLIER && ' · cargales proveedor en el catálogo para separarlos'}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon={copiedOrder === order.supplier ? <Check className="h-3.5 w-3.5" /> : <ClipboardCopy className="h-3.5 w-3.5" />}
+                      onClick={() => copyOrder(order.supplier, purchaseOrderText(order))}
+                    >
+                      {copiedOrder === order.supplier ? 'Copiado' : 'Copiar pedido'}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>

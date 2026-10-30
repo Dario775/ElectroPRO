@@ -42,6 +42,7 @@ export interface CatalogItemInput {
   unit: CatalogMaterial['unit'];
   unitPrice: number;
   sku?: string;
+  supplier?: string;
   spec?: ProductSpec;
   cost?: number;
   marginPercent?: number;
@@ -60,6 +61,8 @@ function extras(input: CatalogItemInput): Partial<CatalogMaterial> {
   const out: Partial<CatalogMaterial> = {};
   const sku = input.sku?.trim();
   if (sku) out.sku = sku;
+  const supplier = input.supplier?.trim();
+  if (supplier) out.supplier = supplier;
   if (input.spec) out.spec = input.spec;
   if (input.cost !== undefined && input.cost > 0) out.cost = input.cost;
   if (input.marginPercent !== undefined && input.cost !== undefined && input.cost > 0) out.marginPercent = input.marginPercent;
@@ -180,8 +183,8 @@ export const CatalogService = {
         if (item.id !== id) return item;
         const priceChanged = unitPrice !== item.unitPrice || (input.cost ?? 0) !== (item.cost ?? 0);
         // Lo opcional se reemplaza entero: lo que se vació en el formulario se borra del producto.
-        const { sku, spec, cost, marginPercent, stock, stockMin, ...base } = item;
-        void sku; void spec; void cost; void marginPercent; void stock; void stockMin;
+        const { sku, supplier, spec, cost, marginPercent, stock, stockMin, ...base } = item;
+        void sku; void supplier; void spec; void cost; void marginPercent; void stock; void stockMin;
         return {
           ...base,
           description: input.description.trim(),
