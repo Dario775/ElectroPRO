@@ -234,3 +234,17 @@ test('lo que falta comprar se agrupa en un pedido por proveedor', () => {
   assert.equal(B.purchaseOrderText(orders[0]), 'Pedido para Eléctrica Sur\n- 2 ud · Térmica 2P 16A\n- 1 ud · Diferencial 2P 40A (Sica)');
   assert.equal(B.purchaseOrderText(orders[1]).split('\n')[0], 'Pedido de materiales');
 });
+
+test('actualizar precios toma los del catálogo aunque el renglón ya tuviera uno', () => {
+  const base = project();
+  const budget = { id: 'b1', items: [] };
+  const first = B.syncBoardItems(budget, base, catalog);
+  const key = first.items.find((item) => item.sourceKey.startsWith('termica|'))?.sourceKey;
+  assert.ok(key);
+  const old = first.items.find((item) => item.sourceKey === key).unitPrice;
+  const raised = catalog.map((entry) => ({ ...entry, unitPrice: entry.unitPrice * 2 }));
+  const kept = B.syncBoardItems(first, base, raised);
+  assert.equal(kept.items.find((item) => item.sourceKey === key).unitPrice, old, 'sin refrescar conserva el precio');
+  const refreshed = B.syncBoardItems(first, base, raised, undefined, true);
+  assert.equal(refreshed.items.find((item) => item.sourceKey === key).unitPrice, old * 2);
+});

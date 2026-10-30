@@ -5,6 +5,7 @@ import {
 import { CatalogMaterial, DEFAULT_MATERIALS_CATALOG } from './budgetGeneratorService';
 import { kvGet, kvSet } from './kvStore';
 import { inferSpec, salePrice, type ProductSpec } from '../utils/productSpec';
+import type { PriceChange } from '../utils/catalogImport';
 
 /**
  * Catálogo de productos editable y guardado en el equipo.
@@ -196,6 +197,24 @@ export const CatalogService = {
           unitPrice,
           priceUpdatedAt: priceChanged ? today() : item.priceUpdatedAt,
           ...extras(input),
+        };
+      })
+    );
+  },
+
+  /** Aplica los cambios de una lista de precios importada: costo, margen y precio de venta, con la fecha de hoy. */
+  applyPriceChanges(changes: PriceChange[]): CatalogMaterial[] {
+    const byId = new Map(changes.map((change) => [change.id, change]));
+    return this.saveItems(
+      this.getItems().map((item) => {
+        const change = byId.get(item.id);
+        if (!change) return item;
+        return {
+          ...item,
+          unitPrice: change.newPrice,
+          ...(change.newCost !== undefined ? { cost: change.newCost } : {}),
+          ...(change.marginPercent !== undefined ? { marginPercent: change.marginPercent } : {}),
+          priceUpdatedAt: today(),
         };
       })
     );

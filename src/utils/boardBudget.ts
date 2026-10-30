@@ -460,13 +460,14 @@ export const hasBoardItems = (budget: Pick<ProjectBudget, 'items'>): boolean => 
  * que ya no hacen falta se sacan. Los renglones cargados a mano no se tocan. Devuelve el mismo
  * presupuesto si no hay nada que cambiar.
  */
-export function syncBoardItems(budget: ProjectBudget, client: ClientRecord, catalog: PriceEntry[], convert?: (pesos: number) => number): ProjectBudget {
+export function syncBoardItems(budget: ProjectBudget, client: ClientRecord, catalog: PriceEntry[], convert?: (pesos: number) => number, refreshPrices = false): ProjectBudget {
   const { items: fresh } = boardBudgetItems(client, catalog, convert);
   const existing = new Map(budget.items.filter((item) => item.origin === BOARD_ORIGIN).map((item) => [item.sourceKey, item]));
   const merged = fresh.map((item) => {
     const old = existing.get(item.sourceKey);
     if (!old) return item;
-    const unitPrice = old.unitPrice > 0 ? old.unitPrice : item.unitPrice;
+    // Al refrescar, el precio del catálogo pisa el que había (si el catálogo tiene uno).
+    const unitPrice = refreshPrices && item.unitPrice > 0 ? item.unitPrice : old.unitPrice > 0 ? old.unitPrice : item.unitPrice;
     return { ...old, description: item.description, detail: item.detail, unit: item.unit, quantity: item.quantity, unitPrice, subtotal: money(unitPrice * item.quantity), brand: old.brand ?? item.brand };
   });
   const manual = budget.items.filter((item) => item.origin !== BOARD_ORIGIN);

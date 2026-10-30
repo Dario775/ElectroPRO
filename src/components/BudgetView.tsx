@@ -260,6 +260,9 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
   const boardItemCount = currentBudget.items.filter((item) => item.origin === 'tablero-armado').length;
   const boardUnpriced = currentBudget.items.filter((item) => item.origin === 'tablero-armado' && item.unitPrice === 0).length;
   const boardNotes = useMemo(() => boardBudgetItems(client, CatalogService.getItems(), convertFromCatalog).notes, [client]);
+  const handleRefreshBoardPrices = () => {
+    handleUpdateBudget(syncBoardItems(currentBudget, client, CatalogService.getItems(), convertFromCatalog, true));
+  };
   const handleBoardMaterials = () => {
     handleUpdateBudget(syncBoardItems(currentBudget, client, CatalogService.getItems(), convertFromCatalog));
   };
@@ -1109,9 +1112,14 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
             )}
             {boardNotes.length > 0 && <ul className="mt-1 list-disc pl-4">{boardNotes.map((note) => <li key={note}>{note}</li>)}</ul>}
             <div className="mt-2">
-              <Button size="sm" variant="secondary" onClick={() => setIsShoppingOpen(true)}>
-                Ver lista de compras
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="secondary" onClick={() => setIsShoppingOpen(true)}>
+                  Ver lista de compras
+                </Button>
+                <Button size="sm" variant="secondary" onClick={handleRefreshBoardPrices} title="Vuelve a tomar los precios del catálogo para los rubros que salen del tablero; pisa los que hayas editado a mano">
+                  Actualizar precios del catálogo
+                </Button>
+              </div>
             </div>
           </div>
         )}

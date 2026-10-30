@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Package, Pencil, Plus, RotateCcw, Search, Tag, Trash2 } from 'lucide-react';
+import { FileUp, Package, Pencil, Plus, RotateCcw, Search, Tag, Trash2 } from 'lucide-react';
 import { CATALOG_CURRENCY, CatalogMaterial } from '../services/budgetGeneratorService';
 import { CatalogBrand, CatalogItemInput, CatalogService } from '../services/catalogService';
 import { Badge } from './ui/Card';
 import { Button, IconButton } from './ui/Button';
 import { NumberField, SegmentedControl, SelectField, TextField } from './ui/Form';
 import { Modal } from './ui/Modal';
+import { PriceImportModal } from './PriceImportModal';
 import { SPEC_KINDS, inferSpec, isStalePrice, priceAgeDays, salePrice, specOf, stockStatus, type ProductSpec } from '../utils/productSpec';
 
 /**
@@ -92,6 +93,7 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
   const [formError, setFormError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<CatalogMaterial | null>(null);
   const [lastAdded, setLastAdded] = useState<string>('');
+  const [importing, setImporting] = useState(false);
 
   /** Marca en edición o `'new'` para el alta. */
   const [editingBrand, setEditingBrand] = useState<'new' | CatalogBrand | null>(null);
@@ -249,6 +251,9 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
               Restaurar catálogo de fábrica
             </Button>
             <div className="flex-1" />
+            <Button variant="secondary" icon={<FileUp className="h-4 w-4" />} onClick={() => setImporting(true)}>
+              Importar lista de precios
+            </Button>
             <Button variant="secondary" onClick={onClose}>
               Cerrar
             </Button>
@@ -466,6 +471,19 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
           )}
         </div>
       </Modal>
+
+      {importing && (
+        <PriceImportModal
+          isOpen
+          onClose={() => setImporting(false)}
+          items={items}
+          formatPrice={formatPrice}
+          onApply={(changes) => {
+            setItems(CatalogService.applyPriceChanges(changes));
+            setLastAdded('');
+          }}
+        />
+      )}
 
       {/* Alta y edición de un producto */}
       <Modal
