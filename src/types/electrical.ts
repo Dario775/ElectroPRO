@@ -296,7 +296,14 @@ export interface BoardPart {
   phase?: string;
   /** Foto propia de este aparato (ver `services/partImages`). */
   imageId?: string;
-  /** El neutro va en el módulo de la izquierda (como en los 4P de Schneider) y no en el de la derecha. */
+  /**
+   * Descargador: `neutro-arriba` es el que trae los cuatro bornes de línea arriba (N, L1, L2, L3) y la tierra
+   * abajo a la izquierda, como el Schneider iPF K 20 3P+N. Sin esto, trae el neutro abajo.
+   */
+  surgeLayout?: 'neutro-arriba';
+  /** Marca del aparato (Schneider Electric, Sica, Chint…): elige la foto de esa marca. Sin foto de la marca, se usa el dibujo. */
+  brand?: string;
+  /** `false`: el neutro va en el módulo de la derecha. Por omisión va a la izquierda, como en Schneider. */
   neutralLeft?: boolean;
   /** Circuito del proyecto al que corresponde esta térmica (ver `utils/boardSync`). */
   circuitId?: string;
@@ -375,6 +382,8 @@ export interface BoardNote {
 }
 
 export interface BoardLayout {
+  /** Los aparatos de este tablero ya tienen anotado de qué lado va el neutro (ver `migrateNeutralSide`). */
+  neutralMigrated?: boolean;
   rails: BoardRail[];
   parts: BoardPart[];
   wires: BoardWire[];

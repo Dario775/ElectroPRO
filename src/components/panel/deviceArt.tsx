@@ -11,7 +11,7 @@ import type { BoardPartKind } from '../../types/electrical';
 import type { PartPhoto } from '../../services/partImages';
 import { imageCrop } from '../../utils/imageFit';
 import { DEVICE_H, MODULE_W } from './deviceMetrics';
-import { surgeTerminals } from './wiring';
+import { surgeTerminals, terminalSpecs } from './wiring';
 
 export { DEVICE_H, MODULE_W };
 
@@ -25,6 +25,12 @@ export interface DeviceArtProps {
   sensitivityMa?: number;
   /** Función del cable (borne de paso): R, S, T, N o tierra. */
   phase?: string;
+  /** Polos del aparato («2P», «4P»…): con la fase, dicen en qué módulo va el neutro. */
+  poles?: string;
+  /** `false`: el neutro va a la derecha. Por omisión, a la izquierda, como en Schneider. */
+  neutralLeft?: boolean;
+  /** Descargador con el neutro arriba. */
+  surgeLayout?: 'neutro-arriba';
   /** Foto propia (con su ajuste) que reemplaza al dibujo: llena la caja del aparato. */
   photo?: PartPhoto;
   /** Imagen real que reemplaza al dibujo, si se cargó una. */
@@ -154,14 +160,29 @@ const FaceText: React.FC<{ x: number; y: number; size: number; children: React.R
   </text>
 );
 
+/** El módulo del neutro de un aparato, para marcarlo con una «N» impresa como en los Schneider. */
+const neutralOf = (props: DeviceArtProps): number | undefined =>
+  terminalSpecs({ kind: props.kind, modules: props.modules, poles: props.poles, phase: props.phase, neutralLeft: props.neutralLeft }).find(
+    (terminal) => terminal.role === 'N'
+  )?.x;
+
+const NeutralMark: React.FC<{ x: number | undefined }> = ({ x }) =>
+  x === undefined ? null : (
+    <FaceText x={x} y={20.5} size={6} fill="#3a4047">
+      N
+    </FaceText>
+  );
+
 /** Interruptor termomagnético: curva y amperes arriba, palanca al centro. */
-const Breaker: React.FC<DeviceArtProps> = ({ modules, amps, curve }) => {
+const Breaker: React.FC<DeviceArtProps> = (props) => {
+  const { modules, amps, curve } = props;
   const width = modules * MODULE_W;
   return (
     <g>
       <Body width={width} />
       <Terminals width={width} y={2} />
       <Terminals width={width} y={DEVICE_H - 17} />
+      <NeutralMark x={neutralOf(props)} />
       <rect x={4} y={22} width={width - 8} height={DEVICE_H - 44} rx={2} fill="#f7f8fa" stroke={EDGE_SOFT} strokeWidth={0.8} />
       <FaceText x={width / 2} y={36} size={11}>
         {curve ?? 'C'}
@@ -174,13 +195,15 @@ const Breaker: React.FC<DeviceArtProps> = ({ modules, amps, curve }) => {
 };
 
 /** Interruptor de corte: como una térmica, pero con la manija roja y sin curva. */
-const Switch: React.FC<DeviceArtProps> = ({ modules, amps }) => {
+const Switch: React.FC<DeviceArtProps> = (props) => {
+  const { modules, amps } = props;
   const width = modules * MODULE_W;
   return (
     <g>
       <Body width={width} />
       <Terminals width={width} y={2} />
       <Terminals width={width} y={DEVICE_H - 17} />
+      <NeutralMark x={neutralOf(props)} />
       <rect x={4} y={22} width={width - 8} height={DEVICE_H - 44} rx={2} fill="#f7f8fa" stroke={EDGE_SOFT} strokeWidth={0.8} />
       <FaceText x={width / 2} y={34} size={8} fill="#b5271d">
         CORTE
@@ -195,13 +218,18 @@ const Switch: React.FC<DeviceArtProps> = ({ modules, amps }) => {
 };
 
 /** Interruptor diferencial: amperes y sensibilidad, palanca y botón de prueba. */
-const Differential: React.FC<DeviceArtProps> = ({ modules, amps, sensitivityMa }) => {
+const Differential: React.FC<DeviceArtProps> = (props) => {
+  const { modules, amps, sensitivityMa } = props;
   const width = modules * MODULE_W;
+  const neutral = neutralOf(props);
+  // El botón de prueba (T) va del lado del neutro, como en los diferenciales Schneider.
+  const testX = neutral !== undefined && neutral < width / 2 ? 15 : width - 15;
   return (
     <g>
       <Body width={width} />
       <Terminals width={width} y={2} />
       <Terminals width={width} y={DEVICE_H - 17} />
+      <NeutralMark x={neutral} />
       <rect x={4} y={22} width={width - 8} height={DEVICE_H - 44} rx={2} fill="#f3f5f8" stroke={EDGE_SOFT} strokeWidth={0.8} />
       <rect x={4} y={22} width={width - 8} height={5} fill="#1f5fa8" />
       <FaceText x={width / 2} y={40} size={10}>
@@ -211,8 +239,8 @@ const Differential: React.FC<DeviceArtProps> = ({ modules, amps, sensitivityMa }
         {sensitivityMa ?? 30}mA
       </FaceText>
       <Lever width={width} y={58} height={24} />
-      <circle cx={width - 15} cy={91} r={5.5} fill="#f2c200" stroke="#8a6d00" strokeWidth={0.8} />
-      <FaceText x={width - 15} y={93.6} size={6.5} weight={800}>
+      <circle cx={testX} cy={91} r={5.5} fill="#f2c200" stroke="#8a6d00" strokeWidth={0.8} />
+      <FaceText x={testX} y={93.6} size={6.5} weight={800}>
         T
       </FaceText>
     </g>
@@ -228,6 +256,55 @@ const EarthMark: React.FC<{ x: number; y: number }> = ({ x, y }) => (
     <line x1={x - 1.4} y1={y + 4.4} x2={x + 1.4} y2={y + 4.4} />
   </g>
 );
+
+/**
+ * Descargador con el neutro arriba, como el Schneider iPF K 20 3P+N: los cuatro bornes de línea (N, L1,
+ * L2, L3) arriba, una tapa blanca con la franja verde y el borne de tierra (⏚) abajo, a la izquierda.
+ */
+const SurgeProtectorTopNeutral: React.FC<DeviceArtProps> = ({ modules }) => {
+  const width = modules * MODULE_W;
+  const terminals = surgeTerminals(modules, 'neutro-arriba');
+  const top = terminals.filter((terminal) => terminal.sides.includes('top'));
+  const bottom = terminals.filter((terminal) => terminal.sides.includes('bottom'));
+  const names: Record<string, string> = { N: 'N', L1: 'L1', L2: 'L2', L3: 'L3' };
+  return (
+    <g>
+      <Body width={width} fill="#f1f3f5" />
+      {top.map((terminal) => (
+        <g key={`t-${terminal.x}`}>
+          <rect x={terminal.x - 12} y={2} width={24} height={15} rx={2} fill="url(#pf-terminal)" stroke={EDGE} strokeWidth={0.8} />
+          <Screw cx={terminal.x} cy={9.5} />
+          <FaceText x={terminal.x} y={29} size={8}>
+            {names[terminal.role] ?? ''}
+          </FaceText>
+        </g>
+      ))}
+      {/* Tapa blanca con la franja verde */}
+      <rect x={3} y={36} width={width - 6} height={DEVICE_H - 62} rx={2} fill="#fbfcfc" stroke={EDGE_SOFT} strokeWidth={0.8} />
+      <rect x={3} y={44} width={width - 6} height={4} fill="#3fae29" />
+      <FaceText x={width / 2} y={66} size={10}>
+        DPS
+      </FaceText>
+      <FaceText x={width / 2} y={77} size={6.5} weight={500} fill="#5d646e">
+        3P+N · Tipo 2
+      </FaceText>
+      <rect x={10} y={84} width={14} height={9} rx={1.5} fill="#ffffff" stroke={EDGE} strokeWidth={0.8} />
+      <FaceText x={17} y={91} size={5.5}>
+        T2
+      </FaceText>
+      {/* Borne de tierra abajo, a la izquierda */}
+      {bottom.map((terminal) => (
+        <g key={`b-${terminal.x}`}>
+          <line x1={terminal.x + 14} y1={DEVICE_H - 9.5} x2={width - 36} y2={DEVICE_H - 9.5} stroke={EDGE_SOFT} strokeWidth={1} strokeDasharray="3 3" />
+          <rect x={terminal.x - 12} y={DEVICE_H - 17} width={24} height={15} rx={2} fill="url(#pf-terminal)" stroke={EDGE} strokeWidth={0.8} />
+          <Screw cx={terminal.x} cy={DEVICE_H - 9.5} />
+          <EarthMark x={terminal.x} y={DEVICE_H - 28} />
+        </g>
+      ))}
+      <circle cx={width - 17} cy={DEVICE_H - 10} r={7} fill="#fbfcfc" stroke={EDGE_SOFT} strokeWidth={0.8} />
+    </g>
+  );
+};
 
 /**
  * Descargador de sobretensiones. Como el real (por ejemplo el Easy9 de 3P+N): un borne arriba por
@@ -589,7 +666,7 @@ export const DeviceArt: React.FC<DeviceArtProps> = (props) => {
     case 'diferencial':
       return <Differential {...props} />;
     case 'dps':
-      return <SurgeProtector {...props} />;
+      return props.surgeLayout === 'neutro-arriba' ? <SurgeProtectorTopNeutral {...props} /> : <SurgeProtector {...props} />;
     case 'protector_tension':
       return <VoltageProtector {...props} />;
     case 'contactor':

@@ -30,6 +30,7 @@ import {
 import { reviewBoard, type BoardIssue } from '../../../utils/boardReview';
 import { Button } from '../../ui/Button';
 import { PhotoFitDialog } from '../PhotoFitDialog';
+import { BrandSelect } from '../BrandSelect';
 import { WIRE_ROLES, WIRE_STYLES } from '../wiring';
 import type { BoardSelection } from './BoardCanvas';
 
@@ -360,7 +361,7 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
       setPhotoError('');
       const { name, dataUrl, width, height } = await fileToPartImage(file);
       const added = addImage(photos, name, dataUrl, { width, height });
-      writeImageStore(scope === 'slot' ? assignSlot(added.store, part.kind, part.modules, added.id) : added.store);
+      writeImageStore(scope === 'slot' ? assignSlot(added.store, part.kind, part.modules, added.id, part.brand, part.surgeLayout) : added.store);
       if (scope === 'part') onChange(updatePart(board, part.id, { imageId: added.id }));
       onPhotosChange();
       // La foto casi nunca tiene la proporción del aparato: se abre el ajuste para acomodarla.
@@ -402,8 +403,8 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
 
       {poleOptions && partTerminals(part).some((terminal) => terminal.role === 'N') && (
         <label className="flex items-center gap-2 text-xs font-semibold text-muted">
-          <input type="checkbox" checked={part.neutralLeft ?? false} onChange={(e) => edit({ neutralLeft: e.target.checked || undefined })} className="h-4 w-4 accent-current text-accent-text" />
-          El neutro está a la izquierda (como en los 4P de Schneider)
+          <input type="checkbox" checked={part.neutralLeft !== false} onChange={(e) => edit({ neutralLeft: e.target.checked })} className="h-4 w-4 accent-current text-accent-text" />
+          El neutro está a la izquierda (como en Schneider)
         </label>
       )}
 
@@ -481,6 +482,12 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
         </Labeled>
       )}
 
+      {part.kind !== 'tope' && (
+        <Labeled label="Marca">
+          <BrandSelect value={part.brand} onChange={(brand) => edit({ brand })} generalLabel="Sin marca" />
+        </Labeled>
+      )}
+
       {/* Casillero de foto */}
       <div className="space-y-2 rounded-lg border border-hairline bg-surface p-2.5">
         <p className="text-xs font-bold uppercase tracking-wide text-muted">Foto del aparato</p>
@@ -489,7 +496,15 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
             {photo ? <img src={photo.href} alt="" className="h-full w-full object-contain" /> : <span className="px-1 text-center text-xs text-muted">Dibujo</span>}
           </div>
           <p className="text-xs leading-snug text-muted">
-            {photo ? (part.imageId ? 'Foto propia de este aparato.' : 'Foto del casillero de este tipo.') : 'Sin foto: se usa el dibujo.'}
+            {photo
+              ? part.imageId
+                ? 'Foto propia de este aparato.'
+                : part.brand
+                  ? `Foto de ${part.brand} para este tipo de aparato.`
+                  : 'Foto del casillero de este tipo.'
+              : part.brand
+                ? `Todavía no hay foto de ${part.brand} para este aparato: se usa el dibujo.`
+                : 'Sin foto: se usa el dibujo.'}
           </p>
         </div>
         <input ref={ownInput} type="file" accept="image/*" className="hidden" onChange={(e) => { void pickPhoto(e.target.files?.[0], 'part'); e.target.value = ''; }} />
@@ -499,7 +514,9 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
             Solo este
           </Button>
           <Button size="sm" icon={<ImagePlus className="h-3.5 w-3.5" />} onClick={() => slotInput.current?.click()} title="La foto se usa en todos los aparatos de este tipo y ancho">
-            Para todos los de {part.modules} {part.modules === 1 ? 'módulo' : 'módulos'}
+            {part.brand
+              ? `Para todos los de ${part.brand} de ${part.modules} ${part.modules === 1 ? 'módulo' : 'módulos'}`
+              : `Para todos los de ${part.modules} ${part.modules === 1 ? 'módulo' : 'módulos'}`}
           </Button>
           {photo && (
             <Button size="sm" variant="secondary" onClick={() => setFitting(photo.id)} title="Acercar, mover y alinear la foto con el aparato">

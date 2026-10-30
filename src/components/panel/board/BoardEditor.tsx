@@ -108,6 +108,25 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
   /** Elementos elegidos con un recuadro (o sumados con Shift); se mueven y se borran juntos. */
   const [group, setGroup] = useState<GroupItem[]>([]);
   const [message, setMessage] = useState('');
+  // La marca de lo que se agrega: se recuerda entre sesiones.
+  const [newBrand, setNewBrand] = useState<string | undefined>(() => {
+    try {
+      return localStorage.getItem('electropro_new_part_brand_v1') || undefined;
+    } catch {
+      return undefined;
+    }
+  });
+  const brandRef = useRef(newBrand);
+  brandRef.current = newBrand;
+  const changeBrand = (brand: string | undefined): void => {
+    setNewBrand(brand);
+    try {
+      if (brand) localStorage.setItem('electropro_new_part_brand_v1', brand);
+      else localStorage.removeItem('electropro_new_part_brand_v1');
+    } catch {
+      /* sin almacenamiento: solo vale en esta sesión */
+    }
+  };
   const [innerMaximized, setInnerMaximized] = useState(false);
   const maximized = maximizedProp ?? innerMaximized;
   const setMaximized = onMaximizedChange ?? setInnerMaximized;
@@ -177,7 +196,7 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
 
   const addFromSpec = useCallback(
     (spec: PartSpec, at?: { x: number; y: number }): void => {
-      const result = addPart(savedRef.current ?? emptyBoard(), spec, at);
+      const result = addPart(savedRef.current ?? emptyBoard(), brandRef.current ? { ...spec, brand: brandRef.current } : spec, at);
       commit(result.board);
       setSelection({ kind: 'part', id: result.part.id });
       setMode('select');
@@ -541,6 +560,8 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
       <div className={cx('grid gap-3 lg:grid-cols-[200px_minmax(0,1fr)_260px]', maximized && 'min-h-0 flex-1')}>
         <div className={cx(maximized && 'min-h-0 overflow-y-auto')}>
           <BoardCatalogPanel
+            brand={newBrand}
+            onBrandChange={changeBrand}
             onAdd={(entry) => addFromEntry(entry)}
             onAddRail={(modules) => {
               commit(addRail(board, modules));

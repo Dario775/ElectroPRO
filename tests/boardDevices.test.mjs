@@ -23,7 +23,7 @@ test('el protector de tensión monofásico tiene N y fase, con el neutro a la iz
 
 test('el contactor 3P lleva las tres fases y el 4P también el neutro', () => {
   assert.deepEqual(roles(place('contactor-3p').part, 'top'), ['L1', 'L2', 'L3']);
-  assert.deepEqual(roles(place('contactor-4p').part, 'bottom'), ['L1', 'L2', 'L3', 'N']);
+  assert.deepEqual(roles(place('contactor-4p').part, 'bottom'), ['N', 'L1', 'L2', 'L3']);
 });
 
 test('los anchos del catálogo coinciden con los polos que ofrece cada tipo', () => {
@@ -56,7 +56,7 @@ test('guardamotor y relé térmico trifásicos llevan L1, L2 y L3 arriba y abajo
 
 test('guardamotor y relé térmico monofásicos llevan fase y neutro, y sus anchos coinciden con los polos', () => {
   for (const id of ['guardamotor-1p', 'rele-1p']) {
-    assert.deepEqual(roles(place(id).part, 'top'), ['L1', 'N'], id);
+    assert.deepEqual(roles(place(id).part, 'top'), ['N', 'L1'], id);
   }
   for (const id of ['guardamotor-1p', 'guardamotor-3p', 'rele-1p', 'rele-3p']) {
     const { spec } = entry(id);
@@ -74,4 +74,37 @@ test('frontRowsFromBoard arma una fila por riel con los aparatos en orden y sin 
   assert.ok(rows[0].every((item) => item.kind === 'accesorio' && item.accessoryKind === 'otro'));
   assert.deepEqual(rows[0].map((item) => item.modules), [4, 2]);
   assert.match(rows[0][0].detail, /63 A/);
+});
+
+// --- Descargador con el neutro arriba (Schneider iPF K 20 3P+N) ------------------
+
+test('el descargador con el neutro arriba trae N, L1, L2 y L3 arriba y la tierra abajo a la izquierda', () => {
+  const { part } = place('dps-4-n-arriba');
+  assert.equal(part.surgeLayout, 'neutro-arriba');
+  assert.deepEqual(roles(part, 'top'), ['N', 'L1', 'L2', 'L3']);
+  assert.deepEqual(roles(part, 'bottom'), ['PE']);
+  const earth = b.partTerminals(part).find((t) => t.side === 'bottom');
+  assert.equal(earth.index, 4);
+  assert.equal(earth.x, part.x + 15);
+});
+
+test('el descargador de siempre sigue con el neutro abajo', () => {
+  const { part } = place('dps-4');
+  assert.deepEqual(roles(part, 'top'), ['L1', 'L2', 'L3', 'PE']);
+  assert.deepEqual(roles(part, 'bottom'), ['N']);
+});
+
+test('el cableado automático toma el neutro del descargador de arriba de la línea, igual que las fases', () => {
+  const rows = [
+    [{ key: 'entrada:termica', kind: 'termica', label: 'GENERAL', modules: 4, detail: '', poles: '3P+N', amps: 40 }, { key: 'dps', kind: 'accesorio', accessoryKind: 'dps', label: 'DPS', modules: 4, detail: '' }],
+    [{ key: 'acc:t', kind: 'accesorio', accessoryKind: 'bornera_tierra', label: 'TIERRA', modules: 4, detail: '' }],
+  ];
+  let board = b.boardFromFront(rows, 12);
+  board = { ...board, parts: board.parts.map((p) => (p.kind === 'dps' ? { ...p, surgeLayout: 'neutro-arriba' } : p)) };
+  const wired = b.autoWire(board);
+  const surge = wired.parts.find((p) => p.kind === 'dps');
+  const ends = wired.wires.filter((w) => w.to?.partId === surge.id || w.from?.partId === surge.id);
+  assert.deepEqual(ends.map((w) => w.role).sort(), ['L1', 'L2', 'L3', 'N', 'PE']);
+  const neutral = ends.find((w) => w.role === 'N');
+  assert.equal(neutral.from.partId === surge.id ? neutral.to.partId : neutral.from.partId, wired.parts.find((p) => p.kind === 'termica').id);
 });

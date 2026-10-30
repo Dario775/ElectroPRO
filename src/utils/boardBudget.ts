@@ -44,6 +44,8 @@ interface BomLine {
   quantity: number;
   /** Palabras que tiene que tener la descripción del catálogo para ser este producto. */
   tokens: string[];
+  /** Marca elegida para el aparato: se busca su precio entre los de esa marca. */
+  brand?: string;
 }
 
 export interface BoardMaterials {
@@ -120,7 +122,7 @@ function describePart(part: BoardPart): { key: string; category: BudgetCategory;
     case 'corte':
       return { key: `corte|${poles}|${part.amps}`, category: 'protecciones', description: `Interruptor de corte ${sold(poles).toUpperCase()} ${amps}`.trim(), detail: 'Seccionador / interruptor de corte general', tokens: ['corte', sold(poles), `${part.amps}a`] };
     case 'dps':
-      return { key: `dps|${part.modules}`, category: 'protecciones', description: `Descargador de sobretensiones ${part.modules === 4 ? '3P+N' : '1P+N'}`, detail: 'Protector contra sobretensiones transitorias, tipo 2', tokens: ['descargador'] };
+      return { key: `dps|${part.modules}${part.surgeLayout ? `|${part.surgeLayout}` : ''}`, category: 'protecciones', description: `Descargador de sobretensiones ${part.modules === 4 ? '3P+N' : '1P+N'}${part.surgeLayout ? ' con el neutro arriba' : ''}`, detail: 'Protector contra sobretensiones transitorias, tipo 2', tokens: ['descargador'] };
     case 'protector_tension':
       return { key: `protector|${poles}|${part.amps}`, category: 'protecciones', description: `Protector de tensión ${poles} ${amps}`.replace(/\s+/g, ' ').trim(), detail: 'Protección contra sobre y subtensión con visor', tokens: ['protector de tension', `${part.amps}a`] };
     case 'contactor':
@@ -187,7 +189,13 @@ export function boardMaterials(client: ClientRecord): BoardMaterials {
     for (const part of board.parts) {
       const described = describePart(part);
       if (!described) continue;
-      add(described.key, { category: described.category, description: described.description, detail: described.detail, unit: 'ud', tokens: described.tokens }, 1, name);
+      const brand = part.brand?.trim() || undefined;
+      add(
+        brand ? `${described.key}|${norm(brand)}` : described.key,
+        { category: described.category, description: brand ? `${described.description} ${brand}` : described.description, detail: described.detail, unit: 'ud', tokens: described.tokens, brand },
+        1,
+        name
+      );
     }
 
     // Accesorios
@@ -259,8 +267,18 @@ export function boardMaterials(client: ClientRecord): BoardMaterials {
 /* Precios del catálogo                                                */
 /* ------------------------------------------------------------------ */
 
-/** El producto del catálogo que corresponde a un renglón, o `undefined` si no hay. */
+/** El producto del catálogo que corresponde a un renglón: de su marca si la tiene y, si no, de cualquiera. */
 function matchEntry(line: BomLine, catalog: PriceEntry[]): PriceEntry | undefined {
+  if (line.brand) {
+    const wanted = norm(line.brand);
+    const ofBrand = catalog.filter((entry) => norm(entry.brand ?? '').includes(wanted) || norm(entry.description).includes(wanted));
+    const found = ofBrand.length > 0 ? matchIn(line, ofBrand) : undefined;
+    if (found) return found;
+  }
+  return matchIn(line, catalog);
+}
+
+function matchIn(line: BomLine, catalog: PriceEntry[]): PriceEntry | undefined {
   const text = (entry: PriceEntry): string => norm(entry.description);
   if (line.key.startsWith('gabinete|')) {
     const needed = Number(line.key.split('|')[1]);

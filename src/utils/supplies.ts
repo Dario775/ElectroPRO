@@ -5,6 +5,7 @@ import type {
   MonthlyConsumptionRecord,
   ServiceSupply,
 } from '../types/electrical';
+import { migrateNeutralSide } from './boardLayout';
 import { syncCircuits } from './circuits';
 import { normalizePanelDevices } from './panelDevices';
 
@@ -73,6 +74,7 @@ export function normalizeClient(client: ClientRecord): ClientRecord {
   const panels = (client.panels ?? []).map((panel) => ({
     ...panel,
     supplyId: panel.supplyId && validIds.has(panel.supplyId) ? panel.supplyId : primary.id,
+    ...(panel.board ? { board: migrateNeutralSide(panel.board) } : {}),
   }));
 
   const consumptionHistory = (client.consumptionHistory ?? []).map((record) => ({

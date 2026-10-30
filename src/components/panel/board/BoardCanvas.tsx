@@ -604,6 +604,9 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
             curve={part.curve}
             sensitivityMa={part.sensitivityMa}
             phase={part.phase}
+            poles={part.poles}
+            neutralLeft={part.neutralLeft}
+            surgeLayout={part.surgeLayout}
             photo={partPhoto(photos, part)}
           />
           <rect x={0} y={0} width={partWidth(part)} height={DEVICE_H} fill="transparent" data-export="hide" />

@@ -131,3 +131,23 @@ test('las térmicas 1P+N y 2P iguales se suman en un solo renglón', () => {
   assert.equal(lines.filter((l) => l.key.startsWith('termica|2p|16')).length, 1);
   assert.equal(lines.find((l) => l.key.startsWith('termica|2p|16')).quantity, 2);
 });
+
+test('con marca, el renglón lleva la marca y se le pone el precio de esa marca', () => {
+  const c = project();
+  const board = c.panels[0].board;
+  const parts = board.parts.map((p) => (p.code === 'C-1' ? { ...p, amps: 16, poles: '2P', brand: 'Sica' } : p.code === 'C-2' ? { ...p, amps: 16, poles: '2P' } : p));
+  const withBrand = { ...c, panels: [{ ...c.panels[0], board: { ...board, parts } }] };
+  const brands = [
+    { description: 'Térmica 2P 16A curva C Schneider', unit: 'ud', unitPrice: 20000, brand: 'Schneider Electric' },
+    { description: 'Térmica 2P 16A curva C', unit: 'ud', unitPrice: 15000, brand: 'Sica' },
+  ];
+  const { items } = B.boardBudgetItems(withBrand, brands);
+  const sica = items.find((i) => i.sourceKey?.includes('sica'));
+  assert.match(sica.description, /Sica/);
+  assert.equal(sica.unitPrice, 15000);
+  assert.equal(sica.quantity, 1);
+  // el aparato sin marca va aparte y toma el más barato que coincide
+  const plain = items.find((i) => i.sourceKey?.startsWith('termica|2p|16|C') && !i.sourceKey.includes('sica'));
+  assert.equal(plain.unitPrice, 15000);
+  assert.equal(plain.quantity, 1);
+});

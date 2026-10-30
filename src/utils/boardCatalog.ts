@@ -160,6 +160,7 @@ export const CATALOG: CatalogEntry[] = [
   { id: 'corte-4p', label: 'Corte 4P', group: 'Protecciones', spec: { kind: 'corte', modules: 4, label: 'CORTE GRAL', amps: 63, poles: '4P' } },
   { id: 'dps', label: 'Descargador 1P+N', group: 'Protecciones', spec: { kind: 'dps', modules: 2, label: 'DPS' } },
   { id: 'dps-4', label: 'Descargador 3P+N', group: 'Protecciones', spec: { kind: 'dps', modules: 4, label: 'DPS' } },
+  { id: 'dps-4-n-arriba', label: 'Descargador 3P+N (neutro arriba)', group: 'Protecciones', spec: { kind: 'dps', modules: 4, label: 'DPS', surgeLayout: 'neutro-arriba' } },
   { id: 'protector-1p', label: 'Protector de tensión monofásico', group: 'Protecciones', spec: { kind: 'protector_tension', modules: 2, label: 'PROTECTOR', amps: 63, poles: '1P+N', phase: 'L1' } },
   { id: 'protector-3p', label: 'Protector de tensión trifásico', group: 'Protecciones', spec: { kind: 'protector_tension', modules: 4, label: 'PROTECTOR', amps: 63, poles: '3P+N' } },
   { id: 'contactor-2p', label: 'Contactor 2P', group: 'Protecciones', spec: { kind: 'contactor', modules: 2, label: 'CONTACTOR', amps: 25, poles: '2P', phase: 'L1' } },

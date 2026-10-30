@@ -7,10 +7,15 @@ import { CATALOG, type CatalogEntry } from '../../../utils/boardCatalog';
 import { DEVICE_H, DeviceArt, DeviceDefs, MODULE_W } from '../deviceArt';
 import { Button } from '../../ui/Button';
 import { AccessoryShape } from './accessoryArt';
+import { BrandSelect } from '../BrandSelect';
+import { partPhoto, readImageStore } from '../../../services/partImages';
 
 interface BoardCatalogPanelProps {
   onAdd: (entry: CatalogEntry) => void;
   onAddRail: (modules: number) => void;
+  /** Marca que llevan los aparatos que se agregan ahora (la de su foto). */
+  brand?: string;
+  onBrandChange?: (brand: string | undefined) => void;
 }
 
 const RAIL_SIZES = [12, 18, 24, 36];
@@ -21,7 +26,7 @@ export function catalogPayload(entry: CatalogEntry): string {
   return JSON.stringify(entry.spec ? { part: entry.spec } : { accessory: entry.accessory });
 }
 
-const Preview: React.FC<{ entry: CatalogEntry }> = ({ entry }) => {
+const Preview: React.FC<{ entry: CatalogEntry; brand?: string }> = ({ entry, brand }) => {
   if (entry.spec) {
     const width = entry.spec.modules * MODULE_W;
     return (
@@ -33,6 +38,9 @@ const Preview: React.FC<{ entry: CatalogEntry }> = ({ entry }) => {
           curve={entry.spec.curve}
           sensitivityMa={entry.spec.sensitivityMa}
           phase={entry.spec.phase}
+          poles={entry.spec.poles}
+          surgeLayout={entry.spec.surgeLayout}
+          photo={brand ? partPhoto(readImageStore(), { kind: entry.spec.kind, modules: entry.spec.modules, brand, surgeLayout: entry.spec.surgeLayout }) : undefined}
         />
       </svg>
     );
@@ -48,7 +56,7 @@ const Preview: React.FC<{ entry: CatalogEntry }> = ({ entry }) => {
   );
 };
 
-export const BoardCatalogPanel: React.FC<BoardCatalogPanelProps> = ({ onAdd, onAddRail }) => {
+export const BoardCatalogPanel: React.FC<BoardCatalogPanelProps> = ({ onAdd, onAddRail, brand, onBrandChange }) => {
   const [railModules, setRailModules] = useState(18);
 
   return (
@@ -59,6 +67,14 @@ export const BoardCatalogPanel: React.FC<BoardCatalogPanelProps> = ({ onAdd, onA
           <DeviceDefs />
         </defs>
       </svg>
+
+      {onBrandChange && (
+        <div className="rounded-xl border border-hairline bg-sunken p-2.5">
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Marca de los aparatos</p>
+          <BrandSelect value={brand} onChange={onBrandChange} generalLabel="Sin marca" ariaLabel="Marca de los aparatos nuevos" />
+          <p className="mt-1.5 text-xs leading-snug text-muted">Los que agregues salen con esta marca y su foto, si la cargaste.</p>
+        </div>
+      )}
 
       <div className="rounded-xl border border-hairline bg-sunken p-2.5">
         <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Riel DIN</p>
@@ -98,7 +114,7 @@ export const BoardCatalogPanel: React.FC<BoardCatalogPanelProps> = ({ onAdd, onA
                 title={`${entry.label}: clic para agregar, o arrastralo al tablero`}
                 className="flex cursor-grab flex-col items-center gap-1 rounded-lg border border-hairline bg-sunken px-1.5 py-2 text-center transition-colors hover:border-accent-line hover:bg-accent-soft active:cursor-grabbing"
               >
-                <Preview entry={entry} />
+                <Preview entry={entry} brand={brand} />
                 <span className="text-xs font-semibold leading-tight text-soft">{entry.label}</span>
               </button>
             ))}

@@ -80,8 +80,10 @@ export interface TerminalSource {
   modules: number;
   poles?: string;
   phase?: string;
-  /** El neutro va en el primer módulo, a la izquierda. */
+  /** El neutro va en el primer módulo, a la izquierda (como en Schneider). Solo `false` lo deja a la derecha. */
   neutralLeft?: boolean;
+  /** Descargador con el neutro arriba (ver `surgeTerminals`). */
+  surgeLayout?: 'neutro-arriba';
 }
 
 /**
@@ -89,10 +91,12 @@ export interface TerminalSource {
  * Las fases entran por arriba (un borne por módulo), la tierra va al borne ⏚ y el neutro, a su borne
  * de abajo, como en un descargador real (por ejemplo, el Easy9 de 3P+N: L, L, L, ⏚ arriba y N abajo).
  */
-export function surgeTerminals(modules: number): WireTerminal[] {
+export function surgeTerminals(modules: number, layout?: 'neutro-arriba'): WireTerminal[] {
   const x = (index: number): number => MODULE_W * index + MODULE_W / 2;
   const top = (index: number, role: WireRole): WireTerminal => ({ x: x(index), role, sides: ['top'] });
   const bottom = (index: number, role: WireRole): WireTerminal => ({ x: x(index), role, sides: ['bottom'] });
+  // Como el Schneider iPF K 20 3P+N: N, L1, L2, L3 arriba y el borne de tierra abajo, a la izquierda.
+  if (layout === 'neutro-arriba' && modules >= 4) return [top(0, 'N'), top(1, 'L1'), top(2, 'L2'), top(3, 'L3'), bottom(0, 'PE')];
   if (modules <= 1) return [top(0, 'L1'), bottom(0, 'PE')];
   if (modules === 2) return [top(0, 'L1'), top(1, 'PE'), bottom(0, 'N')];
   if (modules === 3) return [top(0, 'L1'), top(1, 'L2'), top(2, 'L3'), bottom(1, 'PE')];
@@ -100,7 +104,7 @@ export function surgeTerminals(modules: number): WireTerminal[] {
 }
 
 /** Los bornes con cable de un aparato, según su tipo, ancho, polos y fase. */
-export function terminalSpecs({ kind, modules, poles, phase, neutralLeft }: TerminalSource): WireTerminal[] {
+export function terminalSpecs({ kind, modules, poles, phase, neutralLeft, surgeLayout }: TerminalSource): WireTerminal[] {
   const holes = modules * 2;
   const holeX = (index: number): number => (MODULE_W / 2) * index + MODULE_W / 4;
   // Una bornera de barra recibe cables por los dos lados: arriba (entran) y abajo (salen).
@@ -116,7 +120,7 @@ export function terminalSpecs({ kind, modules, poles, phase, neutralLeft }: Term
       // Un repartidor reparte una fase: la que se le elige (por omisión, la R).
       return block(WIRE_ROLES.find((role) => role === phase && role !== 'N' && role !== 'PE') ?? 'L1');
     case 'dps':
-      return surgeTerminals(modules);
+      return surgeTerminals(modules, surgeLayout);
     case 'tope':
       return [];
     case 'borne':
@@ -124,9 +128,10 @@ export function terminalSpecs({ kind, modules, poles, phase, neutralLeft }: Term
       return [{ x: MODULE_W / 2, role: WIRE_ROLES.find((role) => role === phase) ?? 'L1', sides: ['top', 'bottom'] }];
     default: {
       const roles = rolesOfPoles(poles, modules, phase).slice(0, modules);
-      // Con el neutro a la izquierda, el neutro pasa al primer módulo y las fases se corren a la derecha.
-      // Los protectores de tensión traen siempre el neutro a la izquierda (N, L1, L2, L3).
-      const ordered = (neutralLeft || kind === 'protector_tension') && roles.includes('N') ? ['N' as WireRole, ...roles.filter((role) => role !== 'N')] : roles;
+      // El neutro va a la izquierda (N, L1, L2, L3), como en las térmicas y diferenciales de Schneider; los
+      // tableros viejos que se armaron con el neutro a la derecha lo traen marcado con `neutralLeft: false`.
+      const left = kind === 'protector_tension' || neutralLeft !== false;
+      const ordered = left && roles.includes('N') ? ['N' as WireRole, ...roles.filter((role) => role !== 'N')] : roles;
       return ordered.map((role, index) => ({ x: MODULE_W * index + MODULE_W / 2, role, sides: ['top', 'bottom'] }));
     }
   }

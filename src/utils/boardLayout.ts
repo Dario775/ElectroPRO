@@ -56,7 +56,7 @@ export function newBoardId(prefix: string): string {
 }
 
 export function emptyBoard(): BoardLayout {
-  return { rails: [], parts: [], wires: [], notes: [], numbering: true, accessories: [], ferrules: true };
+  return { rails: [], parts: [], wires: [], notes: [], numbering: true, accessories: [], ferrules: true, neutralMigrated: true };
 }
 
 export const partWidth = (part: Pick<BoardPart, 'modules'>): number => part.modules * MODULE_W;
@@ -258,11 +258,41 @@ export function movePart(board: BoardLayout, partId: string, x: number, y: numbe
   });
 }
 
+/** Pasa los cables de un aparato a los bornes que ahora tienen su función (al cambiar de lado el neutro). */
+function remapTerminals(wires: BoardWire[], before: BoardPart, after: BoardPart): BoardWire[] {
+  const was = partTerminals(before);
+  const now = partTerminals(after);
+  const move = (ref: BoardTerminalRef | undefined): BoardTerminalRef | undefined => {
+    if (!ref || ref.partId !== before.id) return ref;
+    const old = was.find((terminal) => terminal.index === ref.index && terminal.side === ref.side);
+    const next = old && now.find((terminal) => terminal.role === old.role && terminal.side === ref.side);
+    return next && next.index !== ref.index ? { ...ref, index: next.index } : ref;
+  };
+  return wires.map((wire) => ({ ...wire, from: move(wire.from), to: move(wire.to) }));
+}
+
 export function updatePart(board: BoardLayout, partId: string, patch: Partial<Omit<BoardPart, 'id'>>): BoardLayout {
+  const before = board.parts.find((part) => part.id === partId);
+  const after = before ? { ...before, ...patch } : undefined;
+  const sideChanged = !!before && !!after && (before.neutralLeft !== false) !== (after.neutralLeft !== false);
   return reconnectWires({
     ...board,
-    parts: board.parts.map((part) => (part.id === partId ? { ...part, ...patch } : part)),
+    parts: board.parts.map((part) => (part.id === partId && after ? after : part)),
+    wires: sideChanged && before && after ? remapTerminals(board.wires, before, after) : board.wires,
   });
+}
+
+/**
+ * Los tableros armados antes de que el neutro fuera a la izquierda tienen sus aparatos con el neutro
+ * a la derecha: se lo anota en cada uno para que se vean y se cableen como estaban.
+ */
+export function migrateNeutralSide(board: BoardLayout): BoardLayout {
+  if (board.neutralMigrated) return board;
+  return {
+    ...board,
+    neutralMigrated: true,
+    parts: board.parts.map((part) => (part.neutralLeft === undefined && part.kind !== 'protector_tension' ? { ...part, neutralLeft: false } : part)),
+  };
 }
 
 /** Borra un aparato y los cables que llegaban a él. */
@@ -861,7 +891,7 @@ export function boardFromFront(rows: FrontItem[][], perRow: number): BoardLayout
       x += item.modules * MODULE_W;
     }
   });
-  return { rails, parts, wires: [], notes: [], numbering: true };
+  return { rails, parts, wires: [], notes: [], numbering: true, neutralMigrated: true };
 }
 
 interface RailRow {
@@ -961,6 +991,10 @@ export function autoWire(board: BoardLayout): BoardLayout {
       if (terminal.role === 'PE' && earthBar) {
         const target = nearestTo(tops(earthBar), terminal.x);
         if (target) add('PE', routeWire(terminal, target), refOf(terminal), refOf(target), SURGE_LEAD_AMPS);
+      } else if (terminal.role === 'N' && terminal.side === 'top' && entry[0]) {
+        // El neutro de arriba (iPF con los cuatro bornes de línea juntos) sale del neutro de la línea.
+        const source = tops(entry[0]).find((t) => t.role === 'N');
+        if (source) add('N', routeWire(source, terminal), refOf(source), refOf(terminal), SURGE_LEAD_AMPS);
       } else if (terminal.role === 'N' && neutralBar) {
         const target = nearestTo(bottoms(neutralBar), terminal.x);
         if (target) add('N', routeWire(terminal, target), refOf(terminal), refOf(target), SURGE_LEAD_AMPS);

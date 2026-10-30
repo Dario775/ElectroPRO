@@ -40,16 +40,60 @@ export interface PartPhoto {
 
 export interface PartImageStore {
   images: Record<string, PartImage>;
-  /** `tipo:módulos` → id de la foto que usan todos los aparatos de ese tipo y ancho. */
+  /**
+   * `tipo:módulos` → id de la foto que usan todos los aparatos de ese tipo y ancho; con marca,
+   * `tipo:módulos:marca` → la foto de esa marca.
+   */
   slots: Record<string, string>;
+  /** Marcas que se agregaron a mano, además de las conocidas. */
+  brands?: string[];
 }
 
-export const slotKey = (kind: BoardPartKind, modules: number): string => `${kind}:${modules}`;
+/** Las marcas más conocidas de aparatos modulares en Argentina. */
+export const KNOWN_BRANDS = ['Schneider Electric', 'Sica', 'Chint', 'ABB', 'Siemens', 'Legrand', 'Bticino', 'Genrod', 'Steck', 'Hager'];
+
+const norm = (text: string): string =>
+  text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+/** Casillero de un tipo y ancho de aparato, general o de una marca. */
+export const slotKey = (kind: BoardPartKind, modules: number, brand?: string, variant?: string): string => {
+  const slug = brand ? norm(brand) : '';
+  const base = variant ? `${kind}~${variant}` : kind;
+  return slug ? `${base}:${modules}:${slug}` : `${base}:${modules}`;
+};
+
+/** Las marcas que se ofrecen: las conocidas y las que se agregaron, sin repetir. */
+export function allBrands(store: PartImageStore, extra: Array<string | undefined> = []): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const name of [...KNOWN_BRANDS, ...(store.brands ?? []), ...extra]) {
+    const trimmed = (name ?? '').trim();
+    const key = norm(trimmed);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/** Agrega una marca a la lista (si no estaba). */
+export function addBrand(store: PartImageStore, name: string): PartImageStore {
+  const trimmed = name.trim();
+  if (!trimmed || allBrands(store).some((brand) => norm(brand) === norm(trimmed))) return store;
+  return { ...store, brands: [...(store.brands ?? []), trimmed] };
+}
 
 export interface SlotPreset {
   kind: BoardPartKind;
   modules: number;
   label: string;
+  /** Variante del aparato con otra disposición de bornes (el descargador con el neutro arriba). */
+  variant?: string;
 }
 
 /** Los casilleros que se ofrecen: los aparatos y anchos de un tablero común. */
@@ -64,6 +108,7 @@ export const SLOT_PRESETS: SlotPreset[] = [
   { kind: 'corte', modules: 4, label: 'Corte 4 módulos' },
   { kind: 'dps', modules: 2, label: 'Descargador 1P+N' },
   { kind: 'dps', modules: 4, label: 'Descargador 3P+N' },
+  { kind: 'dps', modules: 4, label: 'Descargador 3P+N (neutro arriba)', variant: 'neutro-arriba' },
   { kind: 'protector_tension', modules: 2, label: 'Protector de tensión monofásico' },
   { kind: 'protector_tension', modules: 4, label: 'Protector de tensión trifásico' },
   { kind: 'contactor', modules: 2, label: 'Contactor 2 módulos' },
@@ -115,7 +160,10 @@ export function parseImageStore(raw: string | null): PartImageStore {
         if (typeof id === 'string' && images[id]) slots[slot] = id;
       }
     }
-    return { images, slots };
+    const brands = Array.isArray((source as { brands?: unknown }).brands)
+      ? ((source as { brands: unknown[] }).brands.filter((name): name is string => typeof name === 'string' && name.trim().length > 0))
+      : undefined;
+    return { images, slots, ...(brands && brands.length > 0 ? { brands } : {}) };
   } catch {
     return emptyImageStore();
   }
@@ -137,36 +185,39 @@ export function writeImageStore(store: PartImageStore): void {
 }
 
 /** La foto de un casillero, si tiene. */
-export function slotImage(store: PartImageStore, kind: BoardPartKind, modules: number): string | undefined {
-  const id = store.slots[slotKey(kind, modules)];
+export function slotImage(store: PartImageStore, kind: BoardPartKind, modules: number, brand?: string, variant?: string): string | undefined {
+  const id = store.slots[slotKey(kind, modules, brand, variant)];
   return id ? store.images[id]?.dataUrl : undefined;
 }
 
-/** La foto que se usa para un aparato: la suya, o la de su casillero. */
+/**
+ * La foto que se usa para un aparato: la suya, o la de su casillero. Con marca, solo cuenta la foto
+ * de esa marca (si no la hay, se ve el dibujo); sin marca, la del casillero general.
+ */
 export function partImage(
   store: PartImageStore,
-  part: { kind: BoardPartKind; modules: number; imageId?: string }
+  part: { kind: BoardPartKind; modules: number; imageId?: string; brand?: string; surgeLayout?: string }
 ): string | undefined {
   if (part.imageId && store.images[part.imageId]) return store.images[part.imageId].dataUrl;
-  return slotImage(store, part.kind, part.modules);
+  return slotImage(store, part.kind, part.modules, part.brand, part.surgeLayout);
 }
 
 const toPhoto = (image: PartImage | undefined): PartPhoto | undefined =>
   image ? { id: image.id, href: image.dataUrl, width: image.width, height: image.height, fit: image.fit } : undefined;
 
 /** La foto de un casillero, con su tamaño y ajuste. */
-export function slotPhoto(store: PartImageStore, kind: BoardPartKind, modules: number): PartPhoto | undefined {
-  const id = store.slots[slotKey(kind, modules)];
+export function slotPhoto(store: PartImageStore, kind: BoardPartKind, modules: number, brand?: string, variant?: string): PartPhoto | undefined {
+  const id = store.slots[slotKey(kind, modules, brand, variant)];
   return id ? toPhoto(store.images[id]) : undefined;
 }
 
-/** La foto que se usa para un aparato: la suya, o la de su casillero. */
+/** La foto que se usa para un aparato: la suya, o la de su casillero (de su marca, si la tiene). */
 export function partPhoto(
   store: PartImageStore,
-  part: { kind: BoardPartKind; modules: number; imageId?: string }
+  part: { kind: BoardPartKind; modules: number; imageId?: string; brand?: string; surgeLayout?: string }
 ): PartPhoto | undefined {
   if (part.imageId && store.images[part.imageId]) return toPhoto(store.images[part.imageId]);
-  return slotPhoto(store, part.kind, part.modules);
+  return slotPhoto(store, part.kind, part.modules, part.brand, part.surgeLayout);
 }
 
 /**
@@ -175,14 +226,16 @@ export function partPhoto(
  */
 export function photosForBoards(
   store: PartImageStore,
-  boards: Array<{ parts: Array<{ kind: BoardPartKind; modules: number; imageId?: string }> } | undefined>
+  boards: Array<{ parts: Array<{ kind: BoardPartKind; modules: number; imageId?: string; brand?: string; surgeLayout?: string }> } | undefined>
 ): PartImageStore {
   const ids = new Set<string>();
   const slots: Record<string, string> = {};
+  const brands = new Set<string>();
   for (const board of boards) {
     for (const part of board?.parts ?? []) {
       if (part.imageId && store.images[part.imageId]) ids.add(part.imageId);
-      const key = slotKey(part.kind, part.modules);
+      if (part.brand && (store.brands ?? []).some((name) => norm(name) === norm(part.brand as string))) brands.add(part.brand);
+      const key = slotKey(part.kind, part.modules, part.brand, part.surgeLayout);
       if (store.slots[key]) {
         slots[key] = store.slots[key];
         ids.add(store.slots[key]);
@@ -191,7 +244,7 @@ export function photosForBoards(
   }
   const images: Record<string, PartImage> = {};
   for (const id of ids) if (store.images[id]) images[id] = store.images[id];
-  return { images, slots };
+  return { images, slots, ...(brands.size > 0 ? { brands: [...brands] } : {}) };
 }
 
 /** Suma las fotos de un proyecto abierto a las del equipo: no pisa ninguna foto ni casillero que ya esté. */
@@ -199,8 +252,11 @@ export function mergeImageStores(local: PartImageStore, incoming: PartImageStore
   const images = { ...incoming.images, ...local.images };
   const slots = { ...local.slots };
   for (const [slot, id] of Object.entries(incoming.slots)) if (!slots[slot] && images[id]) slots[slot] = id;
-  return { images, slots };
+  const merged = addBrands(local, incoming.brands ?? []);
+  return { images, slots, ...(merged.brands ? { brands: merged.brands } : {}) };
 }
+
+const addBrands = (store: PartImageStore, names: string[]): PartImageStore => names.reduce((current, name) => addBrand(current, name), store);
 
 /** Cambia cómo se acomoda una foto dentro de la caja del aparato. */
 export function setImageFit(store: PartImageStore, imageId: string, fit: Partial<PhotoFit>): PartImageStore {
@@ -221,10 +277,11 @@ export function addImage(
 }
 
 /** Asigna (o con `null`, quita) la foto de un casillero. */
-export function assignSlot(store: PartImageStore, kind: BoardPartKind, modules: number, imageId: string | null): PartImageStore {
+export function assignSlot(store: PartImageStore, kind: BoardPartKind, modules: number, imageId: string | null, brand?: string, variant?: string): PartImageStore {
   const slots = { ...store.slots };
-  if (imageId && store.images[imageId]) slots[slotKey(kind, modules)] = imageId;
-  else delete slots[slotKey(kind, modules)];
+  const key = slotKey(kind, modules, brand, variant);
+  if (imageId && store.images[imageId]) slots[key] = imageId;
+  else delete slots[key];
   return { ...store, slots };
 }
 
@@ -233,7 +290,7 @@ export function removeImage(store: PartImageStore, imageId: string): PartImageSt
   const images = { ...store.images };
   delete images[imageId];
   const slots = Object.fromEntries(Object.entries(store.slots).filter(([, id]) => id !== imageId));
-  return { images, slots };
+  return { ...store, images, slots };
 }
 
 /** Las fotos que ningún casillero ni aparato usa, para no acumular las reemplazadas. */

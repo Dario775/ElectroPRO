@@ -48,7 +48,7 @@ test('los bornes dependen del tipo, los polos y la fase', () => {
   const part = { id: 'p', kind: 'termica', x: 100, y: 200, modules: 2, label: 'T', poles: '2P', phase: 'L2' };
   const terminals = b.partTerminals(part);
   assert.equal(terminals.length, 4);
-  assert.deepEqual(terminals.filter((t) => t.side === 'top').map((t) => t.role), ['L2', 'N']);
+  assert.deepEqual(terminals.filter((t) => t.side === 'top').map((t) => t.role), ['N', 'L2']);
   assert.equal(terminals.find((t) => t.index === 0 && t.side === 'top').x, 100 + MODULE / 2);
 
   // Una bornera de barra recibe cables por los dos lados: dos agujeros por módulo, arriba y abajo.

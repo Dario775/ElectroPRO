@@ -18,6 +18,7 @@ import {
 } from '../../services/partImages';
 import { DEVICE_H, DeviceArt, DeviceDefs, MODULE_W } from './deviceArt';
 import { Button } from '../ui/Button';
+import { BrandSelect } from './BrandSelect';
 import { PhotoFitDialog } from './PhotoFitDialog';
 
 interface PartPhotoSlotsProps {
@@ -30,6 +31,8 @@ interface PartPhotoSlotsProps {
 export const PartPhotoSlots: React.FC<PartPhotoSlotsProps> = ({ onChange, keepImageIds = [] }) => {
   const [error, setError] = useState('');
   const [fitting, setFitting] = useState<{ imageId: string; preset: SlotPreset } | null>(null);
+  // Las fotos se cargan por marca: «sin marca» es la foto general de cada aparato.
+  const [brand, setBrand] = useState<string | undefined>(undefined);
   const picking = useRef<SlotPreset | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const store = readImageStore();
@@ -48,7 +51,7 @@ export const PartPhotoSlots: React.FC<PartPhotoSlotsProps> = ({ onChange, keepIm
       const { name, dataUrl, width, height } = await fileToPartImage(file);
       const current = readImageStore();
       const added = addImage(current, name, dataUrl, { width, height });
-      let next = assignSlot(added.store, preset.kind, preset.modules, added.id);
+      let next = assignSlot(added.store, preset.kind, preset.modules, added.id, brand, preset.variant);
       // La foto que reemplaza se borra si ya nadie la usa.
       for (const id of unusedImageIds(next, keepImageIds)) next = removeImage(next, id);
       writeImageStore(next);
@@ -60,7 +63,7 @@ export const PartPhotoSlots: React.FC<PartPhotoSlotsProps> = ({ onChange, keepIm
   };
 
   const clear = (preset: SlotPreset): void => {
-    let next = assignSlot(readImageStore(), preset.kind, preset.modules, null);
+    let next = assignSlot(readImageStore(), preset.kind, preset.modules, null, brand, preset.variant);
     for (const id of unusedImageIds(next, keepImageIds)) next = removeImage(next, id);
     writeImageStore(next);
     onChange();
@@ -78,6 +81,15 @@ export const PartPhotoSlots: React.FC<PartPhotoSlotsProps> = ({ onChange, keepIm
         {` ${MODULE_W / 2} mm por cada medio módulo — `}y reemplaza al dibujo en el frente y en el editor. Las fotos quedan guardadas en
         este equipo.
       </p>
+      <div className="max-w-sm space-y-1">
+        <p className="text-xs font-bold uppercase tracking-wide text-muted">Marca de las fotos</p>
+        <BrandSelect value={brand} onChange={setBrand} generalLabel="Sin marca (foto general)" ariaLabel="Marca de las fotos" />
+        <p className="text-xs leading-relaxed text-muted">
+          {brand
+            ? `Estas son las fotos de ${brand}. Un aparato de esa marca muestra su foto; si no tiene, se ve el dibujo.`
+            : 'La foto general la usan los aparatos que no tienen marca elegida.'}
+        </p>
+      </div>
       <input
         ref={input}
         type="file"
@@ -98,16 +110,16 @@ export const PartPhotoSlots: React.FC<PartPhotoSlotsProps> = ({ onChange, keepIm
       />
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
         {SLOT_PRESETS.map((preset) => {
-          const photo = slotPhoto(store, preset.kind, preset.modules);
+          const photo = slotPhoto(store, preset.kind, preset.modules, brand, preset.variant);
           const width = preset.modules * MODULE_W;
           return (
-            <div key={`${preset.kind}-${preset.modules}`} className="flex flex-col items-center gap-1.5 rounded-xl border border-hairline bg-sunken p-2">
+            <div key={`${preset.kind}-${preset.variant ?? ''}-${preset.modules}-${brand ?? ''}`} className="flex flex-col items-center gap-1.5 rounded-xl border border-hairline bg-sunken p-2">
               <div className="flex h-24 w-full items-center justify-center overflow-hidden rounded-lg bg-surface">
                 {photo ? (
                   <img src={photo.href} alt={preset.label} className="h-full max-w-full object-contain" />
                 ) : (
                   <svg viewBox={`0 0 ${width} ${DEVICE_H}`} className="h-full max-w-full opacity-60" aria-hidden="true">
-                    <DeviceArt kind={preset.kind} modules={preset.modules} amps={20} curve="C" sensitivityMa={30} />
+                    <DeviceArt kind={preset.kind} modules={preset.modules} amps={20} curve="C" sensitivityMa={30} surgeLayout={preset.variant === 'neutro-arriba' ? 'neutro-arriba' : undefined} />
                   </svg>
                 )}
               </div>
