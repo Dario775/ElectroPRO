@@ -8,6 +8,7 @@ import { NumberField, SegmentedControl, SelectField, TextField } from './ui/Form
 import { Modal } from './ui/Modal';
 import { PriceImportModal } from './PriceImportModal';
 import { PhotoSlotCard } from './panel/PartPhotoSlots';
+import { CATEGORY_OPTIONS, TYPE_OPTIONS, UNIT_OPTIONS } from '../utils/budgetLabels';
 import { presetForSpec } from '../services/partImages';
 import { allPartImageIds } from '../services/partImageUsage';
 import { SPEC_KINDS, inferSpec, isStalePrice, priceAgeDays, salePrice, specOf, stockStatus, type ProductSpec } from '../utils/productSpec';
@@ -27,37 +28,16 @@ export interface MaterialCatalogModalProps {
   onClose?: () => void;
   /** Inserta el producto en el presupuesto activo. Sin esto, la lista no ofrece «Agregar». */
   onAddToBudget?: (material: CatalogMaterial) => void;
+  /**
+   * Solo para elegir: no deja crear, editar, borrar ni importar productos. Esa administración es solo del
+   * módulo Materiales, para que haya un único lugar donde se cargan.
+   */
+  picker?: boolean;
+  /** Abre el módulo Materiales (en el modo `picker`). */
+  onManage?: () => void;
   /** Formatea el precio del catálogo en la moneda que esté seleccionada. */
   formatPrice: (amount: number) => string;
 }
-
-const CATEGORY_OPTIONS: Array<{ value: CatalogItemInput['category']; label: string }> = [
-  { value: 'protecciones', label: 'Protecciones' },
-  { value: 'tableros', label: 'Tableros y gabinetes' },
-  { value: 'cableado', label: 'Cableado y canalización' },
-  { value: 'puesta_a_tierra', label: 'Puesta a tierra' },
-  { value: 'iluminacion_tomas', label: 'Iluminación y tomas' },
-  { value: 'mano_de_obra', label: 'Mano de obra' },
-  { value: 'certificacion', label: 'Certificación y trámites' },
-];
-
-const TYPE_OPTIONS: Array<{ value: CatalogItemInput['type']; label: string }> = [
-  { value: 'material', label: 'Material' },
-  { value: 'equipo', label: 'Equipo' },
-  { value: 'mano_de_obra', label: 'Mano de obra' },
-  { value: 'tramite', label: 'Trámite o gestión' },
-];
-
-const UNIT_OPTIONS: Array<{ value: CatalogItemInput['unit']; label: string }> = [
-  { value: 'ud', label: 'Unidad (ud)' },
-  { value: 'm', label: 'Metro (m)' },
-  { value: 'rollo', label: 'Rollo' },
-  { value: 'kit', label: 'Kit' },
-  { value: 'gl', label: 'Global (gl)' },
-  { value: 'hora', label: 'Hora' },
-  { value: 'dia', label: 'Día' },
-  { value: 'servicio', label: 'Servicio' },
-];
 
 const POLE_OPTIONS = [
   { value: '', label: 'Sin dato' },
@@ -84,6 +64,8 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
   isOpen = true,
   onClose = () => undefined,
   onAddToBudget,
+  picker = false,
+  onManage,
   formatPrice,
 }) => {
   const isPage = variant === 'page';
@@ -243,7 +225,19 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
 
   const customCount = CatalogService.countCustom(items);
 
-  const footerNode = (
+  const footerNode = picker ? (
+          <>
+            <p className="flex-1 text-xs text-muted">Los productos se cargan, editan y borran en el módulo Materiales.</p>
+            {onManage && (
+              <Button variant="secondary" onClick={onManage}>
+                Ir a Materiales
+              </Button>
+            )}
+            <Button variant="secondary" onClick={onClose}>
+              Cerrar
+            </Button>
+          </>
+  ) : (
           <>
             <Button variant="ghost" size="sm" icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={handleReset}>
               Restaurar catálogo de fábrica
@@ -280,7 +274,7 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
   const bodyNode = (
         <div className="space-y-4">
           {/* Secciones: productos y marcas */}
-          <SegmentedControl
+          {!picker && <SegmentedControl
             ariaLabel="Secciones del catálogo"
             value={section}
             onChange={setSection}
@@ -288,7 +282,7 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
               { value: 'productos', label: `Productos (${items.length})`, icon: <Package className="h-3.5 w-3.5" /> },
               { value: 'marcas', label: `Marcas (${brands.length})`, icon: <Tag className="h-3.5 w-3.5" /> },
             ]}
-          />
+          />}
 
           {section === 'productos' ? (
             <>
@@ -385,17 +379,21 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
                     <span className="text-xs text-faint">por {item.unit}</span>
                   </div>
 
-                  <IconButton label={`Editar ${item.description}`} variant="ghost" size="sm" onClick={() => openEdit(item)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </IconButton>
-                  <IconButton
-                    label={`Borrar ${item.description}`}
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setConfirmDelete(item)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </IconButton>
+                  {!picker && (
+                    <>
+                      <IconButton label={`Editar ${item.description}`} variant="ghost" size="sm" onClick={() => openEdit(item)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </IconButton>
+                      <IconButton
+                        label={`Borrar ${item.description}`}
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setConfirmDelete(item)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </IconButton>
+                    </>
+                  )}
                   {onAddToBudget && (
                     <Button
                       variant="primary"
@@ -487,7 +485,7 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
           isOpen={isOpen}
           onClose={onClose}
           title="Catálogo de productos"
-          description="Agregá productos al presupuesto con un clic. Podés corregir precios, dar de alta los que uses y borrar los que no. Todo se guarda en este equipo."
+          description={picker ? 'Elegí un producto de Materiales para agregarlo al presupuesto con su precio.' : 'Agregá productos al presupuesto con un clic. Podés corregir precios, dar de alta los que uses y borrar los que no. Todo se guarda en este equipo.'}
           icon={<Package className="h-4 w-4" />}
           size="xl"
           footer={footerNode}

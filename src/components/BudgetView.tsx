@@ -49,6 +49,8 @@ import { useCurrency } from '../context/CurrencyContext';
 import { BudgetGeneratorService, CatalogMaterial, CATALOG_CURRENCY } from '../services/budgetGeneratorService';
 import { generateBudgetPDF } from '../services/budgetPdfService';
 import { CatalogService } from '../services/catalogService';
+import { CATEGORY_OPTIONS, TYPE_OPTIONS, UNIT_OPTIONS } from '../utils/budgetLabels';
+import { budgetTotals } from '../utils/budgetTotals';
 import { boardBudgetItems, hasBoardItems, syncBoardItems } from '../utils/boardBudget';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Card';
@@ -83,7 +85,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
     if (client.budget && client.budget.items && client.budget.items.length > 0) {
       return [client.budget];
     }
-    const defaultBudget = BudgetGeneratorService.generateBudgetFromProject(client);
+    const defaultBudget = BudgetGeneratorService.generateBudgetFromProject(client, { catalog: CatalogService.getItems() });
     return [defaultBudget];
   }, [client]);
 
@@ -173,6 +175,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
         title: newBudgetTitle.trim() || defaultTitle,
         scope: newBudgetScope,
         usdToArsRate,
+        catalog: CatalogService.getItems(),
       });
     }
 
@@ -281,6 +284,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
     const freshBudget = BudgetGeneratorService.generateBudgetFromProject(client, {
       title: currentBudget.title,
       usdToArsRate,
+      catalog: CatalogService.getItems(),
     });
     const regenerated: ProjectBudget = {
       ...freshBudget,
@@ -313,45 +317,14 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
 
   // Financial calculations
   const totals = useMemo(() => {
-    const grossTotal = currentBudget.items.reduce((acc, item) => {
-      const markupFactor = 1 + (item.markupPercent || 0) / 100;
-      return acc + item.quantity * item.unitPrice * markupFactor;
-    }, 0);
-
-    const materialsTotal = currentBudget.items
-      .filter((i) => i.type === 'material')
-      .reduce((acc, item) => {
-        const markupFactor = 1 + (item.markupPercent || 0) / 100;
-        return acc + item.quantity * item.unitPrice * markupFactor;
-      }, 0);
-
-    const laborTotal = currentBudget.items
-      .filter((i) => i.type === 'mano_de_obra' || i.type === 'tramite' || i.type === 'equipo')
-      .reduce((acc, item) => {
-        const markupFactor = 1 + (item.markupPercent || 0) / 100;
-        return acc + item.quantity * item.unitPrice * markupFactor;
-      }, 0);
-
-    const discountAmount = currentBudget.discountAmount
-      ? currentBudget.discountAmount
-      : currentBudget.discountPercent
-      ? (grossTotal * currentBudget.discountPercent) / 100
-      : 0;
-
-    const baseAfterDiscount = Math.max(0, grossTotal - discountAmount);
-    const taxAmount = currentBudget.applyTax
-      ? (baseAfterDiscount * (currentBudget.taxPercent || 0)) / 100
-      : 0;
-
-    const grandTotal = baseAfterDiscount + taxAmount;
-
+    const sums = budgetTotals(currentBudget);
     return {
-      grossTotal,
-      materialsTotal,
-      laborTotal,
-      discountAmount,
-      taxAmount,
-      grandTotal,
+      grossTotal: sums.gross,
+      materialsTotal: sums.materials,
+      laborTotal: sums.labor,
+      discountAmount: sums.discount,
+      taxAmount: sums.tax,
+      grandTotal: sums.grand,
       materialsCount: currentBudget.items.filter((i) => i.type === 'material').length,
       laborCount: currentBudget.items.filter((i) => i.type !== 'material').length,
     };
@@ -1149,13 +1122,11 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
               className="px-2.5 py-1.5 rounded-xl bg-sunken border border-edge text-xs font-semibold text-strong focus:border-accent focus:outline-none"
             >
               <option value="all">Todas las Categorías</option>
-              <option value="protecciones">Protecciones (Térmicas/Diferenciales)</option>
-              <option value="tableros">Tableros y Gabinetes</option>
-              <option value="puesta_a_tierra">Puesta a Tierra</option>
-              <option value="cableado">Cableado y Canalización</option>
-              <option value="iluminacion_tomas">Iluminación y Tomas</option>
-              <option value="mano_de_obra">Mano de Obra</option>
-              <option value="certificacion">Certificación y Ensayos</option>
+              {CATEGORY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
 
             {/* Type Filter */}
@@ -1575,10 +1546,12 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
       </div>
       </Collapsible>
 
-      {/* 6. Catálogo de productos del presupuesto (con alta, edición y borrado) */}
+      {/* 6. Catálogo de productos: acá solo se elige; se administra en el módulo Materiales */}
       <MaterialCatalogModal
+        picker
         isOpen={isCatalogModalOpen}
         onClose={() => setIsCatalogModalOpen(false)}
+        onManage={onNavigateToMaterials ? () => { setIsCatalogModalOpen(false); onNavigateToMaterials(); } : undefined}
         onAddToBudget={handleAddFromCatalog}
         formatPrice={(amount) => format(amount, CATALOG_CURRENCY)}
       />
@@ -1697,13 +1670,11 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                     }
                     className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                   >
-                    <option value="protecciones">Protecciones Eléctricas</option>
-                    <option value="tableros">Tableros y Gabinetes</option>
-                    <option value="puesta_a_tierra">Puesta a Tierra (P.A.T.)</option>
-                    <option value="cableado">Cableado y Canalización</option>
-                    <option value="iluminacion_tomas">Iluminación y Tomas</option>
-                    <option value="mano_de_obra">Mano de Obra y Montaje</option>
-                    <option value="certificacion">Certificación y Trámites</option>
+                    {CATEGORY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -1719,10 +1690,11 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                     }
                     className="w-full px-3 py-2 rounded-xl bg-sunken border border-edge text-strong focus:border-accent focus:outline-none"
                   >
-                    <option value="material">Material / Suministro Físico</option>
-                    <option value="mano_de_obra">Mano de Obra Profesional</option>
-                    <option value="tramite">Gestión / Protocolo / Certificación</option>
-                    <option value="equipo">Alquiler de Instrumental / Equipo</option>
+                    {TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -1746,13 +1718,11 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
                       }
                       className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-edge text-strong"
                     >
-                      <option value="ud">Unidad (ud)</option>
-                      <option value="m">Metros (m)</option>
-                      <option value="rollo">Rollo</option>
-                      <option value="kit">Kit / Juego</option>
-                      <option value="gl">Global (gl)</option>
-                      <option value="hora">Horas (h)</option>
-                      <option value="servicio">Servicio</option>
+                      {UNIT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
 

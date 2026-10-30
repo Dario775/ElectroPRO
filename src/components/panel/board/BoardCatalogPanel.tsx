@@ -92,7 +92,7 @@ export const BoardCatalogPanel: React.FC<BoardCatalogPanelProps> = ({ onAdd, onA
         <div className="rounded-xl border border-hairline bg-sunken p-2.5">
           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Marca de los aparatos</p>
           <BrandSelect value={brand} onChange={onBrandChange} generalLabel="Sin marca" ariaLabel="Marca de los aparatos nuevos" />
-          <p className="mt-1.5 text-xs leading-snug text-muted">Los que agregues salen con esta marca y su foto, si la cargaste.</p>
+          <p className="mt-1.5 text-xs leading-snug text-muted">Los que agregues salen con esta marca y su foto, si la cargaste. Las marcas y las fotos se administran en Materiales.</p>
         </div>
       )}
 

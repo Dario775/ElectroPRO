@@ -3,6 +3,7 @@ import autoTable, { type CellHookData, type RowInput, type UserOptions } from 'j
 import { ClientRecord, ProjectBudget, TechnicianProfile, SupportedCurrency } from '../types/electrical';
 import { formatCurrency } from '../utils/electricalMath';
 import { LEGAL_NOTICE_SHORT } from '../utils/legalNotice';
+import { budgetTotals } from '../utils/budgetTotals';
 
 /**
  * Generador del PDF de presupuesto.
@@ -315,26 +316,14 @@ function createContext(
     };
   });
 
-  const sumItems = (predicate: (type: string) => boolean): number =>
-    budget.items.reduce((acc, item) => {
-      if (!predicate(item.type)) return acc;
-      return acc + item.quantity * item.unitPrice * (1 + (item.markupPercent || 0) / 100) * factor;
-    }, 0);
-
-  const gross = sumItems(() => true);
-  const materials = sumItems((type) => type === 'material');
-  // La app agrupa mano de obra, equipos y trámites en un mismo subtotal; aquí
-  // se respeta ese criterio para que el PDF y la pantalla no se contradigan.
+  // Los totales salen de la misma cuenta que la pantalla; acá solo se pasan a la moneda del documento.
+  const sums = budgetTotals(budget);
+  const gross = sums.gross * factor;
+  const materials = sums.materials * factor;
   const labor = gross - materials;
-
-  const discount = budget.discountAmount
-    ? budget.discountAmount * factor
-    : budget.discountPercent
-    ? (gross * budget.discountPercent) / 100
-    : 0;
-
+  const discount = sums.discount * factor;
   const baseAfterDiscount = Math.max(0, gross - discount);
-  const tax = budget.applyTax ? (baseAfterDiscount * (budget.taxPercent || 0)) / 100 : 0;
+  const tax = sums.tax * factor;
 
   const summaryRows: SummaryRow[] = [
     { label: 'Subtotal Materiales', value: materials, kind: 'normal' },

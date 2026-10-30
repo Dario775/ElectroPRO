@@ -1,8 +1,5 @@
-import {
-  BudgetCategory,
-  BudgetItemType,
-} from '../types/electrical';
-import { CatalogMaterial, DEFAULT_MATERIALS_CATALOG } from './budgetGeneratorService';
+import type { BudgetCategory, BudgetItemType } from '../types/electrical';
+import { DEFAULT_MATERIALS_CATALOG, type CatalogMaterial } from './budgetGeneratorService';
 import { kvGet, kvSet } from './kvStore';
 import { inferSpec, salePrice, type ProductSpec } from '../utils/productSpec';
 import type { PriceChange } from '../utils/catalogImport';

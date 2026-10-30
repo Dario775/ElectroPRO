@@ -9,6 +9,7 @@ import type {
 
 import { convertCurrency, readStoredUsdArsRate } from '../utils/electricalMath';
 import type { ProductSpec } from '../utils/productSpec';
+import { linkGeneratedItems } from '../utils/budgetCatalog';
 
 export interface CatalogMaterial {
   id: string;
@@ -1039,6 +1040,8 @@ export const BudgetGeneratorService = {
       scope?: 'integral' | 'tableros' | 'seguridad';
       /** Cotización dólar-peso para clientes en dólares; sin valor, la guardada. */
       usdToArsRate?: number;
+      /** Productos del módulo Materiales: los rubros generados toman de ahí su precio y su marca. */
+      catalog?: CatalogMaterial[];
     }
   ): ProjectBudget {
     const items: BudgetItem[] = [];
@@ -1341,6 +1344,8 @@ export const BudgetGeneratorService = {
         : scope === 'seguridad'
         ? `Plan de Seguridad Eléctrica y P.A.T. • ${client.clientName}`
         : `Adecuación y Optimización Eléctrica Integral • ${client.clientName}`;
+
+    if (options?.catalog) finalItems = linkGeneratedItems(finalItems, options.catalog);
 
     // Los precios de acá están en pesos: un cliente en dólares los recibe convertidos.
     const rate = options?.usdToArsRate ?? readStoredUsdArsRate();

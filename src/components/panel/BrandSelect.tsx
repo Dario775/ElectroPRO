@@ -1,10 +1,9 @@
 /**
- * Selector de marca de un aparato: las marcas conocidas, las que se agregaron y «Otra marca…» para
- * sumar una nueva. Con la marca elegida el tablero muestra la foto de esa marca.
+ * Selector de marca de un aparato: las marcas del catálogo de Materiales, donde se crean y administran.
+ * Con la marca elegida el tablero muestra la foto de esa marca.
  */
-import React, { useState } from 'react';
-import { addBrand, allBrands, readImageStore, writeImageStore } from '../../services/partImages';
-import { Button } from '../ui/Button';
+import React from 'react';
+import { brandNames } from '../../services/brandList';
 
 interface BrandSelectProps {
   value: string | undefined;
@@ -16,32 +15,17 @@ interface BrandSelectProps {
   className?: string;
 }
 
-const NEW = '__nueva__';
 const FIELD = 'h-9 w-full rounded-lg border border-field-line bg-sunken px-2 text-sm text-strong';
 
 export const BrandSelect: React.FC<BrandSelectProps> = ({ value, onChange, generalLabel = 'Sin marca (general)', ariaLabel = 'Marca', className }) => {
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState('');
-  const brands = allBrands(readImageStore(), [value]);
-
-  const confirm = (): void => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    writeImageStore(addBrand(readImageStore(), trimmed));
-    onChange(allBrands(readImageStore()).find((brand) => brand.toLowerCase() === trimmed.toLowerCase()) ?? trimmed);
-    setAdding(false);
-    setName('');
-  };
+  const brands = brandNames([value]);
 
   return (
     <div className={className}>
       <select
         aria-label={ariaLabel}
         value={value ?? ''}
-        onChange={(event) => {
-          if (event.target.value === NEW) setAdding(true);
-          else onChange(event.target.value || undefined);
-        }}
+        onChange={(event) => onChange(event.target.value || undefined)}
         className={FIELD}
       >
         <option value="">{generalLabel}</option>
@@ -50,26 +34,7 @@ export const BrandSelect: React.FC<BrandSelectProps> = ({ value, onChange, gener
             {brand}
           </option>
         ))}
-        <option value={NEW}>Otra marca…</option>
       </select>
-      {adding && (
-        <div className="mt-1.5 flex gap-1.5">
-          <input
-            autoFocus
-            value={name}
-            placeholder="Nombre de la marca"
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') confirm();
-              if (event.key === 'Escape') setAdding(false);
-            }}
-            className={FIELD}
-          />
-          <Button size="sm" onClick={confirm}>
-            Agregar
-          </Button>
-        </div>
-      )}
     </div>
   );
 };

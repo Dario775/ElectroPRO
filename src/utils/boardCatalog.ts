@@ -2,6 +2,7 @@
  * Aparatos que se ofrecen en el editor de tableros y cómo se describe cada uno.
  */
 import type { BoardAccessory, BoardPart, BoardPartKind, BoardWireRole } from '../types/electrical';
+import { IEC_BREAKERS } from './aea';
 import type { PartSpec } from './boardLayout';
 
 /** Un accesorio suelto, sin posición: se ubica al agregarlo. */
@@ -97,7 +98,8 @@ export const ferruleColor = (section: number | undefined): string => FERRULE_COL
 export const TERMINAL_BLOCK_ROLES: BoardWireRole[] = ['L1', 'L2', 'L3', 'N', 'PE'];
 
 /** Amperes que se ofrecen para las térmicas, los diferenciales y los cortes. */
-export const AMP_OPTIONS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100];
+/** Corrientes de los aparatos modulares: las comerciales de la norma, hasta 125 A. */
+export const AMP_OPTIONS = IEC_BREAKERS.filter((amps) => amps <= 125);
 export const CURVE_OPTIONS = ['B', 'C', 'D'];
 export const SENSITIVITY_OPTIONS = [30, 100, 300];
 export const PHASE_OPTIONS = ['L1', 'L2', 'L3', 'L1-L2', 'L2-L3', 'L3-L1', '3F'];

@@ -1,6 +1,7 @@
 import type { ClientRecord, TechnicianProfile, ApplianceLoad } from '../types/electrical';
 import { kvGet, kvSet } from './kvStore';
 import { BudgetGeneratorService } from './budgetGeneratorService';
+import { CatalogService } from './catalogService';
 import { normalizeClient } from '../utils/supplies';
 
 const STORAGE_KEY_CLIENTS = 'electropro_clients_v1';
@@ -1040,7 +1041,7 @@ function migrateClient(c: ClientRecord): ClientRecord {
     const initialBudget =
       updatedClient.budget && updatedClient.budget.items && updatedClient.budget.items.length > 0
         ? updatedClient.budget
-        : BudgetGeneratorService.generateBudgetFromProject(updatedClient);
+        : BudgetGeneratorService.generateBudgetFromProject(updatedClient, { catalog: CatalogService.getItems() });
     updatedClient = {
       ...updatedClient,
       budget: initialBudget,

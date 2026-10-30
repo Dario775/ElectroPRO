@@ -20,6 +20,7 @@ import { Button } from './ui/Button';
 import { Callout, SectionHeader } from './ui/Card';
 import { Collapsible } from './ui/Collapsible';
 import { describeSupply, getSupplies } from '../utils/supplies';
+import { budgetTotals } from '../utils/budgetTotals';
 
 interface ReportPreviewProps {
   client: ClientRecord;
@@ -514,12 +515,9 @@ export const ReportPreview: React.FC<ReportPreviewProps> = ({ client, technician
                 </div>
                 <div className="text-right">
                   <span className="text-sm font-bold font-mono text-success-text">
-                    {format(
-                      client.budget.items.reduce((acc, i) => acc + i.quantity * i.unitPrice * (1 + (i.markupPercent || 0)/100), 0),
-                      client.currency
-                    )}
+                    {format(budgetTotals(client.budget).grand, client.currency)}
                   </span>
-                  <span className="text-xs text-muted block">Total Estimado de Obra</span>
+                  <span className="text-xs text-muted block">Total del presupuesto</span>
                 </div>
               </div>
 

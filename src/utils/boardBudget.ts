@@ -19,7 +19,7 @@ import type {
   ElectricalCircuit,
   ProjectBudget,
 } from '../types/electrical';
-import { combRoles } from './boardCatalog';
+import { AMP_OPTIONS, combRoles } from './boardCatalog';
 import { hasBoard } from './boardSync';
 import { MODULE_W } from '../components/panel/deviceMetrics';
 
@@ -73,7 +73,7 @@ export interface BoardMaterials {
 
 /** Un módulo DIN mide 17,5 mm y 30 unidades del dibujo. */
 /** Corrientes que se venden, para ponerle precio a una térmica de una corriente que no se encuentra. */
-const STANDARD_AMPS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125];
+const STANDARD_AMPS = AMP_OPTIONS;
 const MM_PER_UNIT = 17.5 / MODULE_W;
 /** Desperdicio de cable de tablero (cortes, sobrantes y curvas que el dibujo no cuenta). */
 const WIRE_WASTE = 1.15;
