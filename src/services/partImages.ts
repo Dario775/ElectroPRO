@@ -67,6 +67,10 @@ export const slotKey = (kind: BoardPartKind, modules: number, brand?: string, va
   return slug ? `${base}:${modules}:${slug}` : `${base}:${modules}`;
 };
 
+/** La variante de un aparato que cambia su aspecto y sus bornes (y por eso tiene su propia foto). */
+export const partVariant = (part: { surgeLayout?: string; feed?: string; distLayout?: string }): string | undefined =>
+  part.surgeLayout ?? (part.distLayout === 'barras' ? 'barras' : part.feed === 'arriba' ? 'entrada-arriba' : undefined);
+
 /** Las marcas que se ofrecen: las conocidas y las que se agregaron, sin repetir. */
 export function allBrands(store: PartImageStore, extra: Array<string | undefined> = []): string[] {
   const seen = new Set<string>();
@@ -118,6 +122,9 @@ export const SLOT_PRESETS: SlotPreset[] = [
   { kind: 'guardamotor', modules: 3, label: 'Guardamotor trifásico' },
   { kind: 'rele_termico', modules: 2, label: 'Relé térmico monofásico' },
   { kind: 'rele_termico', modules: 3, label: 'Relé térmico trifásico' },
+  { kind: 'distribuidor', modules: 4, label: 'Distribuidor 4P 63 A (entra por abajo)' },
+  { kind: 'distribuidor', modules: 4, label: 'Distribuidor 4P 63 A (entra por arriba)', variant: 'entrada-arriba' },
+  { kind: 'distribuidor', modules: 6, label: 'Distribuidor de barras tetrapolar 4×7 (125 A)', variant: 'barras' },
   { kind: 'bornera_tierra', modules: 4, label: 'Bornera de tierra' },
   { kind: 'bornera_neutro', modules: 4, label: 'Bornera de neutro' },
   { kind: 'repartidor', modules: 6, label: 'Repartidor' },
@@ -196,10 +203,10 @@ export function slotImage(store: PartImageStore, kind: BoardPartKind, modules: n
  */
 export function partImage(
   store: PartImageStore,
-  part: { kind: BoardPartKind; modules: number; imageId?: string; brand?: string; surgeLayout?: string }
+  part: { kind: BoardPartKind; modules: number; imageId?: string; brand?: string; surgeLayout?: string; feed?: string; distLayout?: string }
 ): string | undefined {
   if (part.imageId && store.images[part.imageId]) return store.images[part.imageId].dataUrl;
-  return slotImage(store, part.kind, part.modules, part.brand, part.surgeLayout);
+  return slotImage(store, part.kind, part.modules, part.brand, partVariant(part));
 }
 
 const toPhoto = (image: PartImage | undefined): PartPhoto | undefined =>
@@ -214,10 +221,10 @@ export function slotPhoto(store: PartImageStore, kind: BoardPartKind, modules: n
 /** La foto que se usa para un aparato: la suya, o la de su casillero (de su marca, si la tiene). */
 export function partPhoto(
   store: PartImageStore,
-  part: { kind: BoardPartKind; modules: number; imageId?: string; brand?: string; surgeLayout?: string }
+  part: { kind: BoardPartKind; modules: number; imageId?: string; brand?: string; surgeLayout?: string; feed?: string; distLayout?: string }
 ): PartPhoto | undefined {
   if (part.imageId && store.images[part.imageId]) return toPhoto(store.images[part.imageId]);
-  return slotPhoto(store, part.kind, part.modules, part.brand, part.surgeLayout);
+  return slotPhoto(store, part.kind, part.modules, part.brand, partVariant(part));
 }
 
 /**
@@ -226,7 +233,7 @@ export function partPhoto(
  */
 export function photosForBoards(
   store: PartImageStore,
-  boards: Array<{ parts: Array<{ kind: BoardPartKind; modules: number; imageId?: string; brand?: string; surgeLayout?: string }> } | undefined>
+  boards: Array<{ parts: Array<{ kind: BoardPartKind; modules: number; imageId?: string; brand?: string; surgeLayout?: string; feed?: string; distLayout?: string }> } | undefined>
 ): PartImageStore {
   const ids = new Set<string>();
   const slots: Record<string, string> = {};
@@ -235,7 +242,7 @@ export function photosForBoards(
     for (const part of board?.parts ?? []) {
       if (part.imageId && store.images[part.imageId]) ids.add(part.imageId);
       if (part.brand && (store.brands ?? []).some((name) => norm(name) === norm(part.brand as string))) brands.add(part.brand);
-      const key = slotKey(part.kind, part.modules, part.brand, part.surgeLayout);
+      const key = slotKey(part.kind, part.modules, part.brand, partVariant(part));
       if (store.slots[key]) {
         slots[key] = store.slots[key];
         ids.add(store.slots[key]);

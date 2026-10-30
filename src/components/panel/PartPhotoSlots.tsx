@@ -119,7 +119,7 @@ export const PartPhotoSlots: React.FC<PartPhotoSlotsProps> = ({ onChange, keepIm
                   <img src={photo.href} alt={preset.label} className="h-full max-w-full object-contain" />
                 ) : (
                   <svg viewBox={`0 0 ${width} ${DEVICE_H}`} className="h-full max-w-full opacity-60" aria-hidden="true">
-                    <DeviceArt kind={preset.kind} modules={preset.modules} amps={20} curve="C" sensitivityMa={30} surgeLayout={preset.variant === 'neutro-arriba' ? 'neutro-arriba' : undefined} />
+                    <DeviceArt kind={preset.kind} modules={preset.modules} amps={20} curve="C" sensitivityMa={30} surgeLayout={preset.variant === 'neutro-arriba' ? 'neutro-arriba' : undefined} feed={preset.variant === 'entrada-arriba' ? 'arriba' : undefined} distLayout={preset.variant === 'barras' ? 'barras' : undefined} />
                   </svg>
                 )}
               </div>

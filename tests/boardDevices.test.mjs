@@ -108,3 +108,90 @@ test('el cableado automático toma el neutro del descargador de arriba de la lí
   const neutral = ends.find((w) => w.role === 'N');
   assert.equal(neutral.from.partId === surge.id ? neutral.to.partId : neutral.from.partId, wired.parts.find((p) => p.kind === 'termica').id);
 });
+
+// --- Distribuidor tetrapolar (Schneider Distribloc / Linergy DX 63 A) -----------
+
+const bySide = (part, side) => b.partTerminals(part).filter((t) => t.side === side);
+
+test('el distribuidor 4P de 63 A entra por abajo con N, L1, L2 y L3 y reparte por arriba', () => {
+  const { part } = place('distribuidor-63');
+  assert.equal(part.modules, 4);
+  assert.deepEqual(bySide(part, 'bottom').map((t) => t.role), ['N', 'L1', 'L2', 'L3']);
+  const outputs = bySide(part, 'top');
+  // el neutro ocupa la mitad del ancho y cada fase un sexto
+  // doce agujeros de neutro y cuatro por fase, como las fichas del Linergy DX de 63 A
+  assert.equal(outputs.filter((t) => t.role === 'N').length, 12);
+  for (const role of ['L1', 'L2', 'L3']) assert.equal(outputs.filter((t) => t.role === role).length, 4);
+  assert.ok(outputs.filter((t) => t.role === 'N').every((t) => t.x < part.x + 60));
+  assert.ok(outputs.filter((t) => t.role === 'L1').every((t) => t.x > part.x + 60 && t.x < part.x + 80));
+});
+
+test('el distribuidor que entra por arriba tiene la entrada arriba y las salidas abajo', () => {
+  const { part } = place('distribuidor-63-arriba');
+  assert.equal(part.feed, 'arriba');
+  assert.deepEqual(bySide(part, 'top').map((t) => t.role), ['N', 'L1', 'L2', 'L3']);
+  assert.equal(bySide(part, 'bottom').length, 24);
+});
+
+test('los cuatro agujeros de entrada quedan sobre los cuatro módulos', () => {
+  const { part } = place('distribuidor-63');
+  const xs = bySide(part, 'bottom').map((t) => t.x - part.x);
+  assert.deepEqual(xs, [15, 45, 75, 105]);
+});
+
+test('un distribuidor sin alimentar, o alimentado a medias, se avisa en la revisión', () => {
+  const first = place('termica-4p');
+  const second = place('distribuidor-63', first.board);
+  const feedN = bySide(second.part, 'bottom').find((t) => t.role === 'N');
+  const lineN = bySide(first.part, 'bottom').find((t) => t.role === 'N');
+  const wired = b.createWire(second.board, lineN, feedN, 'N');
+  const issue = reviewBoard(wired).find((i) => i.id === `distribuidor-${second.part.id}`);
+  assert.ok(issue);
+  assert.match(issue.message, /L1, L2, L3|fase/);
+});
+
+test('el cableado automático no le saca cables al lado de entrada de un distribuidor', () => {
+  const rows = [[{ key: 'entrada:termica', kind: 'termica', label: 'G', modules: 4, detail: '', poles: '3P+N', amps: 40 }]];
+  let board = b.boardFromFront(rows, 12);
+  board = b.addPart(board, entry('distribuidor-63').spec).board;
+  const wired = b.autoWire(board);
+  const dist = wired.parts.find((p) => p.kind === 'distribuidor');
+  assert.equal(wired.wires.filter((w) => w.from?.partId === dist.id || w.to?.partId === dist.id).length, 0);
+});
+
+test('cada fase del distribuidor tiene sus cuatro salidas utilizables, en dos filas de dos', () => {
+  const { part } = place('distribuidor-63');
+  const l1 = bySide(part, 'top').filter((t) => t.role === 'L1');
+  assert.equal(l1.length, 4);
+  assert.deepEqual([...new Set(l1.map((t) => t.y - part.y))].sort((a, b) => a - b), [6.5, 12.5]);
+  assert.equal(new Set(l1.map((t) => t.x)).size, 2);
+});
+
+// --- Distribuidor de barras tetrapolar 4×7 (125 A) -------------------------------
+
+test('el distribuidor de barras 4×7 tiene siete tornillos por polo, accesibles por arriba y por abajo', () => {
+  const { part } = place('distribuidor-125-4x7');
+  assert.equal(part.distLayout, 'barras');
+  assert.equal(part.amps, 125);
+  const top = bySide(part, 'top');
+  const bottom = bySide(part, 'bottom');
+  assert.equal(top.length, 28);
+  assert.equal(bottom.length, 28);
+  for (const role of ['N', 'L1', 'L2', 'L3']) assert.equal(top.filter((t) => t.role === role).length, 7, role);
+  // cada barra a su altura: no se pisan los polos
+  const rows = new Map(top.map((t) => [t.role, t.y - part.y]));
+  assert.equal(new Set(rows.values()).size, 4);
+});
+
+test('los cables al distribuidor de barras se pueden tender a cualquiera de sus tornillos, por los dos lados', () => {
+  const first = place('termica-4p');
+  const second = place('distribuidor-125-4x7', first.board);
+  const lineN = bySide(first.part, 'bottom').find((t) => t.role === 'N');
+  const bar = bySide(second.part, 'top').filter((t) => t.role === 'N');
+  let board = b.createWire(second.board, lineN, bar[0], 'N');
+  board = b.createWire(board, lineN, bar[1], 'N');
+  assert.equal(board.wires.length, 2);
+  assert.equal(b.terminalOf(board, board.wires[1].to).role, 'N');
+  // la revisión no le exige una entrada fija
+  assert.equal(reviewBoard(board).filter((i) => i.id.startsWith('distribuidor-')).length, 0);
+});

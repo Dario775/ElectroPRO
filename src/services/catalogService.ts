@@ -4,6 +4,7 @@ import {
 } from '../types/electrical';
 import { CatalogMaterial, DEFAULT_MATERIALS_CATALOG } from './budgetGeneratorService';
 import { kvGet, kvSet } from './kvStore';
+import { inferSpec, salePrice, type ProductSpec } from '../utils/productSpec';
 
 /**
  * Catálogo de productos editable y guardado en el equipo.
@@ -40,6 +41,44 @@ export interface CatalogItemInput {
   type: BudgetItemType;
   unit: CatalogMaterial['unit'];
   unitPrice: number;
+  sku?: string;
+  spec?: ProductSpec;
+  cost?: number;
+  marginPercent?: number;
+  stock?: number;
+  stockMin?: number;
+}
+
+const today = (): string => new Date().toISOString().slice(0, 10);
+
+/** Con costo y margen cargados, el precio de venta sale de ahí; si no, es el que se escribió. */
+const resolvedPrice = (input: CatalogItemInput): number =>
+  input.cost !== undefined && input.cost > 0 && input.marginPercent !== undefined ? salePrice(input.cost, input.marginPercent) : input.unitPrice;
+
+/** Los datos opcionales del producto, sin los vacíos. */
+function extras(input: CatalogItemInput): Partial<CatalogMaterial> {
+  const out: Partial<CatalogMaterial> = {};
+  const sku = input.sku?.trim();
+  if (sku) out.sku = sku;
+  if (input.spec) out.spec = input.spec;
+  if (input.cost !== undefined && input.cost > 0) out.cost = input.cost;
+  if (input.marginPercent !== undefined && input.cost !== undefined && input.cost > 0) out.marginPercent = input.marginPercent;
+  if (input.stock !== undefined) out.stock = input.stock;
+  if (input.stockMin !== undefined) out.stockMin = input.stockMin;
+  return out;
+}
+
+/** Completa los datos técnicos que faltan deduciéndolos de la descripción, sin pisar los cargados. */
+export function withInferredSpecs(items: CatalogMaterial[]): { items: CatalogMaterial[]; changed: boolean } {
+  let changed = false;
+  const next = items.map((item) => {
+    if (item.spec || item.type !== 'material') return item;
+    const spec = inferSpec(item.description);
+    if (!spec) return item;
+    changed = true;
+    return { ...item, spec };
+  });
+  return { items: changed ? next : items, changed };
 }
 
 function readStored(): CatalogMaterial[] | null {
@@ -94,8 +133,12 @@ export const CatalogService = {
   /** Catálogo completo: el guardado o, la primera vez, el de fábrica. */
   getItems(): CatalogMaterial[] {
     const stored = readStored();
-    if (stored && stored.length > 0) return stored;
-    const seed = factoryCatalog();
+    if (stored && stored.length > 0) {
+      const completed = withInferredSpecs(stored);
+      if (completed.changed) writeStored(completed.items);
+      return completed.items;
+    }
+    const seed = withInferredSpecs(factoryCatalog()).items;
     writeStored(seed);
     return seed;
   },
@@ -116,8 +159,10 @@ export const CatalogService = {
       category: input.category,
       type: input.type,
       unit: input.unit,
-      unitPrice: input.unitPrice,
+      unitPrice: resolvedPrice(input),
       custom: true,
+      priceUpdatedAt: today(),
+      ...extras(input),
     };
     // Si el producto trae una marca que no está en la lista, se incorpora: así
     // ninguna marca queda fuera del filtro.
@@ -129,21 +174,27 @@ export const CatalogService = {
   updateItem(id: string, input: CatalogItemInput): CatalogMaterial[] {
     const brand = input.brand?.trim() || undefined;
     if (brand) this.ensureBrand(brand);
+    const unitPrice = resolvedPrice(input);
     return this.saveItems(
-      this.getItems().map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              description: input.description.trim(),
-              detail: input.detail.trim(),
-              brand,
-              category: input.category,
-              type: input.type,
-              unit: input.unit,
-              unitPrice: input.unitPrice,
-            }
-          : item
-      )
+      this.getItems().map((item) => {
+        if (item.id !== id) return item;
+        const priceChanged = unitPrice !== item.unitPrice || (input.cost ?? 0) !== (item.cost ?? 0);
+        // Lo opcional se reemplaza entero: lo que se vació en el formulario se borra del producto.
+        const { sku, spec, cost, marginPercent, stock, stockMin, ...base } = item;
+        void sku; void spec; void cost; void marginPercent; void stock; void stockMin;
+        return {
+          ...base,
+          description: input.description.trim(),
+          detail: input.detail.trim(),
+          brand,
+          category: input.category,
+          type: input.type,
+          unit: input.unit,
+          unitPrice,
+          priceUpdatedAt: priceChanged ? today() : item.priceUpdatedAt,
+          ...extras(input),
+        };
+      })
     );
   },
 

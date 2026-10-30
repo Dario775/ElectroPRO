@@ -159,3 +159,80 @@ test('borrar un conector borra su cable', () => {
   assert.ok(wired.wires.some((w) => w.to?.partId === accessory.id));
   assert.ok(!b.removeAccessory(wired, accessory.id).wires.some((w) => w.to?.partId === accessory.id));
 });
+
+test('cada pin dice si entra en un borne de su función, en uno de otra o si no toca nada', () => {
+  const base = b.autoWire(b.boardFromFront(row(), 12));
+  // pines desde el módulo 2 (después del diferencial): N, L1, N, L1…
+  const { board: ok, accessory: good } = place(base, combSpec(['N', 'L1'], 6));
+  assert.deepEqual(b.combContacts(ok, good), ['ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+  const { board: shifted, accessory: bad } = place(base, combSpec(['L1', 'N'], 4));
+  assert.deepEqual(b.combContacts(shifted, bad), ['wrong', 'wrong', 'wrong', 'wrong']);
+  // un peine más largo que la fila: los pines que sobran no tocan nada
+  const { board: long, accessory: over } = place(base, combSpec(['N', 'L1'], 12));
+  const states = b.combContacts(long, over);
+  assert.equal(states.length, 12);
+  assert.equal(states.slice(0, 8).every((s) => s === 'ok'), true);
+  assert.equal(states.slice(8).every((s) => s === 'none'), true);
+});
+
+test('el pin de un conector también dice si entra, si cae en otra función o si queda suelto', () => {
+  const base = b.autoWire(b.boardFromFront(row(), 12));
+  const good = placeConnector(base, 'L1', 1);
+  assert.equal(b.connectorContact(good.board, good.accessory), 'ok');
+  const wrong = placeConnector(base, 'L1', 0);
+  assert.equal(b.connectorContact(wrong.board, wrong.accessory), 'wrong');
+  const loose = b.addAccessory(base, connectorSpec('L1'), { x: 700, y: 900 });
+  assert.equal(b.connectorContact(loose.board, loose.accessory), 'none');
+});
+
+// --- Peines aguas abajo: se enchufan por abajo, en los bornes de salida -----------
+
+const downSpec = (roles, modules) => ({ kind: 'peine', w: modules * 30, h: 46, pattern: roles, side: 'abajo' });
+const placeDown = (board, spec) => {
+  const rail = board.rails[0];
+  // debajo de los aparatos, a partir del módulo 2 (después del diferencial)
+  return b.addAccessory(board, spec, { x: rail.x + 60 + spec.w / 2, y: rail.y + 118 + spec.h / 2 - 4 });
+};
+
+test('un peine aguas abajo se imanta debajo de la fila, con los pines subiendo a los bornes de abajo', () => {
+  const base = b.autoWire(b.boardFromFront(row(), 12));
+  const { accessory } = placeDown(base, downSpec(['N', 'L1'], 6));
+  const rail = base.rails[0];
+  assert.equal(accessory.y, rail.y + 118 - 2); // la punta de los pines queda en el borde de abajo del aparato
+  assert.equal((accessory.x - rail.x) % 30, 0);
+  assert.equal(b.combPins(accessory)[0].y, accessory.y);
+});
+
+test('los pines de un peine aguas abajo hacen contacto con los bornes de abajo según su función', () => {
+  const base = b.autoWire(b.boardFromFront(row(), 12));
+  const good = placeDown(base, downSpec(['N', 'L1'], 6));
+  assert.deepEqual(b.combContacts(good.board, good.accessory), ['ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+  const links = b.combLinks(good.board, good.accessory);
+  assert.ok(links.every((link) => link.terminal.side === 'bottom'));
+  const shifted = placeDown(base, downSpec(['L1', 'N'], 4));
+  assert.deepEqual(b.combContacts(shifted.board, shifted.accessory), ['wrong', 'wrong', 'wrong', 'wrong']);
+});
+
+test('un peine común y uno aguas abajo en la misma fila no se confunden', () => {
+  const base = b.autoWire(b.boardFromFront(row(), 12));
+  const up = place(base, combSpec(['N', 'L1'], 6));
+  const both = placeDown(up.board, downSpec(['N', 'L1'], 6));
+  assert.ok(b.combLinks(both.board, up.accessory).every((link) => link.terminal.side === 'top'));
+  assert.ok(b.combLinks(both.board, both.accessory).every((link) => link.terminal.side === 'bottom'));
+});
+
+test('el cableado automático no usa un peine aguas abajo como alimentación y la revisión no le pide entrada', () => {
+  const base = b.autoWire(b.boardFromFront(row(), 12));
+  const { board } = placeDown(base, downSpec(['N', 'L1'], 6));
+  const wired = b.autoWire(board);
+  assert.equal(wired.wires.filter((w) => w.auto).length, base.wires.filter((w) => w.auto).length);
+  assert.equal(reviewBoard(wired).filter((i) => i.id.startsWith('peine-sin-alimentar')).length, 0);
+});
+
+test('un peine aguas abajo suelto se avisa pidiendo apoyarlo en los bornes de abajo', () => {
+  const base = b.autoWire(b.boardFromFront(row(), 12));
+  const { board } = b.addAccessory(base, downSpec(['N', 'L1'], 4), { x: 700, y: 900 });
+  const issue = reviewBoard(board).find((i) => i.id.startsWith('peine-vacio'));
+  assert.ok(issue);
+  assert.match(issue.message, /abajo/);
+});

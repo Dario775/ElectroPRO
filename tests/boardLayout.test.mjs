@@ -254,7 +254,7 @@ test('boardBounds deja lugar para la leyenda cuando hay numeración', () => {
   const withLegend = b.boardBounds(board);
   const without = b.boardBounds({ ...board, numbering: false });
   assert.ok(withLegend.height > without.height);
-  assert.equal(withLegend.legendTop, without.height);
+  assert.equal(withLegend.legendTop - withLegend.top, without.height);
 });
 
 test('duplicar un aparato lo deja en el primer lugar libre de su riel, sin cables', () => {
@@ -329,7 +329,11 @@ test('la sección sugerida crece con los amperes de la protección', () => {
 test('un cable de más sección se dibuja más grueso, sin pasarse', () => {
   assert.ok(cat.wireWidth(1.5) < cat.wireWidth(2.5));
   assert.ok(cat.wireWidth(2.5) < cat.wireWidth(10));
-  assert.ok(cat.wireWidth(999) <= 11);
+  assert.ok(cat.wireWidth(999) <= cat.MAX_WIRE_WIDTH);
+  assert.ok(cat.wireWidth(2.5) < 3);
+  // entre 16 y 25 mm² la diferencia se nota (al menos 1,2 veces), sin que los chicos se engorden
+  assert.ok(cat.wireWidth(25) / cat.wireWidth(16) >= 1.2);
+  assert.ok(cat.wireWidth(4) < cat.wireWidth(6) && cat.wireWidth(6) < cat.wireWidth(10) && cat.wireWidth(10) < cat.wireWidth(16));
 });
 
 test('la puntera lleva el color normalizado de su sección', () => {
@@ -952,4 +956,28 @@ test('el aparato genérico tiene bornes arriba y abajo, uno por módulo, para po
   assert.equal(terminals.length, 4);
   assert.equal(terminals.filter((t) => t.side === 'top').length, 2);
   assert.equal(terminals.filter((t) => t.side === 'bottom').length, 2);
+});
+
+test('un prensacable soltado cerca del borde de arriba se asienta afuera y no agranda el gabinete', () => {
+  const board = boardWithRail();
+  const base = b.boardBounds(board);
+  const { board: next, accessory } = b.addAccessory(board, { kind: 'prensacable', w: 40, h: 62, label: 'Prensacable' }, { x: 200, y: 20 });
+  assert.equal(accessory.flip, false);
+  assert.equal(accessory.y, b.glandSeatTop(62));
+  const bounds = b.boardBounds(next);
+  assert.equal(bounds.frameBottom, base.frameBottom);
+  assert.ok(bounds.top < 0);
+});
+
+test('un prensacable cerca del borde de abajo se da vuelta y queda afuera', () => {
+  const board = boardWithRail();
+  const { frameBottom } = b.boardBounds(board);
+  const { accessory } = b.addAccessory(board, { kind: 'prensacable', w: 40, h: 46, label: 'Prensacable' }, { x: 200, y: frameBottom });
+  assert.equal(accessory.flip, true);
+  assert.equal(accessory.y, b.glandSeatBottom(frameBottom));
+});
+
+test('el nombre del tablero guarda su posición', () => {
+  const board = { ...b.emptyBoard(), titleAt: { x: 100, y: 80 } };
+  assert.deepEqual(board.titleAt, { x: 100, y: 80 });
 });

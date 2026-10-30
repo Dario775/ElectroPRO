@@ -151,3 +151,44 @@ test('con marca, el renglón lleva la marca y se le pone el precio de esa marca'
   assert.equal(plain.unitPrice, 15000);
   assert.equal(plain.quantity, 1);
 });
+
+test('un aparato con producto elegido se presupuesta con ese producto y no por texto', () => {
+  const base = project();
+  const target = base.panels[0].board.parts.find((part) => part.kind === 'termica' && part.amps === 16 && !part.isMain);
+  assert.ok(target, 'hay una térmica de 16 A');
+  const picked = { id: 'prod-1', description: 'Térmica iK60 2P 16A curva C Sica', unit: 'ud', unitPrice: 31000, brand: 'Sica', stock: 1 };
+  const withProduct = {
+    ...base,
+    panels: [{ ...base.panels[0], board: { ...base.panels[0].board, parts: base.panels[0].board.parts.map((part) => (part.id === target.id ? { ...part, productId: 'prod-1' } : part)) } }],
+  };
+  const { items } = B.boardBudgetItems(withProduct, [...catalog, picked]);
+  const linked = items.find((item) => item.sourceKey.includes('|p:prod-1'));
+  assert.ok(linked);
+  assert.equal(linked.unitPrice, 31000);
+  assert.equal(linked.description, 'Térmica iK60 2P 16A curva C Sica');
+  assert.equal(linked.brand, 'Sica');
+});
+
+test('un producto elegido que ya no está en el catálogo vuelve a buscarse por texto', () => {
+  const base = project();
+  const target = base.panels[0].board.parts.find((part) => part.kind === 'termica' && part.amps === 16 && !part.isMain);
+  const withProduct = {
+    ...base,
+    panels: [{ ...base.panels[0], board: { ...base.panels[0].board, parts: base.panels[0].board.parts.map((part) => (part.id === target.id ? { ...part, productId: 'borrado' } : part)) } }],
+  };
+  const { items } = B.boardBudgetItems(withProduct, catalog);
+  const linked = items.find((item) => item.sourceKey.includes('|p:borrado'));
+  assert.ok(linked.unitPrice > 0, 'toma el precio por texto');
+});
+
+test('avisa si el stock del producto elegido no alcanza, sin descontarlo', () => {
+  const base = project();
+  const parts = base.panels[0].board.parts.filter((part) => part.kind === 'termica' && part.amps === 16 && !part.isMain);
+  const ids = new Set(parts.map((part) => part.id));
+  const withProduct = {
+    ...base,
+    panels: [{ ...base.panels[0], board: { ...base.panels[0].board, parts: base.panels[0].board.parts.map((part) => (ids.has(part.id) ? { ...part, productId: 'prod-1' } : part)) } }],
+  };
+  const { notes } = B.boardBudgetItems(withProduct, [...catalog, { id: 'prod-1', description: 'Térmica 2P 16A Sica', unit: 'ud', unitPrice: 31000, stock: 0 }]);
+  assert.ok(notes.some((note) => note.startsWith('Stock: ')));
+});

@@ -40,7 +40,9 @@ const Preview: React.FC<{ entry: CatalogEntry; brand?: string }> = ({ entry, bra
           phase={entry.spec.phase}
           poles={entry.spec.poles}
           surgeLayout={entry.spec.surgeLayout}
-          photo={brand ? partPhoto(readImageStore(), { kind: entry.spec.kind, modules: entry.spec.modules, brand, surgeLayout: entry.spec.surgeLayout }) : undefined}
+          feed={entry.spec.feed}
+          distLayout={entry.spec.distLayout}
+          photo={brand ? partPhoto(readImageStore(), { kind: entry.spec.kind, modules: entry.spec.modules, brand, surgeLayout: entry.spec.surgeLayout, feed: entry.spec.feed, distLayout: entry.spec.distLayout }) : undefined}
         />
       </svg>
     );
@@ -49,8 +51,12 @@ const Preview: React.FC<{ entry: CatalogEntry; brand?: string }> = ({ entry, bra
   if (!accessory) return null;
   // Las canaletas y los peines son largos: se muestran achicados para que entren.
   const pad = 4;
+  // Los pines de un peine se meten un poco en el borne: sobresalen de su caja.
+  const reach = accessory.kind === 'peine' || accessory.kind === 'conector' ? 12 : 0;
+  const reachTop = accessory.side === 'abajo' ? reach : 0;
+  const reachBottom = accessory.side === 'abajo' ? 0 : reach;
   return (
-    <svg viewBox={`${-pad} ${-pad} ${accessory.w + pad * 2} ${accessory.h + pad * 2}`} className="h-12 w-full max-w-full" aria-hidden="true">
+    <svg viewBox={`${-pad} ${-pad - reachTop} ${accessory.w + pad * 2} ${accessory.h + pad * 2 + reachTop + reachBottom}`} className="h-12 w-full max-w-full" aria-hidden="true">
       <AccessoryShape item={accessory} />
     </svg>
   );

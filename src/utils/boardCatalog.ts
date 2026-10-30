@@ -65,9 +65,16 @@ export function sectionForAmps(amps: number | undefined): number {
   return 25;
 }
 
-/** Grosor con que se dibuja un cable de esa sección. */
+/** Grosor máximo con que se dibuja un cable, por grueso que sea: pasado eso, los cables tapan todo. */
+export const MAX_WIRE_WIDTH = 9;
+
+/**
+ * Grosor con que se dibuja un cable de esa sección. Crece con la raíz de la sección (como el diámetro del
+ * conductor): los cables chicos siguen finos, y entre dos calibres grandes, como 16 y 25 mm², la diferencia
+ * se nota.
+ */
 export function wireWidth(section: number | undefined): number {
-  return Math.min(11, 3 + 0.55 * (section ?? 2.5));
+  return Math.min(MAX_WIRE_WIDTH, 1.6 * Math.sqrt(section ?? 2.5));
 }
 
 /** Color de la puntera según su sección (DIN 46228). */
@@ -141,6 +148,7 @@ export const KIND_LABEL: Record<BoardPartKind, string> = {
   contactor: 'Contactor',
   guardamotor: 'Guardamotor',
   rele_termico: 'Relé térmico',
+  distribuidor: 'Distribuidor tetrapolar',
   bornera_tierra: 'Bornera de tierra',
   bornera_neutro: 'Bornera de neutro',
   repartidor: 'Repartidor',
@@ -170,6 +178,9 @@ export const CATALOG: CatalogEntry[] = [
   { id: 'guardamotor-3p', label: 'Guardamotor trifásico', group: 'Protecciones', spec: { kind: 'guardamotor', modules: 3, label: 'MOTOR', amps: 10, poles: '3P' } },
   { id: 'rele-1p', label: 'Relé térmico monofásico', group: 'Protecciones', spec: { kind: 'rele_termico', modules: 2, label: 'RELÉ', amps: 10, poles: '1P+N', phase: 'L1' } },
   { id: 'rele-3p', label: 'Relé térmico trifásico', group: 'Protecciones', spec: { kind: 'rele_termico', modules: 3, label: 'RELÉ', amps: 10, poles: '3P' } },
+  { id: 'distribuidor-63', label: 'Distribuidor 4P 63 A (entra por abajo)', group: 'Borneras y otros', spec: { kind: 'distribuidor', modules: 4, label: 'DISTRIBUIDOR', amps: 63, poles: '4P' } },
+  { id: 'distribuidor-63-arriba', label: 'Distribuidor 4P 63 A (entra por arriba)', group: 'Borneras y otros', spec: { kind: 'distribuidor', modules: 4, label: 'DISTRIBUIDOR', amps: 63, poles: '4P', feed: 'arriba' } },
+  { id: 'distribuidor-125-4x7', label: 'Distribuidor de barras 4×7 (125 A)', group: 'Borneras y otros', spec: { kind: 'distribuidor', modules: 6, label: 'DISTRIBUIDOR', amps: 125, poles: '4P', distLayout: 'barras' } },
   { id: 'bornera-tierra', label: 'Bornera de tierra', group: 'Borneras y otros', spec: { kind: 'bornera_tierra', modules: 4, label: 'TIERRA' } },
   { id: 'bornera-neutro', label: 'Bornera de neutro', group: 'Borneras y otros', spec: { kind: 'bornera_neutro', modules: 4, label: 'NEUTRO' } },
   { id: 'repartidor', label: 'Repartidor', group: 'Borneras y otros', spec: { kind: 'repartidor', modules: 6, label: 'REPARTIDOR' } },
@@ -189,6 +200,9 @@ export const CATALOG: CatalogEntry[] = [
   { id: 'conector-s', label: 'Conector para peine (fase S)', group: 'Accesorios de armado', accessory: { kind: 'conector', w: 30, h: 44, role: 'L2' } },
   { id: 'conector-t', label: 'Conector para peine (fase T)', group: 'Accesorios de armado', accessory: { kind: 'conector', w: 30, h: 44, role: 'L3' } },
   { id: 'conector-n', label: 'Conector para peine (neutro)', group: 'Accesorios de armado', accessory: { kind: 'conector', w: 30, h: 44, role: 'N' } },
+  { id: 'peine-abajo-4p', label: 'Peine aguas abajo 4P (N, L1, L2, L3)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 360, h: 46, pattern: ['N', 'L1', 'L2', 'L3'], side: 'abajo' } },
+  { id: 'peine-abajo-3p', label: 'Peine aguas abajo 3P (L1, L2, L3)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 360, h: 46, pattern: ['L1', 'L2', 'L3'], side: 'abajo' } },
+  { id: 'peine-abajo-2p', label: 'Peine aguas abajo 1P+N (N, L1)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 360, h: 46, pattern: ['N', 'L1'], side: 'abajo' } },
   { id: 'peine-r', label: 'Peine monofásico (fase R)', group: 'Accesorios de armado', accessory: { kind: 'peine', w: 180, h: 46, pattern: ['L1'] } },
 ];
 
@@ -203,6 +217,8 @@ export function partDetail(part: Pick<BoardPart, 'kind' | 'amps' | 'curve' | 'se
         .join(' · ');
     case 'corte':
       return part.amps !== undefined ? `Corte ${part.amps} A` : 'Corte';
+    case 'distribuidor':
+      return [part.amps !== undefined ? `${part.amps} A` : '', '4P'].filter(Boolean).join(' · ');
     case 'protector_tension':
       return [part.amps !== undefined ? `${part.amps} A` : '', part.poles].filter(Boolean).join(' · ') || 'Protector de tensión';
     case 'contactor':

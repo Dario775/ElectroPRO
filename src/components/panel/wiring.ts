@@ -7,7 +7,7 @@
  */
 import type { BoardPartKind, BoardWireRole } from '../../types/electrical';
 import type { FrontItem } from '../../utils/panelDevices';
-import { MODULE_W } from './deviceMetrics';
+import { DEVICE_H, MODULE_W } from './deviceMetrics';
 
 export type WireRole = BoardWireRole;
 
@@ -36,6 +36,8 @@ export interface WireTerminal {
   role: WireRole;
   /** Los modulares tienen borne arriba y abajo; las borneras de barra, solo abajo. */
   sides: Array<'top' | 'bottom'>;
+  /** Altura del borne desde el borde de arriba del aparato, cuando no está en el borde (agujeros de un distribuidor). */
+  y?: number;
 }
 
 const PHASES: WireRole[] = ['L1', 'L2', 'L3'];
@@ -84,6 +86,10 @@ export interface TerminalSource {
   neutralLeft?: boolean;
   /** Descargador con el neutro arriba (ver `surgeTerminals`). */
   surgeLayout?: 'neutro-arriba';
+  /** Distribuidor que se alimenta por arriba (ver `distributionTerminals`). */
+  feed?: 'arriba';
+  /** Distribuidor de barras (ver `barDistributionTerminals`). */
+  distLayout?: 'barras';
 }
 
 /**
@@ -103,8 +109,57 @@ export function surgeTerminals(modules: number, layout?: 'neutro-arriba'): WireT
   return [top(0, 'L1'), top(1, 'L2'), top(2, 'L3'), top(3, 'PE'), bottom(1, 'N')];
 }
 
+/** Distancia entre las columnas de agujeros de salida de un distribuidor. Cada columna tiene dos agujeros (fila de arriba y de abajo). */
+const OUTPUT_STEP = 10;
+/** Altura (desde el borde del aparato) de las dos filas de agujeros de un bloque de salida. */
+const OUTPUT_ROWS = [4.5, 10.5];
+
+/**
+ * Bornes de un distribuidor tetrapolar (el Distribloc / Linergy DX de Schneider): entran N, L1, L2 y L3
+ * por cuatro agujeros grandes de un lado y salen por bloques de agujeros del otro. El neutro ocupa la
+ * mitad del ancho (bloques celestes) y cada fase un sexto (bloques negros).
+ */
+export function distributionTerminals(modules: number, feed?: 'arriba'): WireTerminal[] {
+  const width = modules * MODULE_W;
+  const inSide: 'top' | 'bottom' = feed === 'arriba' ? 'top' : 'bottom';
+  const outSide: 'top' | 'bottom' = feed === 'arriba' ? 'bottom' : 'top';
+  const inputs: WireTerminal[] = (['N', 'L1', 'L2', 'L3'] as WireRole[]).map((role, index) => ({ x: (width * (index + 0.5)) / 4, role, sides: [inSide] }));
+  const neutralWidth = width / 2;
+  const phaseWidth = width / 6;
+  const neutralCount = Math.max(1, Math.floor(neutralWidth / OUTPUT_STEP));
+  const phaseCount = Math.max(1, Math.floor(phaseWidth / OUTPUT_STEP));
+  const outputs: WireTerminal[] = [];
+  // Cada columna tiene un agujero en la fila de arriba y otro en la de abajo del bloque: por eso un bloque de
+  // fase de 4 agujeros tiene 2 columnas y el de neutro de 12, 6.
+  const row = (x: number, role: WireRole): void => {
+    for (const depth of OUTPUT_ROWS) outputs.push({ x, role, sides: [outSide], y: outSide === 'top' ? 2 + depth : DEVICE_H - 2 - depth });
+  };
+  for (let index = 0; index < neutralCount; index++) row((neutralWidth * (index + 0.5)) / neutralCount, 'N');
+  (['L1', 'L2', 'L3'] as WireRole[]).forEach((role, phase) => {
+    for (let index = 0; index < phaseCount; index++) row(neutralWidth + phase * phaseWidth + (phaseWidth * (index + 0.5)) / phaseCount, role);
+  });
+  return [...inputs, ...outputs];
+}
+
+/** Dónde empiezan y cuánto miden las barras de un distribuidor de barras (deja lugar a la etiqueta de cada una). */
+export const BAR_LABEL_W = 16;
+/** Altura de las cuatro barras (N, L1, L2, L3) de un distribuidor de barras, desde el borde de arriba. */
+export const BAR_ROWS = [30, 52, 74, 96];
+const BAR_SCREWS = 7;
+
+/**
+ * Bornes de un distribuidor de barras tipo «4×7» (cuatro polos, siete tornillos cada uno): las cuatro
+ * barras de bronce van una debajo de otra y cada tornillo recibe cables por arriba o por abajo.
+ */
+export function barDistributionTerminals(modules: number): WireTerminal[] {
+  const usable = modules * MODULE_W - BAR_LABEL_W - 6;
+  return (['N', 'L1', 'L2', 'L3'] as WireRole[]).flatMap((role, pole) =>
+    Array.from({ length: BAR_SCREWS }, (_, index) => ({ x: BAR_LABEL_W + (usable * (index + 0.5)) / BAR_SCREWS, role, sides: ['top', 'bottom'] as Array<'top' | 'bottom'>, y: BAR_ROWS[pole] })
+  ));
+}
+
 /** Los bornes con cable de un aparato, según su tipo, ancho, polos y fase. */
-export function terminalSpecs({ kind, modules, poles, phase, neutralLeft, surgeLayout }: TerminalSource): WireTerminal[] {
+export function terminalSpecs({ kind, modules, poles, phase, neutralLeft, surgeLayout, feed, distLayout }: TerminalSource): WireTerminal[] {
   const holes = modules * 2;
   const holeX = (index: number): number => (MODULE_W / 2) * index + MODULE_W / 4;
   // Una bornera de barra recibe cables por los dos lados: arriba (entran) y abajo (salen).
@@ -121,6 +176,8 @@ export function terminalSpecs({ kind, modules, poles, phase, neutralLeft, surgeL
       return block(WIRE_ROLES.find((role) => role === phase && role !== 'N' && role !== 'PE') ?? 'L1');
     case 'dps':
       return surgeTerminals(modules, surgeLayout);
+    case 'distribuidor':
+      return distLayout === 'barras' ? barDistributionTerminals(modules) : distributionTerminals(modules, feed);
     case 'tope':
       return [];
     case 'borne':

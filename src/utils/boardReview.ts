@@ -64,7 +64,11 @@ export function reviewBoard(board: BoardLayout): BoardIssue[] {
   for (const comb of (board.accessories ?? []).filter((item) => item.kind === 'peine')) {
     const links = combLinks(board, comb);
     if (links.length === 0) {
-      add({ id: `peine-vacio-${comb.id}`, severity: 'warning', message: 'Hay un peine que no toca ningún borne: apoyalo sobre los bornes de arriba de una fila de aparatos.' });
+      add({
+        id: `peine-vacio-${comb.id}`,
+        severity: 'warning',
+        message: `Hay un peine que no toca ningún borne: apoyalo sobre los bornes de ${comb.side === 'abajo' ? 'abajo' : 'arriba'} de una fila de aparatos.`,
+      });
       continue;
     }
     for (const link of links.filter((candidate) => !candidate.match)) {
@@ -76,7 +80,7 @@ export function reviewBoard(board: BoardLayout): BoardIssue[] {
         message: `Un pin de ${ROLE_NAME[link.pin.role]} del peine cae en un borne de ${ROLE_NAME[link.terminal.role]}${part ? ` de ${nameOf(part)}` : ''}: el peine está corrido o no coincide el patrón.`,
       });
     }
-    if (board.wires.length > 0) {
+    if (board.wires.length > 0 && comb.side !== 'abajo') {
       for (const role of new Set(links.filter((candidate) => candidate.match).map((candidate) => candidate.pin.role))) {
         const fed = links.some((link) => link.match && link.pin.role === role && isFed(board, link.terminal));
         if (!fed) add({ id: `peine-sin-alimentar-${comb.id}-${role}`, severity: 'warning', message: `El peine no recibe ${ROLE_NAME[role]}: conectá un cable a cualquiera de los bornes que cubre.` });
@@ -101,6 +105,23 @@ export function reviewBoard(board: BoardLayout): BoardIssue[] {
       });
     } else if (board.wires.length > 0 && wiresAtTerminal(board, connectorTerminal(connector)).length === 0) {
       add({ id: `conector-sin-cable-${connector.id}`, severity: 'warning', partId: part?.id, message: `El conector de ${ROLE_NAME[link.pin.role]} no tiene cable en su tornillo: no alimenta nada.` });
+    }
+  }
+
+  /* Distribuidores: tienen que recibir N, L1, L2 y L3 por sus cuatro agujeros de entrada */
+  if (board.wires.length > 0) {
+    for (const part of board.parts.filter((candidate) => candidate.kind === 'distribuidor' && candidate.distLayout !== 'barras')) {
+      const entrySide = part.feed === 'arriba' ? 'top' : 'bottom';
+      const missing = partTerminals(part).filter((terminal) => terminal.side === entrySide && wiresAtTerminal(board, terminal).length === 0);
+      const used = partTerminals(part).some((terminal) => terminal.side !== entrySide && wiresAtTerminal(board, terminal).length > 0);
+      if (missing.length === 0 || missing.length === 4 && !used) continue;
+      const roles = [...new Set(missing.map((terminal) => ROLE_NAME[terminal.role]))].join(', ');
+      add({
+        id: `distribuidor-${part.id}`,
+        severity: 'warning',
+        partId: part.id,
+        message: `${nameOf(part)} no recibe ${roles} por ${part.feed === 'arriba' ? 'arriba' : 'abajo'}: sin esa entrada no reparte.`,
+      });
     }
   }
 

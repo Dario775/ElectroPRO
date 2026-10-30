@@ -34,6 +34,15 @@ export const BOARD_TOP = 190;
 export const RAIL_OVERHANG = 10;
 /** Largo de los cables de salida de cada térmica. */
 export const OUTPUT_STUB = 120;
+/** Alto de la tuerca de un prensacable: la parte que queda sobre el borde del gabinete. */
+export const GLAND_NUT_H = 14;
+/** Un cable que llega a la boca de un prensacable de borde no agranda el gabinete. */
+const WIRE_MARGIN_Y = 10;
+
+/** `y` de un prensacable asentado en el borde de arriba (el tubo sale hacia arriba, afuera del gabinete). */
+export const glandSeatTop = (height: number): number => 12 - height;
+/** `y` de un prensacable asentado en el borde de abajo (el tubo sale hacia abajo, afuera del gabinete). */
+export const glandSeatBottom = (frameBottom: number): number => frameBottom - 12;
 /** Ancho real de un módulo DIN, en milímetros. */
 const DIN_MODULE_MM = 17.5;
 /** Margen interior del gabinete: los cables no pasan de esta distancia del marco. */
@@ -83,7 +92,7 @@ export function partTerminals(part: BoardPart): BoardTerminalPoint[] {
       x: part.x + spec.x,
       // El cable entra por el borde del aparato (arriba o abajo): el aparato se dibuja encima del
       // cable, así el extremo con su puntera parece meterse en el borne.
-      y: part.y + (side === 'top' ? (block ? 18 : 2) : block ? DEVICE_H - 16 : DEVICE_H - 2),
+      y: part.y + (spec.y ?? (side === 'top' ? (block ? 18 : 2) : block ? DEVICE_H - 16 : DEVICE_H - 2)),
     }))
   );
 }
@@ -653,14 +662,15 @@ export interface CombPin {
 }
 
 /** Los pines de un peine: uno por módulo, repitiendo su patrón (N, L1, L2, L3, N, L1…). */
-export function combPins(comb: Pick<BoardAccessory, 'x' | 'y' | 'w' | 'h' | 'role' | 'pattern'>): CombPin[] {
+export function combPins(comb: Pick<BoardAccessory, 'x' | 'y' | 'w' | 'h' | 'role' | 'pattern' | 'side'>): CombPin[] {
   const roles = combRoles(comb);
   const count = Math.max(1, Math.floor(comb.w / COMB_PITCH));
   return Array.from({ length: count }, (_, index) => ({
     index,
     role: roles[index % roles.length],
     x: comb.x + COMB_PITCH / 2 + index * COMB_PITCH,
-    y: comb.y + comb.h,
+    // Los pines de un peine común bajan a los bornes de arriba; los de uno «aguas abajo» suben a los de abajo.
+    y: comb.side === 'abajo' ? comb.y : comb.y + comb.h,
   }));
 }
 
@@ -673,7 +683,8 @@ export interface CombLink {
 
 /** Con qué borne de arriba de qué aparato hace contacto cada pin (los pines que no tocan nada no figuran). */
 export function combLinks(board: BoardLayout, comb: BoardAccessory): CombLink[] {
-  const tops = board.parts.flatMap((part) => partTerminals(part)).filter((terminal) => terminal.side === 'top');
+  const side = comb.side === 'abajo' ? 'bottom' : 'top';
+  const tops = board.parts.flatMap((part) => partTerminals(part)).filter((terminal) => terminal.side === side);
   const links: CombLink[] = [];
   for (const pin of combPins(comb)) {
     const terminal = tops
@@ -684,11 +695,28 @@ export function combLinks(board: BoardLayout, comb: BoardAccessory): CombLink[] 
   return links;
 }
 
+/** Cómo está cada pin de un peine: `ok` entra en un borne de su función, `wrong` entra en uno de otra, `none` no toca nada. */
+export type PinContact = 'ok' | 'wrong' | 'none';
+
+export function combContacts(board: BoardLayout, comb: BoardAccessory): PinContact[] {
+  const links = combLinks(board, comb);
+  return combPins(comb).map((pin) => {
+    const link = links.find((candidate) => candidate.pin.index === pin.index);
+    return link ? (link.match ? 'ok' : 'wrong') : 'none';
+  });
+}
+
 export const terminalKey = (ref: BoardTerminalRef): string => `${ref.partId}:${ref.index}:${ref.side}`;
 
 /** El tornillo del conector para peine, donde entra el cable. */
 export function connectorTerminal(connector: BoardAccessory): BoardTerminalPoint {
   return { partId: connector.id, index: 0, side: 'top', role: connector.role ?? 'L1', x: connector.x + connector.w / 2, y: connector.y + 13 };
+}
+
+/** Cómo está el pin de un conector para peine (ver `PinContact`). */
+export function connectorContact(board: BoardLayout, connector: BoardAccessory): PinContact {
+  const link = connectorLink(board, connector);
+  return link ? (link.match ? 'ok' : 'wrong') : 'none';
 }
 
 /** Con qué borne de arriba hace contacto el pin de un conector (el que tiene justo debajo). */
@@ -747,14 +775,35 @@ export function resizeComb(board: BoardLayout, id: string, side: 'left' | 'right
 
 /** Imanta un peine a los bornes de arriba del riel más cercano, con sus pines sobre los módulos. */
 function snapComb(board: BoardLayout, comb: BoardAccessory): BoardAccessory {
+  const below = comb.side === 'abajo';
+  // El borde de los bornes donde se enchufa: abajo del aparato (peine aguas abajo) o arriba.
+  const edge = (rail: BoardRail): number => (below ? rail.y + DEVICE_H - 2 : rail.y + 2);
+  const tip = below ? comb.y : comb.y + comb.h;
   const rail = board.rails
     .filter((candidate) => comb.x + comb.w > candidate.x && comb.x < railEnd(candidate))
-    .map((candidate) => ({ candidate, dy: Math.abs(comb.y + comb.h - (candidate.y + 2)) }))
+    .map((candidate) => ({ candidate, dy: Math.abs(tip - edge(candidate)) }))
     .filter((entry) => entry.dy <= COMB_SNAP_Y)
     .sort((a, b) => a.dy - b.dy)[0]?.candidate;
   if (!rail) return comb;
   const slots = Math.round((comb.x - rail.x) / MODULE_W);
-  return { ...comb, x: rail.x + Math.max(0, slots) * MODULE_W, y: rail.y + 2 - comb.h };
+  return { ...comb, x: rail.x + Math.max(0, slots) * MODULE_W, y: below ? edge(rail) : edge(rail) - comb.h };
+}
+
+/**
+ * Asienta un prensacable en el borde del gabinete si quedó cerca: el tubo sale hacia afuera y la tuerca queda
+ * sobre el marco, como un prensacable de verdad.
+ */
+function seatGland(board: BoardLayout, gland: BoardAccessory, id?: string): BoardAccessory {
+  if (gland.kind !== 'prensacable') return gland;
+  const others = { ...board, accessories: (board.accessories ?? []).filter((item) => item.id !== id && item.kind !== 'prensacable') };
+  const frameBottom = boardBounds(others).frameBottom;
+  const nutTop = gland.flip ? gland.y : gland.y + gland.h - GLAND_NUT_H;
+  const distanceTop = Math.abs(nutTop - (glandSeatTop(gland.h) + gland.h - GLAND_NUT_H));
+  const distanceBottom = Math.abs(nutTop - glandSeatBottom(frameBottom));
+  if (Math.min(distanceTop, distanceBottom) > 45) return gland;
+  return distanceTop <= distanceBottom
+    ? { ...gland, flip: false, y: glandSeatTop(gland.h) }
+    : { ...gland, flip: true, y: glandSeatBottom(frameBottom) };
 }
 
 /** Agrega un accesorio donde se soltó (centrado en el punto) o, sin punto, arriba del primer riel. */
@@ -766,7 +815,7 @@ export function addAccessory(board: BoardLayout, spec: AccessorySpec, at?: Board
     x: at ? round5(at.x - spec.w / 2) : BOARD_LEFT + 20 + existing.length * 25,
     y: at ? round5(at.y - spec.h / 2) : BOARD_TOP - 100 + existing.length * 10,
   };
-  const accessory = placed.kind === 'peine' || placed.kind === 'conector' ? snapComb(board, placed) : placed;
+  const accessory = placed.kind === 'peine' || placed.kind === 'conector' ? snapComb(board, placed) : seatGland(board, placed);
   return { board: { ...board, accessories: [...existing, accessory] }, accessory };
 }
 
@@ -779,6 +828,10 @@ export function updateAccessory(board: BoardLayout, id: string, patch: Partial<O
 export function moveAccessory(board: BoardLayout, id: string, x: number, y: number): BoardLayout {
   const item = (board.accessories ?? []).find((candidate) => candidate.id === id);
   const target = { x: round5(x), y: round5(y) };
+  if (item?.kind === 'prensacable') {
+    const seated = seatGland(board, { ...item, ...target }, id);
+    return updateAccessory(board, id, { x: seated.x, y: seated.y, flip: seated.flip });
+  }
   if (item?.kind !== 'peine' && item?.kind !== 'conector') return updateAccessory(board, id, target);
   const snapped = snapComb(board, { ...item, ...target });
   return updateAccessory(board, id, { x: snapped.x, y: snapped.y });
@@ -937,7 +990,8 @@ export function autoWire(board: BoardLayout): BoardLayout {
   };
   const inComb = new Set<string>();
   for (const comb of board.accessories ?? []) {
-    if (comb.kind !== 'peine') continue;
+    // Los peines aguas abajo no alimentan: unen bornes de salida.
+    if (comb.kind !== 'peine' || comb.side === 'abajo') continue;
     const byRole = new Map<BoardWireRole, BoardTerminalPoint[]>();
     for (const link of combLinks(board, comb)) {
       if (!link.match) continue;
@@ -969,8 +1023,14 @@ export function autoWire(board: BoardLayout): BoardLayout {
   };
 
   // La acometida entra por arriba a la primera protección.
+  // La acometida llega hasta la boca de su prensacable, asentado en el borde de arriba del gabinete.
+  const ENTRY_GLAND_H = 62;
+  const entryMouthY = glandSeatTop(ENTRY_GLAND_H) + ENTRY_GLAND_H - 2;
   if (entry[0]) {
-    for (const terminal of tops(entry[0])) add(terminal.role, [{ x: terminal.x, y: terminal.y - 70 }, terminal], undefined, refOf(terminal), entry[0].amps);
+    for (const terminal of tops(entry[0])) {
+      const free = terminal.y - entryMouthY >= 40 ? entryMouthY : terminal.y - 70;
+      add(terminal.role, [{ x: terminal.x, y: free }, terminal], undefined, refOf(terminal), entry[0].amps);
+    }
   }
 
   // Cortes y generales en cadena.
@@ -1056,11 +1116,21 @@ export function autoWire(board: BoardLayout): BoardLayout {
 
   // Salidas: cada térmica y cada bornera sacan sus cables hacia abajo.
   for (const part of board.parts) {
-    if (part.kind === 'diferencial' || part.kind === 'otro' || part.kind === 'dps' || part.kind === 'tope') continue;
+    if (part.kind === 'diferencial' || part.kind === 'otro' || part.kind === 'dps' || part.kind === 'tope' || part.kind === 'distribuidor') continue;
     const isEntry = entry.some((candidate) => candidate.id === part.id);
     const next = isEntry && withDiff.length > 0;
     if (next) continue;
     for (const terminal of bottoms(part)) add(terminal.role, [terminal, { x: terminal.x, y: terminal.y + OUTPUT_STUB }], refOf(terminal), undefined, part.amps);
+  }
+
+  // El gabinete termina más abajo de las salidas: sus cables se estiran hasta la boca de los prensacables del borde.
+  const frameBottom = boardBounds({ ...board, wires: [], accessories: [] }).frameBottom;
+  const outputMouthY = glandSeatBottom(frameBottom) + 2;
+  const lastRowIds = new Set((rows[rows.length - 1]?.parts ?? []).map((part) => part.id));
+  for (const wire of wires) {
+    if (wire.to || !wire.from || !lastRowIds.has(wire.from.partId)) continue;
+    const end = wire.points[wire.points.length - 1];
+    if (end.y >= wire.points[0].y && outputMouthY > end.y) wire.points = [...wire.points.slice(0, -1), { x: end.x, y: outputMouthY }];
   }
 
   // Prensacables con tubo: arriba de la primera protección (entra la acometida) y debajo de cada
@@ -1071,14 +1141,14 @@ export function autoWire(board: BoardLayout): BoardLayout {
   };
   if (entry[0]) {
     const width = Math.max(30, Math.min(partWidth(entry[0]) - 6, 110));
-    tube(entry[0].x + (partWidth(entry[0]) - width) / 2, entry[0].y - 110, width, 62, false);
+    tube(entry[0].x + (partWidth(entry[0]) - width) / 2, glandSeatTop(ENTRY_GLAND_H), width, ENTRY_GLAND_H, false);
   }
   const lastRow = rows[rows.length - 1];
   for (const part of lastRow?.parts ?? []) {
     const isEntry = entry.some((candidate) => candidate.id === part.id);
-    if (part.kind === 'diferencial' || part.kind === 'otro' || part.kind === 'tope' || (isEntry && withDiff.length > 0)) continue;
+    if (part.kind === 'diferencial' || part.kind === 'otro' || part.kind === 'tope' || part.kind === 'distribuidor' || (isEntry && withDiff.length > 0)) continue;
     if (bottoms(part).length === 0) continue;
-    tube(part.x + 3, part.y + DEVICE_H + 110, partWidth(part) - 6, 46, true);
+    tube(part.x + 3, glandSeatBottom(frameBottom), partWidth(part) - 6, 46, true);
   }
 
   return {
@@ -1235,9 +1305,18 @@ export function numberedParts(board: BoardLayout): Array<{ part: BoardPart; numb
 export interface BoardBounds {
   width: number;
   height: number;
-  /** Donde empieza la leyenda, debajo del tablero. */
+  /** Donde empieza la leyenda, debajo del tablero (y de los tubos que salen por abajo). */
   legendTop: number;
+  /** Primera `y` del lienzo: negativa si hay tubos de prensacables que salen por arriba del gabinete. */
+  top: number;
+  /** Borde de abajo del gabinete. */
+  frameBottom: number;
 }
+
+/** El prensacable está asentado en el borde de arriba: su tubo queda afuera del gabinete. */
+const sitsOnTop = (item: BoardAccessory): boolean => item.kind === 'prensacable' && !item.flip && item.y + item.h <= 40;
+/** El prensacable está asentado en el borde de abajo (a `frameBottom`). */
+const sitsOnBottom = (item: BoardAccessory, frameBottom: number): boolean => item.kind === 'prensacable' && !!item.flip && item.y >= frameBottom - 30;
 
 export const LEGEND_LINE_H = 19;
 
@@ -1256,8 +1335,11 @@ export function enclosureUnits(board: BoardLayout): { width: number; height: num
 export function outsideEnclosure(board: BoardLayout): string[] {
   const size = enclosureUnits(board);
   if (!size) return [];
+  // La boca de un prensacable está sobre el marco: un cable que llega hasta ahí no se sale del gabinete.
+  const glands = (board.accessories ?? []).filter((item) => item.kind === 'prensacable');
+  const inGland = (p: BoardPoint): boolean => glands.some((g) => p.x >= g.x - 4 && p.x <= g.x + g.w + 4 && p.y >= g.y - 4 && p.y <= g.y + g.h + 4);
   const inside = (p: BoardPoint): boolean =>
-    p.x >= ENCLOSURE_INSET && p.x <= size.width - ENCLOSURE_INSET && p.y >= ENCLOSURE_INSET && p.y <= size.height - ENCLOSURE_INSET;
+    (p.x >= ENCLOSURE_INSET && p.x <= size.width - ENCLOSURE_INSET && p.y >= ENCLOSURE_INSET && p.y <= size.height - ENCLOSURE_INSET) || inGland(p);
   return board.wires.filter((wire) => !wire.points.every(inside)).map((wire) => wire.id);
 }
 
@@ -1268,7 +1350,7 @@ export function outsideEnclosure(board: BoardLayout): string[] {
 export function neededEnclosureMm(board: BoardLayout): BoardEnclosure {
   const content = boardBounds({ ...board, enclosure: undefined });
   const toMm = (units: number): number => Math.ceil((units * DIN_MODULE_MM) / MODULE_W / 5) * 5;
-  return { widthMm: toMm(content.width), heightMm: toMm(content.legendTop) };
+  return { widthMm: toMm(content.width), heightMm: toMm(content.frameBottom) };
 }
 
 /** Una coordenada horizontal dentro del gabinete: si no hay medidas, la deja como está. */
@@ -1291,20 +1373,39 @@ export function boardBounds(board: BoardLayout): BoardBounds {
   for (const wire of board.wires) {
     for (const point of wire.points) {
       maxX = Math.max(maxX, point.x + 40);
-      maxY = Math.max(maxY, point.y + 40);
+      maxY = Math.max(maxY, point.y + WIRE_MARGIN_Y);
     }
   }
-  for (const item of board.accessories ?? []) {
+  const accessories = board.accessories ?? [];
+  // Los prensacables asentados en el borde del gabinete tienen el tubo afuera: no agrandan el marco.
+  const frameBase = maxY;
+  for (const item of accessories) {
     maxX = Math.max(maxX, item.x + item.w + 40);
+    if (sitsOnTop(item) || sitsOnBottom(item, frameBase)) continue;
     maxY = Math.max(maxY, item.y + item.h + 30);
   }
   for (const note of board.notes) {
     maxX = Math.max(maxX, note.x + 220, note.tx + 40);
     maxY = Math.max(maxY, note.y + 40, note.ty + 40);
   }
+  const frameBottom = Math.ceil(maxY);
+  let outsideTop = 0;
+  let outsideBottom = 0;
+  for (const item of accessories) {
+    if (sitsOnTop(item)) outsideTop = Math.max(outsideTop, -item.y);
+    else if (sitsOnBottom(item, frameBase)) outsideBottom = Math.max(outsideBottom, item.y + item.h - frameBottom);
+  }
   const legendLines = board.numbering ? numberedParts(board).length : 0;
   const legendHeight = legendLines > 0 ? 44 + legendLines * LEGEND_LINE_H : 0;
-  return { width: Math.ceil(maxX), height: Math.ceil(maxY + legendHeight), legendTop: Math.ceil(maxY) };
+  const below = outsideBottom > 0 ? Math.ceil(outsideBottom) + 8 : 0;
+  const top = -Math.ceil(Math.max(0, outsideTop));
+  return {
+    width: Math.ceil(maxX),
+    height: Math.ceil(frameBottom + below + legendHeight - top),
+    legendTop: frameBottom + below,
+    top,
+    frameBottom,
+  };
 }
 
 /**

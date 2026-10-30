@@ -384,7 +384,7 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
       {switcher}
 
       {/* Herramientas */}
-      <div className="flex flex-wrap items-center gap-2 text-xs">
+      <div className="flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 text-xs [&>*]:shrink-0">
         <div role="tablist" aria-label="Herramienta" className="inline-flex rounded-xl border border-hairline bg-sunken p-1">
           {MODES.map((item) => (
             <button
@@ -414,7 +414,7 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
           </IconButton>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 font-semibold text-muted" role="group" aria-label="Medidas del gabinete">
+        <div className="flex flex-nowrap items-center gap-2 font-semibold text-muted" role="group" aria-label="Medidas del gabinete">
           {board.enclosure ? (
             <>
               <span>Gabinete</span>
@@ -536,7 +536,7 @@ export const BoardEditor: React.FC<BoardEditorProps> = ({
           </IconButton>
         </div>
 
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="ml-auto flex flex-nowrap items-center gap-2">
           <Button size="sm" variant="secondary" icon={<Wand2 className="h-4 w-4" />} onClick={wireAutomatically} title="Tiende los cables de acometida, general, diferencial y circuitos">
             Cablear automáticamente
           </Button>

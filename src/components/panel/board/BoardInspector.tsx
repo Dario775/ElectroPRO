@@ -24,10 +24,13 @@ import {
   assignSlot,
   fileToPartImage,
   partPhoto,
+  partVariant,
   writeImageStore,
   type PartImageStore,
 } from '../../../services/partImages';
 import { reviewBoard, type BoardIssue } from '../../../utils/boardReview';
+import { CatalogService } from '../../../services/catalogService';
+import { isStalePrice, productsForPart, specFits, specOf, specOfPart, stockStatus } from '../../../utils/productSpec';
 import { Button } from '../../ui/Button';
 import { PhotoFitDialog } from '../PhotoFitDialog';
 import { BrandSelect } from '../BrandSelect';
@@ -57,6 +60,54 @@ const Labeled: React.FC<{ label: string; children: React.ReactNode }> = ({ label
 
 const withCurrent = (options: number[], current: number | undefined): number[] =>
   current !== undefined && !options.includes(current) ? [...options, current].sort((a, b) => a - b) : options;
+
+const pesos = (amount: number): string => `$ ${Math.round(amount).toLocaleString('es-AR')}`;
+
+/** Producto del catálogo de materiales para el aparato: de ahí salen el precio, la marca y el stock del presupuesto. */
+const ProductPicker: React.FC<{ part: BoardPart; onPick: (product: { id: string; brand?: string } | undefined) => void }> = ({ part, onPick }) => {
+  const catalog = useMemo(() => CatalogService.getItems(), []);
+  const options = useMemo(() => productsForPart(catalog, part), [catalog, part]);
+  const wanted = specOfPart(part);
+  if (!wanted) return null;
+  const current = part.productId ? catalog.find((item) => item.id === part.productId) : undefined;
+  const mismatch = current !== undefined && !specFits(specOf(current), wanted);
+  const status = current ? stockStatus(current) : 'sin-dato';
+  return (
+    <div className="space-y-1">
+      <Labeled label="Producto del catálogo">
+        <select
+          value={current ? current.id : ''}
+          onChange={(e) => {
+            const product = catalog.find((item) => item.id === e.target.value);
+            onPick(product ? { id: product.id, brand: product.brand } : undefined);
+          }}
+          className={FIELD}
+        >
+          <option value="">{options.length > 0 ? 'Elegir producto…' : 'No hay productos para este aparato'}</option>
+          {current && !options.some((item) => item.id === current.id) && <option value={current.id}>{current.description}</option>}
+          {options.map((item) => (
+            <option key={item.id} value={item.id}>
+              {[item.brand, pesos(item.unitPrice), item.stock !== undefined ? `stock ${item.stock}` : undefined].filter(Boolean).join(' · ')}
+              {' — '}
+              {item.description}
+            </option>
+          ))}
+        </select>
+      </Labeled>
+      {current && (
+        <p className="text-xs leading-snug text-muted">
+          {pesos(current.unitPrice)} c/u
+          {status === 'agotado' && ' · sin stock'}
+          {status === 'bajo' && ` · queda poco (${current.stock})`}
+          {status === 'ok' && ` · ${current.stock} en stock`}
+          {isStalePrice(current) && ' · precio desactualizado'}
+        </p>
+      )}
+      {mismatch && <p className="text-xs font-semibold text-danger-text">Este producto no coincide con los datos del aparato (polos, corriente o curva).</p>}
+      {!current && <p className="text-xs leading-snug text-muted">Sin producto elegido, el presupuesto busca el precio por el nombre del aparato.</p>}
+    </div>
+  );
+};
 
 const ROLE_SHORT: Record<string, string> = { L1: 'R', L2: 'S', L3: 'T', N: 'N', PE: '⏚' };
 
@@ -98,8 +149,10 @@ const CombFields: React.FC<{ board: BoardLayout; item: BoardAccessory; onEdit: (
         </select>
       </Labeled>
       <p className="text-xs leading-relaxed text-muted">
-        {pins} {pins === 1 ? 'pin' : 'pines'}: {combPins(item).map((pin) => ROLE_SHORT[pin.role]).join(' ')}. Se apoya sobre los bornes de arriba de la fila y cada
-        pin hace contacto con el borne que tiene debajo.
+        {pins} {pins === 1 ? 'pin' : 'pines'}: {combPins(item).map((pin) => ROLE_SHORT[pin.role]).join(' ')}.{' '}
+        {item.side === 'abajo'
+          ? 'Es un peine aguas abajo: se enchufa por abajo, en los bornes de salida de la fila, y cada pin hace contacto con el borne que tiene arriba.'
+          : 'Se apoya sobre los bornes de arriba de la fila y cada pin hace contacto con el borne que tiene debajo.'}
       </p>
       <p className={`text-xs font-semibold ${links.length === 0 || wrong > 0 ? 'text-danger-text' : 'text-success-text'}`}>
         {links.length === 0
@@ -361,7 +414,7 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
       setPhotoError('');
       const { name, dataUrl, width, height } = await fileToPartImage(file);
       const added = addImage(photos, name, dataUrl, { width, height });
-      writeImageStore(scope === 'slot' ? assignSlot(added.store, part.kind, part.modules, added.id, part.brand, part.surgeLayout) : added.store);
+      writeImageStore(scope === 'slot' ? assignSlot(added.store, part.kind, part.modules, added.id, part.brand, partVariant(part)) : added.store);
       if (scope === 'part') onChange(updatePart(board, part.id, { imageId: added.id }));
       onPhotosChange();
       // La foto casi nunca tiene la proporción del aparato: se abre el ajuste para acomodarla.
@@ -469,6 +522,25 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
         </Labeled>
       )}
 
+      {part.kind === 'distribuidor' && (
+        <div className="space-y-2">
+          <Labeled label="Amperes">
+            <select value={part.amps ?? 63} onChange={(e) => edit({ amps: Number(e.target.value) })} className={FIELD}>
+              {withCurrent(AMP_OPTIONS, part.amps ?? 63).map((amps) => (
+                <option key={amps} value={amps}>
+                  {amps} A
+                </option>
+              ))}
+            </select>
+          </Labeled>
+          <p className="text-xs leading-relaxed text-muted">
+            {part.distLayout === 'barras'
+              ? 'Cuatro barras de bronce (N, L1, L2 y L3), una por polo, con siete tornillos cada una. Cada tornillo recibe cables por arriba o por abajo y todos los de una barra están unidos.'
+              : `Entra por ${part.feed === 'arriba' ? 'arriba' : 'abajo'} (N, L1, L2 y L3) y reparte por el otro lado: el neutro por la mitad celeste (12 agujeros) y cada fase por su bloque negro (4 agujeros). Cada agujero es un borne del dibujo; varios cables pueden ir al mismo.`}
+          </p>
+        </div>
+      )}
+
       {blockLike && (
         <Labeled label="Módulos de ancho">
           <input
@@ -484,9 +556,11 @@ export const BoardInspector: React.FC<BoardInspectorProps> = ({
 
       {part.kind !== 'tope' && (
         <Labeled label="Marca">
-          <BrandSelect value={part.brand} onChange={(brand) => edit({ brand })} generalLabel="Sin marca" />
+          <BrandSelect value={part.brand} onChange={(brand) => edit({ brand, productId: undefined })} generalLabel="Sin marca" />
         </Labeled>
       )}
+
+      <ProductPicker part={part} onPick={(product) => edit(product ? { productId: product.id, brand: product.brand ?? part.brand } : { productId: undefined })} />
 
       {/* Casillero de foto */}
       <div className="space-y-2 rounded-lg border border-hairline bg-surface p-2.5">

@@ -11,7 +11,7 @@ import type { BoardPartKind } from '../../types/electrical';
 import type { PartPhoto } from '../../services/partImages';
 import { imageCrop } from '../../utils/imageFit';
 import { DEVICE_H, MODULE_W } from './deviceMetrics';
-import { surgeTerminals, terminalSpecs } from './wiring';
+import { BAR_LABEL_W, BAR_ROWS, surgeTerminals, terminalSpecs } from './wiring';
 
 export { DEVICE_H, MODULE_W };
 
@@ -31,6 +31,10 @@ export interface DeviceArtProps {
   neutralLeft?: boolean;
   /** Descargador con el neutro arriba. */
   surgeLayout?: 'neutro-arriba';
+  /** Distribuidor que se alimenta por arriba. */
+  feed?: 'arriba';
+  /** Distribuidor de barras de bronce. */
+  distLayout?: 'barras';
   /** Foto propia (con su ajuste) que reemplaza al dibujo: llena la caja del aparato. */
   photo?: PartPhoto;
   /** Imagen real que reemplaza al dibujo, si se cargó una. */
@@ -531,6 +535,100 @@ const ThermalRelay: React.FC<DeviceArtProps> = ({ modules, amps }) => {
   );
 };
 
+/**
+ * Distribuidor tetrapolar (el Distribloc / Linergy DX de Schneider, de 63 A y 4 módulos): por un lado entran
+ * N, L1, L2 y L3 por cuatro agujeros grandes y por el otro salen por bloques de agujeros, celestes para el
+ * neutro (la mitad del ancho) y negros para cada fase. Al frente, una tapa blanca con la franja verde.
+ */
+const BarDistribution: React.FC<{ modules: number; amps?: number }> = ({ modules, amps }) => {
+  const width = modules * MODULE_W;
+  const terminals = terminalSpecs({ kind: 'distribuidor', modules, distLayout: 'barras' });
+  const poles: Array<{ role: 'N' | 'L1' | 'L2' | 'L3'; text: string; fill: string }> = [
+    { role: 'N', text: 'N', fill: '#37a8e0' },
+    { role: 'L1', text: '1', fill: '#7b4a22' },
+    { role: 'L2', text: '2', fill: '#25282d' },
+    { role: 'L3', text: '3', fill: '#d62f22' },
+  ];
+  return (
+    <g>
+      {/* Base negra con la tapa transparente */}
+      <rect x={1} y={0} width={width - 2} height={DEVICE_H} rx={3} fill="#2a2c30" stroke="#101215" strokeWidth={1} />
+      <rect x={4} y={6} width={width - 8} height={DEVICE_H - 24} rx={2} fill="#ffffff" opacity={0.1} stroke="#ffffff" strokeOpacity={0.25} strokeWidth={0.8} />
+      {poles.map((pole, index) => {
+        const y = BAR_ROWS[index];
+        return (
+          <g key={pole.role}>
+            <rect x={4} y={y - 7} width={BAR_LABEL_W - 6} height={14} rx={2} fill={pole.fill} stroke="#00000066" strokeWidth={0.6} />
+            <FaceText x={4 + (BAR_LABEL_W - 6) / 2} y={y + 2.6} size={7} fill="#ffffff">
+              {pole.text}
+            </FaceText>
+            <rect x={BAR_LABEL_W} y={y - 7} width={width - BAR_LABEL_W - 4} height={14} rx={2} fill="#caa343" stroke="#7a5f17" strokeWidth={0.8} />
+            <rect x={BAR_LABEL_W} y={y - 7} width={width - BAR_LABEL_W - 4} height={5} rx={2} fill="#ffe29a" opacity={0.55} />
+          </g>
+        );
+      })}
+      {terminals
+        .filter((terminal) => terminal.sides[0] === 'top')
+        .map((terminal, index) => (
+          <g key={`s-${index}`}>
+            <circle cx={terminal.x} cy={terminal.y} r={4.3} fill="#e6c25f" stroke="#7a5f17" strokeWidth={0.8} />
+            <line x1={terminal.x - 2.8} y1={(terminal.y ?? 0) + 1} x2={terminal.x + 2.8} y2={(terminal.y ?? 0) - 1} stroke="#6b5212" strokeWidth={1.1} />
+          </g>
+        ))}
+      <FaceText x={width / 2} y={DEVICE_H - 6} size={7} fill="#c8ccd2">
+        {`TETRAPOLAR 4×7 · ${amps ?? 125} A`}
+      </FaceText>
+    </g>
+  );
+};
+
+const DistributionBlock: React.FC<DeviceArtProps> = ({ modules, amps, feed, distLayout }) => {
+  if (distLayout === 'barras') return <BarDistribution modules={modules} amps={amps} />;
+  const width = modules * MODULE_W;
+  const terminals = terminalSpecs({ kind: 'distribuidor', modules, feed });
+  const fromTop = feed === 'arriba';
+  const inputs = terminals.filter((terminal) => terminal.sides[0] === (fromTop ? 'top' : 'bottom'));
+  const outputs = terminals.filter((terminal) => terminal.sides[0] === (fromTop ? 'bottom' : 'top'));
+  const outY = fromTop ? DEVICE_H - 17 : 2;
+  const inY = fromTop ? 2 : DEVICE_H - 20;
+  const neutralWidth = width / 2;
+  const phaseWidth = width / 6;
+  const names = ['N', 'L1', 'L2', 'L3'];
+  return (
+    <g>
+      <Body width={width} fill="#eceff2" />
+      {/* Bloques de salida: celeste el neutro, negros las fases */}
+      <rect x={3} y={outY} width={neutralWidth - 3} height={15} rx={2} fill="#2f9fe0" stroke="#1f6fa0" strokeWidth={0.8} />
+      {[0, 1, 2].map((phase) => (
+        <rect key={phase} x={neutralWidth + phase * phaseWidth + 0.5} y={outY} width={phaseWidth - 1.5} height={15} rx={2} fill="#2b2e33" stroke="#0e1013" strokeWidth={0.8} />
+      ))}
+      {outputs.map((terminal, index) => (
+        <rect key={`o-${index}`} x={terminal.x - 3.2} y={(terminal.y ?? outY + 7) - 2.25} width={6.4} height={4.5} rx={1} fill="#0f1114" opacity={0.85} />
+      ))}
+      {/* Tapa blanca con la franja verde */}
+      <rect x={3} y={fromTop ? 40 : 22} width={width - 6} height={DEVICE_H - 62} rx={2} fill="#fbfcfc" stroke={EDGE_SOFT} strokeWidth={0.8} />
+      <rect x={3} y={fromTop ? 44 : 26} width={width - 6} height={4} fill="#3fae29" />
+      <FaceText x={width / 2} y={fromTop ? 62 : 44} size={8} fill="#5d646e">
+        DISTRIBLOC
+      </FaceText>
+      <FaceText x={width / 2} y={fromTop ? 96 : 80} size={12}>
+        {amps ?? 63}A
+      </FaceText>
+      {/* Entrada: cuatro agujeros grandes con su función */}
+      <rect x={3} y={inY} width={width - 6} height={fromTop ? 20 : 18} rx={2} fill="#c9ced4" stroke={EDGE} strokeWidth={0.8} />
+      {inputs.map((terminal, index) => (
+        <g key={`i-${index}`}>
+          <circle cx={terminal.x} cy={inY + 9} r={6.5} fill="#1b1e22" stroke="#7d848e" strokeWidth={1} />
+          <circle cx={terminal.x} cy={inY + 9} r={3.2} fill="#2b2f35" />
+          <FaceText x={terminal.x} y={fromTop ? inY + 26 : inY + 28} size={6.5} fill="#3a4047">
+            {names[index]}
+          </FaceText>
+        </g>
+      ))}
+    </g>
+  );
+};
+
 /** Bornera de barra: una fila de tornillos arriba y los agujeros del conductor abajo. */
 const TerminalBlock: React.FC<{ modules: number; gradient: string; mark: string; stripe?: string }> = ({
   modules,
@@ -671,6 +769,8 @@ export const DeviceArt: React.FC<DeviceArtProps> = (props) => {
       return <VoltageProtector {...props} />;
     case 'contactor':
       return <Contactor {...props} />;
+    case 'distribuidor':
+      return <DistributionBlock {...props} />;
     case 'guardamotor':
       return <MotorStarter {...props} />;
     case 'rele_termico':

@@ -27,12 +27,15 @@ export const BOARD_ORIGIN = 'tablero-armado';
 
 /** Lo que se necesita saber de un producto del catálogo para ponerle precio. */
 export interface PriceEntry {
+  id?: string;
   description: string;
   detail?: string;
   brand?: string;
   unit: BudgetItem['unit'];
   unitPrice: number;
   category?: BudgetCategory;
+  /** Cuántos hay en stock, si se lleva la cuenta (informativo). */
+  stock?: number;
 }
 
 interface BomLine {
@@ -46,6 +49,8 @@ interface BomLine {
   tokens: string[];
   /** Marca elegida para el aparato: se busca su precio entre los de esa marca. */
   brand?: string;
+  /** Producto del catálogo elegido para el aparato: su precio se toma de ese producto y no por texto. */
+  productId?: string;
 }
 
 export interface BoardMaterials {
@@ -131,6 +136,8 @@ function describePart(part: BoardPart): { key: string; category: BudgetCategory;
       return { key: `guardamotor|${poles}|${part.amps}`, category: 'protecciones', description: `Guardamotor ${poles} regulado a ${amps}`.replace(/\s+/g, ' ').trim(), detail: 'Disyuntor magnetotérmico para motores', tokens: ['guardamotor', `${part.amps}a`] };
     case 'rele_termico':
       return { key: `rele|${poles}|${part.amps}`, category: 'protecciones', description: `Relé térmico ${poles} regulado a ${amps}`.replace(/\s+/g, ' ').trim(), detail: 'Protección de sobrecarga de motores', tokens: ['rele termico', `${part.amps}a`] };
+    case 'distribuidor':
+      return { key: `distribuidor|${part.amps}|${part.distLayout ?? part.feed ?? 'abajo'}`, category: 'tableros', description: `${part.distLayout === 'barras' ? 'Distribuidor de barras tetrapolar 4×7' : 'Distribuidor tetrapolar'} ${amps}`.trim(), detail: part.distLayout === 'barras' ? 'Cuatro barras de bronce de siete tornillos' : part.feed === 'arriba' ? 'Se alimenta por arriba' : 'Se alimenta por abajo', tokens: ['distribuidor|repartidor|distribloc|linergy', `${part.amps}a`] };
     case 'bornera_tierra':
       return { key: `bornera_tierra|${part.modules}`, category: 'tableros', description: 'Bornera de tierra para tablero DIN', detail: `${part.modules} módulos`, tokens: ['bornera', 'tierra'] };
     case 'bornera_neutro':
@@ -190,9 +197,10 @@ export function boardMaterials(client: ClientRecord): BoardMaterials {
       const described = describePart(part);
       if (!described) continue;
       const brand = part.brand?.trim() || undefined;
+      const productId = part.productId || undefined;
       add(
-        brand ? `${described.key}|${norm(brand)}` : described.key,
-        { category: described.category, description: brand ? `${described.description} ${brand}` : described.description, detail: described.detail, unit: 'ud', tokens: described.tokens, brand },
+        productId ? `${described.key}|p:${productId}` : brand ? `${described.key}|${norm(brand)}` : described.key,
+        { category: described.category, description: brand ? `${described.description} ${brand}` : described.description, detail: described.detail, unit: 'ud', tokens: described.tokens, brand, productId },
         1,
         name
       );
@@ -203,7 +211,8 @@ export function boardMaterials(client: ClientRecord): BoardMaterials {
       if (item.kind === 'peine') {
         const pins = Math.max(1, Math.floor(item.w / MODULE_W));
         const roles = combRoles(item);
-        add(`peine|${pins}|${roles.join('')}`, { category: 'tableros', description: `Peine de conexión de ${pins} pines`, detail: `Patrón ${roles.join(' ')}`, unit: 'ud', tokens: ['peine', `${pins} pines`] }, 1, name);
+        const down = item.side === 'abajo';
+        add(`peine|${pins}|${roles.join('')}${down ? '|abajo' : ''}`, { category: 'tableros', description: `Peine de conexión de ${pins} pines${down ? ' (aguas abajo)' : ''}`, detail: `Patrón ${roles.join(' ')}${down ? ', se enchufa por abajo' : ''}`, unit: 'ud', tokens: ['peine', `${pins} pines`] }, 1, name);
       } else if (item.kind === 'conector') {
         add('conector', { category: 'tableros', description: 'Conector aislado tipo pin para peine', detail: 'Entrada de cable al peine', unit: 'ud', tokens: ['conector', 'peine'] }, 1, name);
       } else if (item.kind === 'prensacable') {
@@ -269,6 +278,9 @@ export function boardMaterials(client: ClientRecord): BoardMaterials {
 
 /** El producto del catálogo que corresponde a un renglón: de su marca si la tiene y, si no, de cualquiera. */
 function matchEntry(line: BomLine, catalog: PriceEntry[]): PriceEntry | undefined {
+  // El producto elegido a mano manda; si ya no está en el catálogo, se busca por texto como antes.
+  const chosen = line.productId ? catalog.find((entry) => entry.id === line.productId) : undefined;
+  if (chosen) return chosen;
   if (line.brand) {
     const wanted = norm(line.brand);
     const ofBrand = catalog.filter((entry) => norm(entry.brand ?? '').includes(wanted) || norm(entry.description).includes(wanted));
@@ -323,13 +335,18 @@ export function boardBudgetItems(client: ClientRecord, catalog: PriceEntry[], co
   const { lines, notes } = boardMaterials(client);
   const items = lines.map((line): BudgetItem => {
     const entry = matchEntry(line, catalog);
+    const picked = !!entry && !!line.productId && entry.id === line.productId;
     const unitPrice = entry ? money(convert(unitPriceOf(line, entry))) : 0;
+    if (picked && entry.stock !== undefined && entry.stock < line.quantity) {
+      notes.push(`Stock: de «${entry.description}» hay ${Math.max(0, entry.stock)} y el tablero usa ${line.quantity}.`);
+    }
     return {
       id: `item_tab_${line.key.replace(/[^a-z0-9]+/gi, '_')}`,
       type: 'material',
       category: line.category,
-      description: line.description,
-      detail: entry ? `${line.detail}. Precio de referencia: ${entry.description}` : `${line.detail}. Precio a completar: no está en el catálogo`,
+      // Un producto elegido se presupuesta con su nombre del catálogo, como lo compra el cliente.
+      description: picked ? entry.description : line.description,
+      detail: picked ? `${line.detail}. Producto del catálogo` : entry ? `${line.detail}. Precio de referencia: ${entry.description}` : `${line.detail}. Precio a completar: no está en el catálogo`,
       brand: entry?.brand,
       unit: line.unit,
       quantity: line.quantity,

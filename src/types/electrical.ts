@@ -267,6 +267,7 @@ export type BoardPartKind =
   | 'contactor'
   | 'guardamotor'
   | 'rele_termico'
+  | 'distribuidor'
   | 'bornera_tierra'
   | 'bornera_neutro'
   | 'repartidor'
@@ -301,6 +302,10 @@ export interface BoardPart {
    * abajo a la izquierda, como el Schneider iPF K 20 3P+N. Sin esto, trae el neutro abajo.
    */
   surgeLayout?: 'neutro-arriba';
+  /** Distribuidor: `arriba` es el que se alimenta por arriba y reparte hacia abajo. Sin esto, se alimenta por abajo (como el Distribloc de 63 A). */
+  feed?: 'arriba';
+  /** Distribuidor de barras de bronce (tipo «4×7»): cuatro barras con siete tornillos cada una, accesibles de los dos lados. */
+  distLayout?: 'barras';
   /** Marca del aparato (Schneider Electric, Sica, Chint…): elige la foto de esa marca. Sin foto de la marca, se usa el dibujo. */
   brand?: string;
   /** `false`: el neutro va en el módulo de la derecha. Por omisión va a la izquierda, como en Schneider. */
@@ -311,6 +316,8 @@ export interface BoardPart {
   differentialId?: string;
   /** Es la térmica general del tablero. */
   isMain?: boolean;
+  /** Producto concreto del catálogo de materiales (precio, marca y stock salen de ahí). */
+  productId?: string;
 }
 
 /** Accesorios sueltos del armado: no van sobre el riel ni tienen bornes. */
@@ -331,6 +338,8 @@ export interface BoardAccessory {
    * se conecta con el borne de arriba del aparato que tiene debajo.
    */
   pattern?: BoardWireRole[];
+  /** Peine «aguas abajo»: va debajo de los aparatos y se enchufa por abajo, en los bornes de salida. */
+  side?: 'abajo';
   /** Prensacable: `true` si la tuerca está arriba (el tubo sale hacia abajo). */
   flip?: boolean;
   /** Lo puso «cablear automáticamente»; se reemplaza al volver a cablear. */
@@ -399,6 +408,8 @@ export interface BoardLayout {
   separate?: boolean;
   /** Medidas exteriores del gabinete en milímetros. Si falta, el tablero se mide según su contenido. */
   enclosure?: BoardEnclosure;
+  /** Dónde está el nombre del tablero, si se lo movió (por omisión, arriba a la izquierda). */
+  titleAt?: BoardPoint;
   /** Con el gabinete bloqueado, arrastrar el fondo no mueve el tablero: sirve para seleccionar lo que hay adentro. */
   frameLocked?: boolean;
 }

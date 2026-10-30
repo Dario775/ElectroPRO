@@ -8,6 +8,7 @@ import type {
 } from '../types/electrical';
 
 import { convertCurrency, readStoredUsdArsRate } from '../utils/electricalMath';
+import type { ProductSpec } from '../utils/productSpec';
 
 export interface CatalogMaterial {
   id: string;
@@ -28,6 +29,20 @@ export interface CatalogMaterial {
    * para conservarlos al restaurar el catálogo original.
    */
   custom?: boolean;
+  /** Código del proveedor o del fabricante. */
+  sku?: string;
+  /** Datos técnicos: con ellos el editor de tableros ofrece el producto para el aparato que le corresponde. */
+  spec?: ProductSpec;
+  /** Lo que te cuesta a vos, en pesos. Con el margen da el precio de venta. */
+  cost?: number;
+  /** Ganancia sobre el costo, en porcentaje. */
+  marginPercent?: number;
+  /** Cuándo se actualizó el precio por última vez (AAAA-MM-DD). */
+  priceUpdatedAt?: string;
+  /** Cuántos hay (informativo: no se descuenta al presupuestar). */
+  stock?: number;
+  /** Debajo de esta cantidad se avisa que queda poco. */
+  stockMin?: number;
 }
 
 /** Marcas presentes en el catálogo, ordenadas, para el filtro por marca. */

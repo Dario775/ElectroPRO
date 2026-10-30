@@ -6,6 +6,7 @@ import { Badge } from './ui/Card';
 import { Button, IconButton } from './ui/Button';
 import { NumberField, SegmentedControl, SelectField, TextField } from './ui/Form';
 import { Modal } from './ui/Modal';
+import { SPEC_KINDS, inferSpec, isStalePrice, priceAgeDays, salePrice, specOf, stockStatus, type ProductSpec } from '../utils/productSpec';
 
 /**
  * Catálogo de productos del presupuesto, con alta, edición y borrado.
@@ -51,6 +52,16 @@ const UNIT_OPTIONS: Array<{ value: CatalogItemInput['unit']; label: string }> = 
   { value: 'dia', label: 'Día' },
   { value: 'servicio', label: 'Servicio' },
 ];
+
+const POLE_OPTIONS = [
+  { value: '', label: 'Sin dato' },
+  { value: '1p', label: 'Unipolar (1P)' },
+  { value: '2p', label: 'Bipolar (2P)' },
+  { value: '3p', label: 'Tripolar (3P)' },
+  { value: '4p', label: 'Tetrapolar (4P)' },
+];
+
+const CURVE_CHOICES = [{ value: '', label: 'Sin dato' }, ...['B', 'C', 'D', 'K', 'Z'].map((curve) => ({ value: curve, label: `Curva ${curve}` }))];
 
 const EMPTY_INPUT: CatalogItemInput = {
   description: '',
@@ -171,17 +182,27 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
       type: item.type,
       unit: item.unit,
       unitPrice: item.unitPrice,
+      sku: item.sku,
+      spec: specOf(item),
+      cost: item.cost,
+      marginPercent: item.marginPercent,
+      stock: item.stock,
+      stockMin: item.stockMin,
     });
     setFormError('');
     setEditing(item);
   };
+
+  const computedPrice = form.cost !== undefined && form.cost > 0 && form.marginPercent !== undefined ? salePrice(form.cost, form.marginPercent) : form.unitPrice;
+  const setSpec = (patch: Partial<ProductSpec> | null): void =>
+    setForm((previous) => ({ ...previous, spec: patch === null ? undefined : { ...(previous.spec ?? { kind: 'termica' as const }), ...patch } }));
 
   const saveForm = (): void => {
     if (!form.description.trim()) {
       setFormError('Poné una descripción: es lo que va a leer el cliente en el presupuesto.');
       return;
     }
-    if (!(form.unitPrice > 0)) {
+    if (!(computedPrice > 0)) {
       setFormError('Cargá el precio unitario: sin precio el producto no sirve para presupuestar.');
       return;
     }
@@ -339,8 +360,15 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
                     <strong className="text-sm text-strong">{item.description}</strong>
                     {item.brand && <Badge tone="accent">{item.brand}</Badge>}
                     {item.custom && <Badge tone="info">propio</Badge>}
+                    {stockStatus(item) === 'agotado' && <Badge tone="danger">sin stock</Badge>}
+                    {stockStatus(item) === 'bajo' && <Badge tone="warning">queda poco · {item.stock}</Badge>}
+                    {stockStatus(item) === 'ok' && <Badge tone="success">stock {item.stock}</Badge>}
+                    {isStalePrice(item) && <Badge tone="warning">precio de hace {priceAgeDays(item)} días</Badge>}
                   </div>
-                  <p className="mt-0.5 text-xs text-muted">{item.detail}</p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {item.sku ? `${item.sku} · ` : ''}
+                    {item.detail}
+                  </p>
                 </div>
 
                 <div className="flex flex-shrink-0 items-center gap-2 self-end sm:self-center">
@@ -488,13 +516,13 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
 
             <NumberField
               label="Precio unitario"
-              value={form.unitPrice}
-              onChange={(value) => setForm((previous) => ({ ...previous, unitPrice: value === '' ? 0 : value }))}
+              value={computedPrice}
+              onChange={(value) => setForm((previous) => ({ ...previous, unitPrice: value === '' ? 0 : value, cost: undefined, marginPercent: undefined }))}
               unit={CATALOG_CURRENCY}
               min={0}
               max={1000000}
               step={0.5}
-              hint={`Precio de lista del proveedor, sin tu margen. El catálogo se guarda en ${CATALOG_CURRENCY}.`}
+              hint={form.cost && form.marginPercent !== undefined ? 'Se calcula con el costo y el margen.' : `Precio de venta. El catálogo se guarda en ${CATALOG_CURRENCY}.`}
             />
           </div>
 
@@ -518,6 +546,90 @@ export const MaterialCatalogModal: React.FC<MaterialCatalogModalProps> = ({
               onChange={(value) => setForm((previous) => ({ ...previous, unit: value as CatalogItemInput['unit'] }))}
               options={UNIT_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
             />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <NumberField
+              label="Costo"
+              value={form.cost ?? ''}
+              onChange={(value) => setForm((previous) => ({ ...previous, cost: value === '' ? undefined : value }))}
+              unit={CATALOG_CURRENCY}
+              min={0}
+              max={1000000}
+              step={0.5}
+              hint="Lo que te cobra el proveedor (opcional)."
+            />
+            <NumberField
+              label="Margen"
+              value={form.marginPercent ?? ''}
+              onChange={(value) => setForm((previous) => ({ ...previous, marginPercent: value === '' ? undefined : value }))}
+              unit="%"
+              min={0}
+              max={500}
+              step={1}
+              hint={form.cost && form.marginPercent !== undefined ? `Precio de venta: ${formatPrice(computedPrice)}` : 'Con costo y margen, el precio se calcula solo.'}
+            />
+            <TextField
+              label="Código"
+              value={form.sku ?? ''}
+              onChange={(value) => setForm((previous) => ({ ...previous, sku: value }))}
+              placeholder="A9F74225"
+              hint="Del proveedor o del fabricante."
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <NumberField
+              label="En stock"
+              value={form.stock ?? ''}
+              onChange={(value) => setForm((previous) => ({ ...previous, stock: value === '' ? undefined : value }))}
+              min={0}
+              max={100000}
+              step={1}
+              hint="Informativo: no se descuenta al presupuestar."
+            />
+            <NumberField
+              label="Avisar si quedan"
+              value={form.stockMin ?? ''}
+              onChange={(value) => setForm((previous) => ({ ...previous, stockMin: value === '' ? undefined : value }))}
+              min={0}
+              max={100000}
+              step={1}
+              hint="Cantidad mínima antes de avisar que queda poco."
+            />
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-hairline bg-sunken p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Datos técnicos (para el editor de tableros)</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setForm((previous) => ({ ...previous, spec: inferSpec(previous.description) }))}
+                title="Completa los datos técnicos leyendo la descripción"
+              >
+                Completar desde la descripción
+              </Button>
+            </div>
+            <SelectField
+              label="Es un aparato de tablero"
+              value={form.spec?.kind ?? ''}
+              onChange={(value) => (value ? setSpec({ kind: value as ProductSpec['kind'] }) : setSpec(null))}
+              options={[{ value: '', label: 'No (cable, gabinete, mano de obra…)' }, ...SPEC_KINDS.map((item) => ({ value: item.kind, label: item.label }))]}
+              hint="Si lo es, el editor lo ofrece para el aparato que coincida con estos datos."
+            />
+            {form.spec && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <SelectField label="Polos" value={form.spec.poles ?? ''} onChange={(value) => setSpec({ poles: value || undefined })} options={POLE_OPTIONS} />
+                <NumberField label="Corriente" value={form.spec.amps ?? ''} onChange={(value) => setSpec({ amps: value === '' ? undefined : value })} unit="A" min={0} max={5000} step={1} />
+                {form.spec.kind === 'termica' && (
+                  <SelectField label="Curva" value={form.spec.curve ?? ''} onChange={(value) => setSpec({ curve: value || undefined })} options={CURVE_CHOICES} />
+                )}
+                {form.spec.kind === 'diferencial' && (
+                  <NumberField label="Sensibilidad" value={form.spec.sensitivityMa ?? ''} onChange={(value) => setSpec({ sensitivityMa: value === '' ? undefined : value })} unit="mA" min={0} max={1000} step={10} />
+                )}
+              </div>
+            )}
           </div>
 
           {formError && (

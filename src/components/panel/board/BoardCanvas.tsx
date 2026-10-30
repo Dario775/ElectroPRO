@@ -6,7 +6,7 @@
  * guardar; al soltar se avisa el cambio definitivo.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { BoardLayout, BoardPart, BoardPoint, BoardRail, BoardWire, BoardWireRole } from '../../../types/electrical';
+import type { BoardAccessory, BoardLayout, BoardPart, BoardPoint, BoardRail, BoardWire, BoardWireRole } from '../../../types/electrical';
 import {
   BOARD_LEFT,
   LEGEND_LINE_H,
@@ -39,6 +39,11 @@ import {
 } from '../../../utils/boardLayout';
 import { partDetail, wireWidth } from '../../../utils/boardCatalog';
 import { AccessoryShape, Ferrule } from './accessoryArt';
+import { combContacts, connectorContact, type PinContact } from '../../../utils/boardLayout';
+
+/** Si los pines de un peine o de un conector entran en un borne: se ven adentro o, si no, quedan sueltos. */
+const contactsOf = (board: BoardLayout, item: BoardAccessory): PinContact[] | undefined =>
+  item.kind === 'peine' ? combContacts(board, item) : item.kind === 'conector' ? [connectorContact(board, item)] : undefined;
 import type { PartImageStore } from '../../../services/partImages';
 import { partPhoto } from '../../../services/partImages';
 import { DEVICE_H, DeviceArt, DeviceDefs, MODULE_W } from '../deviceArt';
@@ -90,6 +95,8 @@ type Drag =
   | { type: 'wireEnd'; wireId: string; end: 'start' | 'end'; base: BoardLayout }
   | { type: 'segment'; wireId: string; segment: number; vertical: boolean; base: BoardLayout }
   | { type: 'note'; id: string; dx: number; dy: number; base: BoardLayout }
+  /** El nombre del tablero, que se puede llevar adonde se quiera. */
+  | { type: 'title'; dx: number; dy: number; base: BoardLayout }
   | { type: 'noteTarget'; id: string; base: BoardLayout }
   /** Un grupo seleccionado que se lleva entero. */
   | { type: 'group'; items: GroupItem[]; start: BoardPoint; base: BoardLayout };
@@ -290,6 +297,9 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
         case 'note':
           next = updateNote(drag.base, drag.id, { x: Math.round(point.x - drag.dx), y: Math.round(point.y - drag.dy) });
           break;
+        case 'title':
+          next = { ...drag.base, titleAt: { x: snap(point.x - drag.dx), y: snap(point.y - drag.dy) } };
+          break;
         case 'noteTarget':
           next = updateNote(drag.base, drag.id, { tx: Math.round(point.x), ty: Math.round(point.y) });
           break;
@@ -451,6 +461,15 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
     startDrag({ type: 'rail', id: rail.id, dx: point.x - rail.x, dy: point.y - rail.y, base: board });
   };
 
+  const titleDown = (event: React.PointerEvent): void => {
+    if (mode !== 'select' || readOnly) return;
+    event.stopPropagation();
+    onSelect(null);
+    const point = toBoard(event.clientX, event.clientY);
+    const at = board.titleAt ?? { x: BOARD_LEFT - 40, y: 50 };
+    startDrag({ type: 'title', dx: point.x - at.x, dy: point.y - at.y, base: board });
+  };
+
   const accessoryDown = (event: React.PointerEvent, id: string, x: number, y: number): void => {
     if (mode !== 'select') return;
     if (groupDown(event, { kind: 'accessory', id })) return;
@@ -484,13 +503,13 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   // Con medidas de gabinete, el marco es de ese tamaño; lo que sobre queda fuera del marco y se avisa.
   const sized = enclosureUnits(board);
   const frameWidth = sized ? sized.width : bounds.width;
-  const frameBottom = sized ? sized.height : bounds.legendTop;
+  const frameBottom = sized ? sized.height : bounds.frameBottom;
   const draggingWire = ghost !== null || (dragging && dragRef.current?.type === 'wireEnd');
 
   return (
     <svg
       ref={svgRef}
-      viewBox={`0 0 ${bounds.width} ${bounds.height}`}
+      viewBox={`0 ${bounds.top} ${bounds.width} ${bounds.height}`}
       width={bounds.width}
       height={bounds.height}
       role="img"
@@ -517,7 +536,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
       </defs>
 
       {/* Fondo blanco, para que el PNG no salga transparente */}
-      <rect width={bounds.width} height={bounds.height} fill="#ffffff" data-board-bg="true" />
+      <rect y={bounds.top} width={bounds.width} height={bounds.height} fill="#ffffff" data-board-bg="true" />
 
       {/* Gabinete y chapa de montaje */}
       <rect x={2} y={2} width={frameWidth - 4} height={frameBottom - 4} rx={14} fill="url(#pf-door)" stroke="#8a919b" strokeWidth={4} data-board-bg="true" />
@@ -533,9 +552,16 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
           <line x1={x - 3.5} y1={y - 3.5} x2={x + 3.5} y2={y + 3.5} stroke="#656c76" strokeWidth={1.3} />
         </g>
       ))}
-      <text x={BOARD_LEFT - 40} y={50} fontSize={20} fontWeight={800} fill="#23272d" fontFamily={FONT}>
-        {title}
-      </text>
+      <g
+        transform={`translate(${board.titleAt?.x ?? BOARD_LEFT - 40} ${board.titleAt?.y ?? 50})`}
+        style={{ ...eventsStyle, cursor: interactive ? 'grab' : 'inherit' }}
+        onPointerDown={(event) => titleDown(event)}
+      >
+        <rect x={-6} y={-24} width={Math.max(120, title.length * 11.5 + 12)} height={34} fill="transparent" data-export="hide" />
+        <text fontSize={20} fontWeight={800} fill="#23272d" fontFamily={FONT}>
+          {title}
+        </text>
+      </g>
       {subtitle && (
         <text x={bounds.width - 52} y={50} fontSize={13} fontWeight={600} fill="#5d646e" textAnchor="end" fontFamily={FONT}>
           {subtitle}
@@ -607,6 +633,8 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
             poles={part.poles}
             neutralLeft={part.neutralLeft}
             surgeLayout={part.surgeLayout}
+            feed={part.feed}
+            distLayout={part.distLayout}
             photo={partPhoto(photos, part)}
           />
           <rect x={0} y={0} width={partWidth(part)} height={DEVICE_H} fill="transparent" data-export="hide" />
@@ -626,7 +654,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
             style={{ ...eventsStyle, cursor: interactive ? 'grab' : 'inherit' }}
             onPointerDown={(event) => accessoryDown(event, item.id, item.x, item.y)}
           >
-            <AccessoryShape item={item} />
+            <AccessoryShape item={item} contacts={contactsOf(board, item)} />
             {selected && (
               <rect x={-3} y={-3} width={item.w + 6} height={item.h + 6} rx={4} fill="none" stroke={SELECTION} strokeWidth={2.5} strokeDasharray="7 4" data-export="hide" pointerEvents="none" />
             )}
