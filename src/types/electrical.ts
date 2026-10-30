@@ -712,6 +712,8 @@ export interface ClientRecord {
   budget?: ProjectBudget;
   budgets?: ProjectBudget[]; // Lista de múltiples presupuestos u opciones para el mismo cliente
   activeBudgetId?: string; // ID del presupuesto actualmente activo o seleccionado
+  /** Producto del catálogo elegido para cada material del tablero que no es un aparato (cables, gabinete, accesorios): clave del material → id del producto. */
+  materialChoices?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }

@@ -248,3 +248,28 @@ test('actualizar precios toma los del catálogo aunque el renglón ya tuviera un
   const refreshed = B.syncBoardItems(first, base, raised, undefined, true);
   assert.equal(refreshed.items.find((item) => item.sourceKey === key).unitPrice, old * 2);
 });
+
+test('un material que no es un aparato se puede fijar a un producto del catálogo', () => {
+  const base = project();
+  const gland = { id: 'gl-1', description: 'Prensacable PG21 con tubo corrugado', unit: 'ud', unitPrice: 2500, brand: 'Genrod', supplier: 'Eléctrica Sur', stock: 10 };
+  const plain = B.boardMaterials(base).lines.find((l) => l.key === 'prensacable');
+  assert.ok(plain, 'el tablero tiene prensacables');
+  const withChoice = { ...base, materialChoices: { prensacable: 'gl-1' } };
+  const cat = [...catalog, gland];
+  const { items } = B.boardBudgetItems(withChoice, cat);
+  const item = items.find((i) => i.sourceKey === 'prensacable|p:gl-1');
+  assert.ok(item);
+  assert.equal(item.unitPrice, 2500);
+  assert.equal(item.description, 'Prensacable PG21 con tubo corrugado');
+  const row = B.shoppingList(withChoice, cat).find((r) => r.baseKey === 'prensacable');
+  assert.equal(row.chosenId, 'gl-1');
+  assert.equal(row.supplier, 'Eléctrica Sur');
+  assert.equal(row.stock, 10);
+  assert.deepEqual(row.choices.map((c) => c.id), ['gl-1']);
+});
+
+test('los aparatos no se eligen desde los materiales: su producto va en el editor', () => {
+  const rows = B.shoppingList(project(), catalog);
+  const termica = rows.find((r) => r.key.startsWith('termica|'));
+  assert.deepEqual(termica.choices, []);
+});

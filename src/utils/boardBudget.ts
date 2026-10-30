@@ -55,6 +55,10 @@ interface BomLine {
   brand?: string;
   /** Producto del catálogo elegido para el aparato: su precio se toma de ese producto y no por texto. */
   productId?: string;
+  /** Clave del material sin el producto elegido: con ella se guarda la elección en el proyecto. */
+  baseKey?: string;
+  /** Es un aparato: su producto se elige en el editor, no en la lista de compras. */
+  fromPart?: boolean;
 }
 
 export interface BoardMaterials {
@@ -204,7 +208,7 @@ export function boardMaterials(client: ClientRecord): BoardMaterials {
       const productId = part.productId || undefined;
       add(
         productId ? `${described.key}|p:${productId}` : brand ? `${described.key}|${norm(brand)}` : described.key,
-        { category: described.category, description: brand ? `${described.description} ${brand}` : described.description, detail: described.detail, unit: 'ud', tokens: described.tokens, brand, productId },
+        { category: described.category, description: brand ? `${described.description} ${brand}` : described.description, detail: described.detail, unit: 'ud', tokens: described.tokens, brand, productId, fromPart: true },
         1,
         name
       );
@@ -273,7 +277,28 @@ export function boardMaterials(client: ClientRecord): BoardMaterials {
       tokens: ['cable unipolar', `${sectionText(section).replace(',', '.')} mm`],
     });
   }
-  return { lines, notes };
+  // El producto elegido para un material que no es un aparato (cable, gabinete, accesorio) manda sobre el texto.
+  const choices = client.materialChoices ?? {};
+  const chosen = lines.map((line) => {
+    const productId = line.fromPart ? undefined : choices[line.key];
+    return productId ? { ...line, key: `${line.key}|p:${productId}`, baseKey: line.key, productId } : line;
+  });
+  return { lines: chosen, notes };
+}
+
+/** Productos del catálogo que sirven para un material: los que cumplen sus palabras clave, del más barato al más caro. */
+export function materialCandidates(line: Pick<BomLine, 'key' | 'tokens'>, catalog: PriceEntry[]): PriceEntry[] {
+  const text = (entry: PriceEntry): string => norm(entry.description);
+  const withId = catalog.filter((entry) => entry.id);
+  const base = line.key.split('|p:')[0];
+  if (base.startsWith('gabinete|')) {
+    const needed = Number(base.split('|')[1]);
+    return withId
+      .filter((entry) => /(gabinete|tablero)/.test(text(entry)) && Number(text(entry).match(/(\d+) modulos/)?.[1]) >= needed)
+      .sort((a, b) => Number(text(a).match(/(\d+) modulos/)?.[1]) - Number(text(b).match(/(\d+) modulos/)?.[1]) || a.unitPrice - b.unitPrice);
+  }
+  const tokens = line.tokens.map(norm);
+  return withId.filter((entry) => tokens.every((token) => token.split('|').some((alt) => text(entry).includes(alt)))).sort((a, b) => a.unitPrice - b.unitPrice);
 }
 
 /* ------------------------------------------------------------------ */
@@ -372,6 +397,12 @@ export interface ShoppingRow {
   brand?: string;
   /** Proveedor del producto, si está cargado. */
   supplier?: string;
+  /** Clave del material en el proyecto (sin el producto elegido). */
+  baseKey: string;
+  /** Producto elegido para este material, si se eligió uno. */
+  chosenId?: string;
+  /** Productos del catálogo entre los que se puede elegir; vacío para los aparatos (se eligen en el editor). */
+  choices: PriceEntry[];
   unit: BudgetItem['unit'];
   needed: number;
   /** En stock, si el producto está en el catálogo y se lleva la cuenta (informativo). */
@@ -405,6 +436,9 @@ export function shoppingList(client: ClientRecord, catalog: PriceEntry[], conver
       description: entry && line.productId && entry.id === line.productId ? entry.description : line.description,
       brand: entry?.brand ?? line.brand,
       supplier: entry?.supplier,
+      baseKey: line.baseKey ?? line.key,
+      chosenId: line.baseKey ? line.productId : undefined,
+      choices: line.fromPart ? [] : materialCandidates(line, catalog),
       unit: line.unit,
       needed: line.quantity,
       stock,

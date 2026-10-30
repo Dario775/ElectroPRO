@@ -1585,6 +1585,12 @@ export const BudgetView: React.FC<BudgetViewProps> = ({
           onClose={() => setIsShoppingOpen(false)}
           rows={shoppingList(client, CatalogService.getItems(), convertFromCatalog)}
           formatPrice={(amount) => format(amount, client.currency)}
+          onPick={(baseKey, productId) => {
+            const next = { ...(client.materialChoices ?? {}) };
+            if (productId) next[baseKey] = productId;
+            else delete next[baseKey];
+            onUpdateClient({ ...client, materialChoices: next });
+          }}
         />
       )}
 

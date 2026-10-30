@@ -16,11 +16,13 @@ export interface ShoppingListModalProps {
   rows: ShoppingRow[];
   /** Da formato a un importe en la moneda del proyecto. */
   formatPrice: (amount: number) => string;
+  /** Fija (o suelta, con `undefined`) el producto del catálogo de un material que no es un aparato. */
+  onPick?: (baseKey: string, productId: string | undefined) => void;
 }
 
 const quantity = (value: number): string => String(Math.round(value * 10) / 10).replace('.', ',');
 
-export const ShoppingListModal: React.FC<ShoppingListModalProps> = ({ isOpen, onClose, rows, formatPrice }) => {
+export const ShoppingListModal: React.FC<ShoppingListModalProps> = ({ isOpen, onClose, rows, formatPrice, onPick }) => {
   const [copied, setCopied] = useState(false);
   const [copiedOrder, setCopiedOrder] = useState('');
   const missing = useMemo(() => rows.filter((row) => row.toBuy > 0), [rows]);
@@ -113,6 +115,21 @@ export const ShoppingListModal: React.FC<ShoppingListModalProps> = ({ isOpen, on
                           <span className="ml-2">
                             <Badge tone="warning">no está en el catálogo</Badge>
                           </span>
+                        )}
+                        {onPick && row.choices.length > 0 && (
+                          <select
+                            aria-label={`Producto para ${row.description}`}
+                            value={row.chosenId ?? ''}
+                            onChange={(event) => onPick(row.baseKey, event.target.value || undefined)}
+                            className="mt-1 block h-8 w-full max-w-md rounded-lg border border-field-line bg-sunken px-2 text-xs text-strong"
+                          >
+                            <option value="">Automático (el más barato que coincide)</option>
+                            {row.choices.map((choice) => (
+                              <option key={choice.id} value={choice.id}>
+                                {[choice.brand, formatPrice(choice.unitPrice), choice.stock !== undefined ? `stock ${choice.stock}` : undefined].filter(Boolean).join(' · ')} — {choice.description}
+                              </option>
+                            ))}
+                          </select>
                         )}
                       </td>
                       <td className="px-3 py-2 text-right font-mono">
